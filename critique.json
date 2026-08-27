@@ -1,0 +1,65 @@
+{
+  "kind": "critique-panel",
+  "artifact": "index.html",
+  "score": 4,
+  "axes": {
+    "clarity": {
+      "score": 4,
+      "notes": "Mỗi slide một ý. Heading là tên chương (1–2 từ), câu diễn giải nằm ở tầng statement 40px dưới heading 72px, thân bài 26px. Ba chỗ cần chốt được ghi rõ là 'đề xuất' hoặc 'chưa thực hiện' thay vì trình bày như đã quyết."
+    },
+    "hierarchy": {
+      "score": 4,
+      "notes": "Ba tầng 72 › 40 › 26px. Tên chương lặp nguyên văn qua các slide cùng chương, sub-label thụt vào có gạch nối kéo từ lề trái, dải tick mép phải chỉ vị trí trong chương. Slide mở chương không có sub-label và tick đầu sáng."
+    },
+    "typography": {
+      "score": 4,
+      "notes": "Display serif (Georgia fallback) cho mọi heading, sans cho thân bài và UI, mono cho số và nhãn. Chữ thân bài không dưới 24px trên canvas 1920×1080; chỉ UI bên trong mockup trình duyệt xuống 17–22px, có chủ ý vì đó là trình duyệt đang được thu nhỏ."
+    },
+    "motion": {
+      "score": 4,
+      "notes": "Hai cường độ: Aperture 1.0s chỉ cho 6 slide mở chương, Drift 0.76s cho 8 slide nội dung. Build nội bộ stagger 105ms tự chạy, không cần bấm. Một điểm nhấn duy nhất: Ken Burns 26s trên hai slide ảnh. Có nhánh prefers-reduced-motion."
+    },
+    "brand": {
+      "score": 4,
+      "notes": "Toàn bộ màu lấy từ khối :root của design system Claude, không có hex thô ngoài khối đó. Nền tối #141413 và nhấn terracotta #c96442 đúng như khách hàng tự chốt ở câu 18–19 của khảo sát. Accent tối đa 2 vai trò mỗi slide."
+    },
+    "specificity": {
+      "score": 5,
+      "notes": "Mọi con số truy được về 01-Phan-tich-yeu-cau.md hoặc Website D3 Studio (Câu trả lời).xlsx. Trích dẫn nguyên văn lời khách. Ảnh là công trình thật của D3, đã có dấu chìm. Con số minh hoạ duy nhất trong mockup được dán nhãn ngay trên slide."
+    }
+  },
+  "verification": {
+    "method": "GDI+ text metrics (System.Drawing.MeasureString) với đúng font fallback Georgia/Arial, cộng hệ số 1.08 cho ragged-right, để đếm số dòng sau khi wrap rồi cộng chiều cao từng khối theo ngân sách 914px nội dung mỗi slide.",
+    "rendered_images": false,
+    "rendered_images_reason": "Máy không có công cụ render: agent-browser chưa cài, không có CDP endpoint trên 9222/9223, và đây là deck HTML nên không dùng được đường xuất ảnh của PowerPoint.",
+    "overflows_found_and_fixed": [
+      "Slide 07 cột phải vượt 21px — thu padding hàng hỏi/đáp 14→12px và rút note câu 30 từ 3 dòng xuống 2.",
+      "Slide 12 cột bộ lọc trong mockup vượt ~110px và bị overflow:hidden cắt mất facet Diện tích — nới sidebar 262→300px, gap 18→12px, chip 19→18px, thu chrome trình duyệt.",
+      "Slide 13 cây sitemap vượt 12px — thu padding mỗi node 12→10px."
+    ],
+  "font_bug_found_and_fixed": [
+    "--font-mono khong co Anthropic Mono / JetBrains Mono / Menlo tren may nay nen roi xuong Consolas, va no dang duoc dung cho 24 vi tri KHONG phai code: eyebrow, nhan chuong, so lieu 56px, wordmark, tag persona, footer, chip, nhan facet. DESIGN.md cam ro: mono chi danh cho code. Da chuyen 24 vi tri sang --font-body (Arial), giu font-variant-numeric:tabular-nums cho so.",
+    "Chi con 3 vi tri dung --font-mono, dung la code/duong dan: thanh URL trong mockup trinh duyet, nhan path trong sitemap, va the <code> bao mau URL /portfolio/{khong-gian}/{loai}/{phong-cach}.",
+    "Do lai sau khi doi font: Arial ROng hon Consolas o chu hoa (nguoc voi gia dinh ban dau), 7 nhan to ra. Nhan .note b la nowrap nen lam hep cot noi dung ben canh. Da do lai ca 9 khoi note: so dong khong doi, khong phat sinh tran moi."
+  ],
+  "glyph_bug_found_and_fixed": [
+    "Georgia thieu 61 trong 99 ky tu non-ASCII cua deck, gom 55 chu Viet (o-horn, u-horn, a/e circumflex + sac/huyen, cac dang dot-below). Georgia la bo WGL4, khong co Latin Extended Additional. Chromium fallback tung ky tu va ve dau thanh mot glyph rieng co do rong -> hien ra thanh Thie-cach-sac, ke-cach-sac, cau-cach-huyen.",
+    "Da them alias --display-vi = Anthropic Serif, Times New Roman, Georgia, serif dat o html (KHONG sua khoi :root token). Times New Roman da la ho font thu ba trong chinh --font-display cua brand va phu 99/99 ky tu, thieu 0.",
+    "Kiem lai ca ba font dang chay: Times New Roman thieu 0/99 (display), Arial thieu 0/99 (body), Consolas phu du 6 ky tu non-ASCII trong <code>, .lv va .url. Khong con ky tu nao phai fallback.",
+    "TNR hep hon Georgia ~8% va co x-height nho hon nen da tang co khoi display ~6%: h-sec 72->76, statement 40->43, axis-ti 32->34, who 29->31, ph-b 29->31, cung cac inline o slide 01, 03, 05, 14. Do lai 13/13 slide: van vua, slide chat nhat con 18px (12), 20px (13), 22px (07), 26px (10)."
+  ],
+  "component_bug_found_and_fixed": [
+    "Anh height:100% nam trong flex/grid item khong co min-height:0. min-height:auto lay chieu cao noi tai cua anh vuong lam muc toi thieu nen cot anh slide 02 khong co lai duoc va bi overflow:hidden cat.",
+    "Luoi mosaic slide 12 dung repeat(4,1fr)/repeat(3,1fr); 1fr la minmax(auto,1fr) nen track cung khong co duoi kich thuoc anh. Da doi sang minmax(0,1fr) va them min-height/min-width:0 cho figure.",
+    "Da tach ra component .media: khung position:relative + anh position:absolute inset:0 object-fit:cover, thay cho inline style de vo. Dung o slide 02, xoa het inline sizing."
+  ],
+    "content_bug_found_and_fixed": [
+      "Mockup slide 12 lọc 'Phòng khách' nhưng ảnh dẫn kết quả là phòng ngủ Indochine — chính ảnh slide 10 gán nhãn 'Phòng ngủ master'. Đã đổi facet sang 'Ngủ', URL sang /portfolio/phong-ngu/chung-cu/indochine, và đồng bộ chuỗi lọc ở slide 09."
+    ],
+    "slack_after_fix_px": {
+      "02": 74, "03": 48, "04": 307, "05": 93, "06": 107,
+      "07": 26, "08": 88, "09": 310, "10": 94, "11": 97,
+      "12": 22, "13": 24, "14": 350
+    }
+  }
+}

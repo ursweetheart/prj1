@@ -1,0 +1,1452 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D3 Studio · Website Portfolio Thiết kế Nội thất tích hợp AI — Phân tích yêu cầu</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   TOKENS — Claude (Anthropic) design system · tokens.css :root, verbatim
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
+
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #5e5d59;
+  --meta: #87867f;
+
+  --border: #f0eee6;
+  --border-soft: #e8e6dc;
+
+  --accent: #c96442;
+  --accent-on: #faf9f5;
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --accent-active: color-mix(in oklab, var(--accent), black 14%);
+
+  --success: #17a34a;
+  --warn: #eab308;
+  --danger: #b53333;
+
+  --font-display: "Anthropic Serif", Georgia, "Times New Roman", serif;
+  --font-body: "Anthropic Sans", "Arial", system-ui, -apple-system, sans-serif;
+  --font-mono: "Anthropic Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+
+  --text-xs: 10px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 25px;
+  --text-2xl: 32px;
+  --text-3xl: 52px;
+  --text-4xl: 64px;
+
+  --leading-body: 1.6;
+  --leading-tight: 1.1;
+  --tracking-display: 0em;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --section-y-desktop: 96px;
+  --section-y-tablet: 64px;
+  --section-y-phone: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: rgba(0, 0, 0, 0.05) 0px 4px 24px;
+
+  --focus-ring: 0 0 0 3px rgba(56, 152, 236, 0.3);
+
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --container-max: 1200px;
+  --container-gutter-desktop: 24px;
+  --container-gutter-tablet: 16px;
+  --container-gutter-phone: 12px;
+}
+
+/* Vietnamese-complete display stack.
+   Georgia is WGL4 and is missing 55 of the Vietnamese letters this deck
+   uses. Chromium then falls back per character and paints the tone mark
+   as a separate spacing glyph. Times New Roman — already the third family
+   in the brand --font-display stack — covers all 99 non-ASCII characters
+   in this deck with zero misses, so it leads here. */
+html{ --display-vi: "Anthropic Serif", "Times New Roman", Georgia, serif; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DECK ALIASES — every value derived from the token block above.
+   Light slides read parchment; dark slides remap onto the warm dark ramp
+   (DESIGN.md §6 "Dark / Light Section Alternation").
+   ═══════════════════════════════════════════════════════════════════ */
+.slide{
+  --pg:    var(--bg);
+  --pg-2:  var(--surface);
+  --pg-3:  var(--surface-warm);
+  --ink:   var(--fg);
+  --ink-2: var(--fg-2);
+  --dim:   var(--muted);
+  --faint: var(--meta);
+  --rule:  var(--border-soft);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+.slide.dark{
+  --pg:    var(--fg);
+  --pg-2:  var(--fg-2);
+  --pg-3:  color-mix(in oklab, var(--fg), var(--surface) 10%);
+  --ink:   var(--surface);
+  --ink-2: color-mix(in oklab, var(--surface), var(--fg) 20%);
+  --dim:   color-mix(in oklab, var(--surface), var(--fg) 36%);
+  --faint: color-mix(in oklab, var(--surface), var(--fg) 52%);
+  --rule:  color-mix(in oklab, var(--fg), var(--surface) 16%);
+}
+
+/* ── Reset & stage ─────────────────────────────────────────────────── */
+*{ box-sizing:border-box; margin:0; padding:0 }
+html,body{ height:100%; overflow:hidden; background:var(--fg) }
+body{ font-family:var(--font-body); -webkit-font-smoothing:antialiased }
+#stage{ position:fixed; inset:0; overflow:hidden }
+#deck{ position:absolute; top:50%; left:50%; width:1920px; height:1080px;
+       transform-origin:center center }
+
+/* ── Slide shell · vertical budget: 1080 − 78 − 88 = 914 ───────────── */
+.slide{
+  position:absolute; inset:0;
+  background:var(--pg); color:var(--ink);
+  padding:78px 128px 88px;
+  display:flex; flex-direction:column;
+  opacity:0; visibility:hidden; z-index:0; overflow:hidden;
+}
+.slide.active { opacity:1; visibility:visible; z-index:2 }
+.slide.leaving{ opacity:1; visibility:visible; z-index:1 }
+
+/* ── Header: eyebrow › heading › sub-label ─────────────────────────── */
+.eyebrow{ font-family:var(--font-body); font-size:22px; line-height:1.6;
+          letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
+          display:flex; align-items:center; gap:18px }
+.eyebrow i{ display:block; width:26px; height:2px; background:var(--accent); flex:none }
+h1,h2,h3{ font-family:var(--display-vi); font-weight:500; text-wrap:balance }
+.h-sec{ font-size:76px; line-height:1.04; letter-spacing:-.012em; margin-top:20px }
+.sublabel{ margin-top:18px; padding-left:62px; position:relative;
+           font-size:26px; line-height:1.4; font-weight:500; color:var(--ink-2) }
+.sublabel::before{ content:""; position:absolute; left:0; top:.7em;
+                   width:44px; height:1px; background:var(--ink-2); opacity:.5 }
+
+/* ── Text scale · prose never below 24px on a 1920px canvas ───────── */
+.statement{ font-family:var(--display-vi); font-size:43px; line-height:1.3;
+            color:var(--ink); max-width:24ch; text-wrap:pretty }
+.lead{ font-size:26px; line-height:1.6; color:var(--dim); max-width:56ch }
+.body{ font-size:26px; line-height:1.6; color:var(--dim) }
+.small{ font-size:24px; line-height:1.5; color:var(--dim) }
+.meta{ font-family:var(--font-body); font-size:22px; line-height:1.6;
+       letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
+.num{ font-family:var(--font-body); font-variant-numeric:tabular-nums; letter-spacing:-.02em }
+code{ font-family:var(--font-mono); font-size:.94em; letter-spacing:-.01em }
+p{ text-wrap:pretty }
+strong{ color:var(--ink); font-weight:600 }
+em{ font-style:normal; color:var(--accent) }
+
+/* ── Layout helpers ───────────────────────────────────────────────── */
+.head{ flex:none }
+.canvas{ flex:1; min-height:0; display:flex; margin-top:40px }
+.cols{ display:grid; gap:52px; width:100%; min-height:0; min-width:0 }
+.c-2{ grid-template-columns:1fr 1fr }
+.c-58{ grid-template-columns:1.15fr 1fr }
+.c-64{ grid-template-columns:1.6fr 1fr }
+.c-46{ grid-template-columns:1fr 1.45fr }
+.stack{ display:flex; flex-direction:column; min-height:0; min-width:0 }
+.g14{ gap:14px } .g20{ gap:20px } .g24{ gap:24px } .g28{ gap:28px } .g36{ gap:36px }
+.ctr{ justify-content:center }
+.mt-auto{ margin-top:auto }
+.rule{ height:1px; background:var(--rule); width:100% }
+
+/* Photo frame — the image is taken out of flow so an intrinsic
+   square never becomes the flex/grid item.s minimum height. */
+.media{ position:relative; overflow:hidden; border-radius:var(--radius-lg);
+        min-height:0; min-width:0; background:var(--pg-3) }
+.media img{ position:absolute; inset:0; width:100%; height:100%;
+            object-fit:cover; display:block }
+
+/* ── Cards & atoms ────────────────────────────────────────────────── */
+.card{ background:var(--pg-2); border:1px solid var(--rule);
+       border-radius:var(--radius-lg); padding:28px 30px }
+.datum{ display:flex; flex-direction:column; gap:10px }
+.datum .v{ font-family:var(--font-body); font-size:56px; line-height:1;
+           color:var(--ink); letter-spacing:-.03em }
+.datum .k{ font-size:24px; line-height:1.45; color:var(--dim) }
+.chip{ display:inline-flex; align-items:center;
+       font-family:var(--font-body); font-size:21px; letter-spacing:.05em;
+       padding:8px 15px; border-radius:var(--radius-pill);
+       border:1px solid var(--rule); color:var(--dim) }
+.chips{ display:flex; flex-wrap:wrap; gap:11px }
+
+/* Question → answer row */
+.qa{ display:grid; grid-template-columns:1fr 1.1fr; gap:28px; align-items:baseline;
+     padding:18px 0; border-top:1px solid var(--rule) }
+.qa:last-child{ border-bottom:1px solid var(--rule) }
+.qa .q{ font-size:24px; line-height:1.4; color:var(--faint) }
+.qa .a{ font-size:26px; line-height:1.35; color:var(--ink); font-weight:500 }
+.qa.tight{ padding:12px 0 }
+.qa.oneup{ grid-template-columns:1fr; gap:6px }
+.qa.marker{ grid-template-columns:56px 1fr; gap:24px }
+.qa.marker .n{ font-family:var(--font-body); font-size:26px; color:var(--faint) }
+.qa.marker .a{ font-weight:400; font-size:25px; line-height:1.4 }
+
+/* Persona rows */
+.prow{ display:grid; grid-template-columns:250px 1fr 1fr; gap:36px; align-items:start;
+       padding:18px 0; border-top:1px solid var(--rule) }
+.prow:last-child{ border-bottom:1px solid var(--rule) }
+.prow .who{ font-family:var(--display-vi); font-size:31px; line-height:1.2; color:var(--ink) }
+.prow .who span{ display:block; font-family:var(--font-body); font-size:20px; line-height:1.6;
+                 letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-top:6px }
+.prow .pain{ font-size:24px; line-height:1.5; color:var(--dim) }
+.prow .need{ font-size:24px; line-height:1.5; color:var(--ink-2);
+             padding-left:30px; position:relative }
+.prow .need::before{ content:"→"; position:absolute; left:0; color:var(--faint) }
+
+/* Journey timeline · 6 columns of ~255px */
+.jn{ display:grid; grid-template-columns:repeat(6,1fr); width:100%; align-items:stretch }
+.jstep{ padding-right:22px; position:relative; display:flex; flex-direction:column; gap:16px }
+.jstep::before{ content:""; position:absolute; left:0; right:0; top:14px; height:1px;
+                background:var(--rule) }
+.jstep .dot{ width:13px; height:13px; border-radius:50%; background:var(--pg);
+             border:1px solid var(--ink-2); position:relative; z-index:1; margin-top:8px }
+.jstep.hot .dot{ background:var(--accent); border-color:var(--accent) }
+.jstep .t{ font-family:var(--font-body); font-size:20px; line-height:1.6;
+           letter-spacing:.1em; color:var(--faint) }
+.jstep .w{ font-size:24px; line-height:1.42; color:var(--ink) }
+.jstep .m{ font-size:22px; line-height:1.45; color:var(--dim);
+           padding-top:14px; border-top:1px solid var(--rule); margin-top:auto }
+
+/* Survey slider readout */
+.sld{ display:grid; gap:8px; padding:10px 0; border-top:1px solid var(--rule) }
+.sld.last{ border-bottom:1px solid var(--rule) }
+.sld .ends{ display:flex; justify-content:space-between; font-size:22px;
+            line-height:1.5; color:var(--faint) }
+.sld .ends b{ color:var(--ink-2); font-weight:500 }
+.sld .track{ position:relative; height:34px }
+.sld .track::before{ content:""; position:absolute; left:0; right:0; top:16px; height:2px;
+                     background:var(--rule) }
+.sld .pip{ position:absolute; top:13px; width:8px; height:8px; border-radius:50%;
+           background:var(--rule); transform:translateX(-50%) }
+.sld .knob{ position:absolute; top:0; left:calc((var(--v) - 1) / 4 * 100%);
+            transform:translateX(-50%); width:34px; height:34px;
+            border-radius:var(--radius-sm); background:var(--ink); color:var(--pg);
+            display:grid; place-items:center;
+            font-family:var(--font-body); font-size:19px; box-shadow:0 0 0 5px var(--pg) }
+
+/* Three-axis loop */
+.loop{ display:grid; grid-template-columns:1fr 88px 1fr 88px 1fr; align-items:stretch; width:100% }
+.axis{ background:var(--pg-2); border:1px solid var(--rule); border-radius:var(--radius-lg);
+       padding:28px 28px; display:flex; flex-direction:column; gap:14px }
+.axis .n{ font-family:var(--font-body); font-size:21px; line-height:1.6;
+          letter-spacing:.14em; color:var(--faint) }
+.axis .ti{ font-family:var(--display-vi); font-size:34px; line-height:1.15; color:var(--ink) }
+.axis .de{ font-size:23px; line-height:1.5; color:var(--dim) }
+.arrow{ display:flex; align-items:center; justify-content:center; color:var(--ink-2) }
+.arrow svg{ width:56px; height:20px }
+.loopback{ position:relative; height:58px }
+.loopback span{ position:absolute; left:50%; top:32px; transform:translateX(-50%);
+                background:var(--pg); padding:0 20px }
+
+/* Space-vs-project proof */
+.proj{ border:1px solid var(--rule); border-radius:var(--radius-lg); padding:26px;
+       background:var(--pg-2); display:flex; flex-direction:column; gap:20px }
+.proj .lb{ font-family:var(--font-body); font-size:21px; line-height:1.6;
+           letter-spacing:.12em; text-transform:uppercase; color:var(--faint) }
+.spaces{ display:grid; grid-template-columns:1fr 1fr; gap:20px }
+.space{ border-radius:var(--radius-md); overflow:hidden; background:var(--pg-3);
+        display:flex; flex-direction:column }
+.space img{ width:100%; height:220px; object-fit:cover; display:block }
+.space .cap{ padding:16px 18px; display:flex; flex-direction:column; gap:8px }
+.space .cap b{ font-size:24px; font-weight:500; color:var(--ink) }
+.space .cap span{ font-family:var(--font-body); font-size:20px; line-height:1.5;
+                  letter-spacing:.07em; color:var(--faint) }
+
+/* Module layers */
+.layer{ display:grid; grid-template-columns:220px 1fr; gap:32px; padding:20px 0;
+        border-top:1px solid var(--rule) }
+.layer.last{ border-bottom:1px solid var(--rule) }
+.layer .ph{ display:flex; flex-direction:column; gap:6px }
+.layer .ph b{ font-family:var(--display-vi); font-size:31px; font-weight:500; color:var(--ink) }
+.layer .ph span{ font-family:var(--font-body); font-size:20px; line-height:1.5;
+                 letter-spacing:.11em; text-transform:uppercase; color:var(--faint) }
+.mods{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px 22px }
+.mod{ display:grid; grid-template-columns:52px 1fr; gap:10px; align-items:baseline;
+      font-size:23px; line-height:1.4; color:var(--ink-2) }
+.mod i{ font-family:var(--font-body); font-size:20px; color:var(--faint); font-style:normal }
+.mod.key{ color:var(--ink) }
+.mod.key i{ color:var(--accent) }
+
+/* Website mockup · sans-serif inside, per survey Q20.
+   This is a browser rendered at reduced scale, so its UI text sits below
+   the deck's 24px prose floor on purpose. */
+.mock{ width:100%; border-radius:var(--radius-lg); overflow:hidden;
+       background:var(--pg-2); border:1px solid var(--rule);
+       display:flex; flex-direction:column; font-family:var(--font-body) }
+.mock .bar{ display:flex; align-items:center; gap:14px; padding:10px 18px;
+            border-bottom:1px solid var(--rule); background:var(--pg-3) }
+.mock .dots{ display:flex; gap:7px }
+.mock .dots i{ width:11px; height:11px; border-radius:50%; background:var(--rule) }
+.mock .url{ flex:1; font-family:var(--font-mono); font-size:20px; color:var(--dim);
+            background:var(--pg); border-radius:var(--radius-pill); padding:6px 18px;
+            border:1px solid var(--rule); white-space:nowrap; overflow:hidden }
+.mock .nav{ display:flex; align-items:center; gap:32px; padding:14px 24px;
+            border-bottom:1px solid var(--rule) }
+.mock .nav .brand{ font-family:var(--font-body); font-size:22px; letter-spacing:.24em;
+                   color:var(--ink); margin-right:12px }
+.mock .nav a{ font-size:21px; color:var(--dim); text-decoration:none }
+.mock .nav a.on{ color:var(--ink) }
+.mock .app{ display:grid; grid-template-columns:300px 1fr; flex:1; min-height:0 }
+.mock .facets{ border-right:1px solid var(--rule); padding:16px 18px;
+               display:flex; flex-direction:column; gap:12px; overflow:hidden }
+.facet .fl{ font-family:var(--font-body); font-size:17px; line-height:1.5;
+            letter-spacing:.11em; text-transform:uppercase; color:var(--faint); margin-bottom:6px }
+.facet .fo{ display:flex; flex-wrap:wrap; gap:6px }
+.facet .fo span{ font-size:18px; line-height:1.4; color:var(--dim);
+                 padding:2px 9px; border-radius:var(--radius-sm); border:1px solid transparent }
+.facet .fo span.on{ color:var(--accent-on); background:var(--accent); border-color:var(--accent) }
+.mock .results{ padding:18px 22px; display:flex; flex-direction:column; gap:14px; min-height:0 }
+.rhead{ display:flex; align-items:baseline; gap:14px }
+.rhead .cnt{ font-family:var(--font-body); font-size:24px; color:var(--ink) }
+.rhead .lbl{ font-size:20px; color:var(--faint) }
+.mosaic{ flex:1; display:grid; gap:11px; min-height:0;
+         grid-template-columns:repeat(4,minmax(0,1fr));
+         grid-template-rows:repeat(3,minmax(0,1fr)) }
+.mosaic figure{ overflow:hidden; border-radius:var(--radius-sm); background:var(--pg-3);
+                min-height:0; min-width:0 }
+.mosaic img{ width:100%; height:100%; object-fit:cover; display:block }
+.m-wide{ grid-column:span 2 }
+.m-big{ grid-row:span 2; grid-column:span 2 }
+
+/* Sitemap tree */
+.tn{ display:grid; grid-template-columns:auto 1fr; gap:20px; padding:10px 0;
+     border-top:1px solid var(--rule); align-items:baseline }
+.tn.last{ border-bottom:1px solid var(--rule) }
+.tn .lv{ font-family:var(--font-mono); font-size:20px; color:var(--faint); white-space:nowrap }
+.tn .tx{ font-size:24px; line-height:1.4; color:var(--ink) }
+.tn .tx small{ display:block; font-size:21px; line-height:1.45; color:var(--dim); margin-top:6px }
+.tn.d2{ padding-left:42px } .tn.d3{ padding-left:92px }
+.tn.d3 .tx{ color:var(--ink-2) }
+
+/* Full-bleed photographic slides */
+.slide.bleed{ padding:0 }
+.bleed .art{ position:absolute; inset:0; overflow:hidden }
+.bleed .art img{ width:100%; height:100%; object-fit:cover; display:block }
+.bleed .scrim{ position:absolute; inset:0;
+  background:linear-gradient(76deg,
+    color-mix(in oklab, var(--fg) 93%, transparent) 0%,
+    color-mix(in oklab, var(--fg) 76%, transparent) 48%,
+    color-mix(in oklab, var(--fg) 26%, transparent) 100%) }
+.bleed .inner{ position:absolute; inset:0; padding:88px 128px;
+               display:flex; flex-direction:column; justify-content:center }
+
+/* Studio mark — monoline redraw in the spirit of the D3 mark */
+.mark{ width:92px; height:92px; color:var(--ink); flex:none }
+.mark svg{ width:100%; height:100% }
+.wordmark{ font-family:var(--font-body); font-size:26px; letter-spacing:.42em;
+           text-transform:uppercase; color:var(--ink) }
+
+/* Honest caveats */
+.note{ display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start;
+       font-size:23px; line-height:1.5; color:var(--faint);
+       padding-top:18px; border-top:1px solid var(--rule) }
+.note b{ font-family:var(--font-body); font-size:20px; line-height:1.5; letter-spacing:.11em;
+         text-transform:uppercase; color:var(--faint); white-space:nowrap }
+.strike{ display:flex; flex-wrap:wrap; gap:10px 16px }
+.strike s{ font-size:23px; line-height:1.5; color:var(--dim);
+           text-decoration-color:var(--faint) }
+.sw{ display:flex; align-items:center; gap:14px; margin-top:10px }
+.sw i{ width:40px; height:40px; border-radius:var(--radius-sm); flex:none;
+       border:1px solid var(--rule) }
+.sw .a{ background:var(--accent); border-color:var(--accent) }
+.sw .b{ background:var(--fg) }
+.sw span{ font-family:var(--font-body); font-size:21px; color:var(--dim) }
+
+/* Slide footer + chapter tick strip */
+.foot{ position:absolute; left:128px; right:128px; bottom:36px;
+       display:flex; justify-content:space-between; align-items:center;
+       font-family:var(--font-body); font-size:20px; letter-spacing:.12em;
+       text-transform:uppercase; color:var(--faint); pointer-events:none }
+.ticks{ position:absolute; right:50px; top:50%; transform:translateY(-50%);
+        display:flex; flex-direction:column; gap:13px; pointer-events:none }
+.ticks i{ display:block; width:2px; height:26px; background:var(--ink); opacity:.15 }
+.ticks i.on{ opacity:1; background:var(--accent) }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOTION · two transition intensities + auto-playing element builds.
+   Aperture (strong) is reserved for the six chapter-opening slides.
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes ap-in{
+  0%  { clip-path:inset(46.5% 0 46.5% 0); opacity:.15; transform:scale(1.10); filter:blur(12px) }
+  55% { opacity:1 }
+  100%{ clip-path:inset(0 0 0 0); opacity:1; transform:scale(1); filter:blur(0) }
+}
+@keyframes ap-out{
+  from{ opacity:1; transform:scale(1); filter:blur(0) }
+  to  { opacity:0; transform:scale(1.04); filter:blur(9px) }
+}
+@keyframes dr-in{
+  from{ opacity:0; transform:translateY(34px) scale(1.035); filter:blur(7px) }
+  to  { opacity:1; transform:translateY(0) scale(1); filter:blur(0) }
+}
+@keyframes dr-out{
+  from{ opacity:1; transform:translateY(0) scale(1) }
+  to  { opacity:0; transform:translateY(-26px) scale(.966); filter:blur(5px) }
+}
+.slide.in-ap { animation:ap-in  1000ms var(--ease-out) both }
+.slide.out-ap{ animation:ap-out  620ms cubic-bezier(.5,0,.75,0) both }
+.slide.in-dr { animation:dr-in   760ms var(--ease-out) both }
+.slide.out-dr{ animation:dr-out  520ms cubic-bezier(.5,0,.75,0) both }
+
+.slide [data-anim]{ opacity:0 }
+.slide.active [data-anim]{
+  animation:b-up 720ms var(--ease-out) both;
+  animation-delay:calc(var(--d, 0) * 105ms + 300ms);
+}
+.slide.active[data-enter="strong"] [data-anim]{
+  animation-delay:calc(var(--d, 0) * 105ms + 460ms);
+}
+.slide.active [data-anim="in"]  { animation-name:b-in }
+.slide.active [data-anim="left"]{ animation-name:b-left }
+.slide.active [data-anim="rise"]{ animation-name:b-rise }
+.slide.active [data-anim="mask"]{ animation-name:b-mask }
+.slide.active [data-anim="wipe"]{ animation-name:b-wipe }
+
+@keyframes b-up  { from{ opacity:0; transform:translateY(26px) } to{ opacity:1; transform:none } }
+@keyframes b-in  { from{ opacity:0 } to{ opacity:1 } }
+@keyframes b-left{ from{ opacity:0; transform:translateX(-30px) } to{ opacity:1; transform:none } }
+@keyframes b-rise{ from{ opacity:0; transform:translateY(50px) scale(.972) } to{ opacity:1; transform:none } }
+@keyframes b-mask{ from{ opacity:1; clip-path:inset(0 100% 0 0) } to{ opacity:1; clip-path:inset(0 0 0 0) } }
+@keyframes b-wipe{ from{ opacity:0; transform:scale(1.05); clip-path:inset(0 0 100% 0) }
+                   to  { opacity:1; transform:scale(1);    clip-path:inset(0 0 0 0) } }
+
+/* The one decisive flourish: a 26-second Ken Burns on the two photo slides */
+.slide.active .kb{ animation:kb 26s cubic-bezier(.2,0,.3,1) both }
+@keyframes kb{ from{ transform:scale(1) translate3d(0,0,0) }
+               to  { transform:scale(1.09) translate3d(-1.5%,-1%,0) } }
+
+/* ── Presenter chrome ─────────────────────────────────────────────── */
+#chrome{ position:fixed; left:0; right:0; bottom:0; z-index:40; pointer-events:none }
+#bar{ height:3px; background:color-mix(in oklab, var(--surface) 16%, transparent) }
+#barfill{ height:100%; width:0; background:var(--accent);
+          transition:width 520ms var(--ease-standard) }
+#hud{ position:fixed; right:26px; bottom:22px; z-index:41;
+      display:flex; align-items:baseline; gap:16px;
+      font-family:var(--font-body); font-size:15px; letter-spacing:.14em;
+      text-transform:uppercase;
+      color:color-mix(in oklab, var(--surface) 60%, transparent);
+      background:color-mix(in oklab, var(--fg) 78%, transparent);
+      backdrop-filter:blur(8px); padding:10px 18px; border-radius:var(--radius-pill);
+      pointer-events:none }
+#hud .ct{ color:var(--surface); font-size:17px }
+#zones{ position:fixed; inset:0; z-index:30; display:flex }
+#zones button{ flex:1; border:0; background:transparent; cursor:pointer }
+#zones button:first-child{ flex:0 0 22% }
+
+#overview{ position:fixed; inset:0; z-index:60; display:none;
+           background:color-mix(in oklab, var(--fg) 96%, transparent);
+           backdrop-filter:blur(12px); padding:6vh 6vw;
+           grid-template-columns:repeat(2,1fr); gap:0 44px; align-content:start;
+           overflow:auto; font-family:var(--font-body) }
+#overview.on{ display:grid }
+#overview h5{ grid-column:1/-1; font-family:var(--font-body); font-size:14px;
+              letter-spacing:.2em; text-transform:uppercase; color:var(--meta);
+              font-weight:400; margin-bottom:18px }
+#overview button{ display:grid; grid-template-columns:44px 1fr auto; gap:16px;
+                  align-items:baseline; background:transparent; cursor:pointer;
+                  border:0; border-top:1px solid color-mix(in oklab, var(--surface) 14%, transparent);
+                  padding:13px 4px; text-align:left; color:var(--surface-warm);
+                  font-family:inherit; font-size:17px }
+#overview button:hover{ color:var(--surface) }
+#overview button .n{ font-family:var(--font-body); font-size:15px; color:var(--meta) }
+#overview button .s{ font-family:var(--font-body); font-size:14px; letter-spacing:.12em;
+                     text-transform:uppercase; color:var(--meta) }
+#overview button[aria-current="true"],
+#overview button[aria-current="true"] .n{ color:var(--accent) }
+
+@media (prefers-reduced-motion: reduce){
+  .slide, .slide *{ animation-duration:1ms !important; animation-delay:0ms !important }
+  #barfill{ transition:none }
+}
+@media print{
+  @page{ size:1920px 1080px; margin:0 }
+  html,body{ overflow:visible }
+  #chrome,#hud,#zones,#overview{ display:none !important }
+  #deck{ position:static; width:1920px; height:auto; transform:none }
+  .slide{ position:relative; inset:auto; width:1920px; height:1080px;
+          opacity:1 !important; visibility:visible !important; break-after:page }
+  .slide [data-anim]{ opacity:1 !important; animation:none !important }
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+<div id="deck">
+
+<!-- ══ 01 · BÌA ══════════════════════════════════════════════════════ -->
+<section class="slide dark bleed" data-od-id="slide-title" data-enter="strong"
+         data-screen-label="01 Bìa" data-title="Website Portfolio Thiết kế Nội thất tích hợp AI">
+  <div class="art">
+    <img class="kb" src="pic_slides/pic6.jpg" alt="Sảnh thông tầng một công trình villa do D3 Studio thiết kế">
+  </div>
+  <div class="scrim"></div>
+  <div class="inner">
+    <div class="mark" data-anim="in" style="--d:0">
+      <svg viewBox="0 0 128 128" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square">
+        <path d="M28 32 H60 a20 20 0 0 1 0 40 H28 Z"/>
+        <path d="M28 58 H60 a20 20 0 0 1 0 40 H28 Z"/>
+        <path d="M54 20 H72 a26 26 0 0 1 0 52"/>
+        <path d="M54 108 H72 a26 26 0 0 0 0 -52"/>
+      </svg>
+    </div>
+    <div class="wordmark" data-anim style="--d:1; margin-top:24px">D3 Studio</div>
+    <h1 data-anim="rise" style="--d:2; font-size:96px; line-height:1.06; letter-spacing:-.015em; max-width:19ch; margin-top:34px">
+      Website Portfolio Thiết kế Nội thất tích hợp AI
+    </h1>
+    <p class="statement" data-anim style="--d:3; font-size:34px; color:var(--ink-2); max-width:36ch; margin-top:26px">
+      Tài liệu phân tích yêu cầu · Business Analysis Document v1.0
+    </p>
+    <div class="meta" data-anim style="--d:4; margin-top:42px; display:flex; gap:34px; flex-wrap:wrap">
+      <span>PRJ1-INTERIOR-WEB</span><span>Người lập: Tuấn</span><span class="num">27 / 08 / 2026</span>
+    </div>
+  </div>
+  <div class="foot">
+    <span>← → chuyển slide · O danh sách · F toàn màn hình</span>
+    <span>Trình bày 10–12 phút</span>
+  </div>
+</section>
+
+<!-- ══ 02 · BỐI CẢNH ═════════════════════════════════════════════════ -->
+<section class="slide" data-od-id="slide-context" data-enter="strong"
+         data-section="Bối cảnh" data-sec-i="1" data-sec-n="2"
+         data-screen-label="02 Bối cảnh" data-title="Bối cảnh">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 01 · §1.1</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Bối cảnh</h2>
+  </div>
+  <div class="canvas">
+    <div class="cols c-58">
+      <div class="stack g36">
+        <p class="statement" data-anim style="--d:2">
+          D3 Studio thiết kế – thi công nội thất. Tài sản giá trị nhất là thư viện ảnh công trình.
+        </p>
+        <div class="cols c-2" style="gap:30px">
+          <div class="datum" data-anim style="--d:3">
+            <span class="v">50–100</span>
+            <span class="k">công trình đã hoàn thành, có ảnh dùng được để đăng</span>
+          </div>
+          <div class="datum" data-anim style="--d:4">
+            <span class="v">10–15</span>
+            <span class="k">ảnh chọn lọc muốn đăng cho mỗi công trình</span>
+          </div>
+          <div class="datum" data-anim style="--d:5">
+            <span class="v">14</span>
+            <span class="k">phong cách D3 có làm, từ Wabi-sabi tới Tân cổ điển</span>
+          </div>
+          <div class="datum" data-anim style="--d:6">
+            <span class="v">3</span>
+            <span class="k">nơi ảnh đang nằm rải rác: Facebook, Behance, máy cá nhân</span>
+          </div>
+        </div>
+        <div class="note mt-auto" data-anim style="--d:7">
+          <b>Nguồn</b>
+          <span>Khảo sát chủ doanh nghiệp D3, câu 1–3 và 12 · 27/08/2026. Số công trình và số ảnh là khoảng do khách hàng tự khai.</span>
+        </div>
+      </div>
+      <div class="stack g20">
+        <figure class="media" data-anim="wipe" style="--d:3; flex:1.45">
+          <img src="pic_slides/pic1.jpg" alt="Phòng ngủ và tủ áo kính của một căn hộ do D3 Studio thiết kế">
+        </figure>
+        <div class="cols c-2" style="flex:1; gap:20px">
+          <figure class="media" data-anim="wipe" style="--d:5">
+            <img src="pic_slides/pic9.jpg" alt="Góc phòng ngủ Indochine với tranh áo dài và bình gốm hoa lam">
+          </figure>
+          <figure class="media" data-anim="wipe" style="--d:6">
+            <img src="pic_slides/pic3.jpg" alt="Bàn trang điểm trên nền tường xanh ô liu, sàn gỗ xương cá">
+          </figure>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>D3 Studio · PRJ1-INTERIOR-WEB</span><span>Bối cảnh</span></div>
+</section>
+
+<!-- ══ 03 · BỐI CẢNH · Hai trang tham chiếu ══════════════════════════ -->
+<section class="slide" data-od-id="slide-benchmark" data-enter="soft"
+         data-section="Bối cảnh" data-sec-i="2" data-sec-n="2"
+         data-screen-label="03 Hai trang tham chiếu" data-title="Hai trang tham chiếu">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 01 · §1.2 Đối sánh</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Bối cảnh</h2>
+    <div class="sublabel" data-anim style="--d:2">Hai trang tham chiếu do khách hàng đưa</div>
+  </div>
+  <div class="canvas">
+    <div class="cols c-2">
+      <div class="card stack g20" data-anim="rise" style="--d:3">
+        <div>
+          <div class="meta">Chuẩn thẩm mỹ</div>
+          <h3 style="font-size:36px; margin-top:8px">Elemental Studio</h3>
+          <div class="meta" style="margin-top:6px; text-transform:none; letter-spacing:.04em">elemental.com.vn</div>
+        </div>
+        <div class="rule"></div>
+        <p class="small"><strong>Bộ lọc một chiều.</strong> Bốn nhãn dẫn sang bốn trang khác nhau. Không lọc được theo phòng, phong cách, vật liệu hay diện tích.</p>
+        <p class="small"><strong>Trang chi tiết mỏng.</strong> Gần như chỉ là chuỗi ảnh, tiêu đề, nút share và một đoạn mô tả.</p>
+        <p class="small"><strong>Tên dự án vô nghĩa với người tìm kiếm.</strong> “project no.08 The Fauvisim” — thẩm mỹ cao, nhưng không ai gõ như thế vào Google.</p>
+        <p class="small" style="color:var(--faint)">Nền tảng WordPress + WPBakery: khó mở rộng nghiệp vụ, khó gắn tracking hay AI.</p>
+      </div>
+      <div class="card stack g20" data-anim="rise" style="--d:4">
+        <div>
+          <div class="meta">Đối thủ mạnh SEO</div>
+          <h3 style="font-size:36px; margin-top:8px">Nội Thất Sao Kim</h3>
+          <div class="meta" style="margin-top:6px; text-transform:none; letter-spacing:.04em">noithatsaokim.vn</div>
+        </div>
+        <div class="rule"></div>
+        <p class="small"><strong>Phân loại hai chiều.</strong> Loại công trình (chung cư · biệt thự · nhà phố) nhân với loại phòng (khách · bếp · ngủ · trẻ em).</p>
+        <p class="small"><strong>Phong cách chỉ nằm trong tiêu đề bài viết.</strong> Là chữ trong tiêu đề, không phải thuộc tính lọc được.</p>
+        <p class="small"><strong>Hệ quả.</strong> Khách muốn tìm <em>“phòng khách chung cư Wabi-sabi tông gỗ sáng dưới 800 triệu”</em> thì không có cách nào ngoài đọc thủ công từng bài.</p>
+        <p class="small" style="color:var(--faint)">Nguyên văn yêu cầu của khách: “anh chỉ muốn nó tìm được theo danh mục… muốn chia kĩ hơn, ví dụ phòng khách – phong cách gì”.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <span>Ba trang khách tự dán: elemental.com.vn · ahl.vn/du-an · kimfurniture.com</span>
+    <span>Bối cảnh</span>
+  </div>
+</section>
+
+<!-- ══ 04 · VẤN ĐỀ ═══════════════════════════════════════════════════ -->
+<section class="slide dark" data-od-id="slide-problem" data-enter="strong"
+         data-section="Vấn đề" data-sec-i="1" data-sec-n="2"
+         data-screen-label="04 Vấn đề" data-title="Vấn đề">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 02 · §1.3 Phát biểu vấn đề</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Vấn đề</h2>
+  </div>
+  <div class="canvas">
+    <div class="cols c-46">
+      <p class="statement" data-anim style="--d:2; max-width:20ch">
+        Thư viện thiết kế của công ty là dữ liệu <em>phi cấu trúc</em> — ảnh cộng văn bản mô tả tự do.
+      </p>
+      <div class="stack g28 ctr">
+        <p class="lead" data-anim style="--d:3">Vì không được cấu trúc hóa, nó không thể:</p>
+        <div class="stack">
+          <div class="qa marker" data-anim style="--d:4">
+            <span class="n">a</span>
+            <span class="a">tìm kiếm và lọc theo đúng cách khách hàng suy nghĩ</span>
+          </div>
+          <div class="qa marker" data-anim style="--d:5">
+            <span class="n">b</span>
+            <span class="a">cho công ty biết khách hàng đang thực sự thích cái gì</span>
+          </div>
+          <div class="qa marker" data-anim style="--d:6">
+            <span class="n">c</span>
+            <span class="a">được máy đọc để tự động tư vấn và gợi ý</span>
+          </div>
+        </div>
+        <div class="note" data-anim style="--d:7">
+          <b>Hệ quả</b>
+          <span>Đội kinh doanh phải tự xác nhận yêu cầu của khách qua tin nhắn Zalo trên nhiều nền tảng. Ban lãnh đạo ra quyết định về xu hướng thị trường dựa trên cảm tính.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>D3 Studio · PRJ1-INTERIOR-WEB</span><span>Vấn đề</span></div>
+</section>
+
+<!-- ══ 05 · VẤN ĐỀ · Ba trục ═════════════════════════════════════════ -->
+<section class="slide dark" data-od-id="slide-three-axes" data-enter="soft"
+         data-section="Vấn đề" data-sec-i="2" data-sec-n="2"
+         data-screen-label="05 Ba trục" data-title="Ba trục khóa vào nhau">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 02 · §1.4 Định vị lại quy mô</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Vấn đề</h2>
+    <div class="sublabel" data-anim style="--d:2">Ba trục khóa vào nhau thành một vòng lặp khép kín</div>
+  </div>
+  <div class="canvas">
+    <div class="stack g36" style="width:100%">
+      <div class="loop">
+        <div class="axis" data-anim="rise" style="--d:3">
+          <span class="n">TRỤC 01</span>
+          <span class="ti">Cấu trúc hóa dữ liệu</span>
+          <span class="de">Phân loại đa chiều ở cấp không gian, cộng auto-tagging AI để nhãn không bị bỏ trống.</span>
+        </div>
+        <div class="arrow" data-anim="in" style="--d:4">
+          <svg viewBox="0 0 56 20" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M0 10 H48"/><path d="M41 4 L48 10 L41 16"/>
+          </svg>
+        </div>
+        <div class="axis" data-anim="rise" style="--d:5">
+          <span class="n">TRỤC 02</span>
+          <span class="ti">Khai thác nghiệp vụ</span>
+          <span class="de">Tìm kiếm theo tổ hợp facet, gợi ý “không gian tương tự”, chatbot tư vấn có dẫn nguồn.</span>
+        </div>
+        <div class="arrow" data-anim="in" style="--d:6">
+          <svg viewBox="0 0 56 20" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M0 10 H48"/><path d="M41 4 L48 10 L41 16"/>
+          </svg>
+        </div>
+        <div class="axis" data-anim="rise" style="--d:7">
+          <span class="n">TRỤC 03</span>
+          <span class="ti">Vòng lặp phản hồi</span>
+          <span class="de">Tracking hành vi khách hàng, phân tích xu hướng, rồi quay lại nuôi trục 1 và trục 2.</span>
+        </div>
+      </div>
+      <div class="loopback" data-anim="mask" style="--d:8">
+        <svg viewBox="0 0 1664 58" fill="none" stroke="var(--accent)" stroke-width="1.5"
+             preserveAspectRatio="none" style="width:100%; height:100%">
+          <path d="M1568 2 V36 Q1568 52 1552 52 H112 Q96 52 96 36 V2"/>
+          <path d="M89 12 L96 2 L103 12"/>
+        </svg>
+        <span class="meta">Dữ liệu quay lại nuôi trục 1 và 2</span>
+      </div>
+      <div class="cols c-2">
+        <p class="body" data-anim style="--d:9">
+          Đừng coi website là một <strong>quyển catalogue</strong> — in ra là xong, ai xem cũng như nhau. Hãy coi nó là một <strong>cửa hàng có nhân viên bán hàng</strong>: biết xếp hàng trên kệ, biết tư vấn “anh thích bộ sofa này thì em có mấy mẫu tương tự”, và cuối ngày biết báo cáo lại cho giám đốc.
+        </p>
+        <p class="statement" data-anim style="--d:10; font-size:34px; max-width:27ch">
+          Website không chỉ là kênh trưng bày mà là một cảm biến thu thập dữ liệu thị hiếu thiết kế.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>D3 Studio · PRJ1-INTERIOR-WEB</span><span>Vấn đề</span></div>
+</section>
+
+<!-- ══ 06 · KHẢO SÁT ═════════════════════════════════════════════════ -->
+<section class="slide" data-od-id="slide-survey-ops" data-enter="strong"
+         data-section="Khảo sát" data-sec-i="1" data-sec-n="2"
+         data-screen-label="06 Khảo sát" data-title="Khảo sát">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 03 · §4.1 Bảng hỏi trực tuyến</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Khảo sát</h2>
+  </div>
+  <div class="canvas">
+    <div class="cols c-64">
+      <div class="stack ctr">
+        <div class="qa" data-anim style="--d:3">
+          <span class="q">Ảnh dự án đang nằm ở đâu?</span>
+          <span class="a">Mỗi người trong đội tự giữ phần của mình</span>
+        </div>
+        <div class="qa" data-anim style="--d:4">
+          <span class="q">Đã có sẵn đoạn mô tả cho từng công trình chưa?</span>
+          <span class="a">Chưa có, phải viết mới</span>
+        </div>
+        <div class="qa" data-anim style="--d:5">
+          <span class="q">Một công trình thường mang mấy phong cách?</span>
+          <span class="a">Ghép nhiều, không cố định</span>
+        </div>
+        <div class="qa" data-anim style="--d:6">
+          <span class="q">Không gian thương mại xử lý thế nào?</span>
+          <span class="a">Tách hẳn hai khu: Nhà ở và Thương mại</span>
+        </div>
+        <div class="qa" data-anim style="--d:7">
+          <span class="q">Website mới đứng ở đâu so với Behance?</span>
+          <span class="a">Thay thế — website là nơi trưng bày chính</span>
+        </div>
+        <div class="qa" data-anim style="--d:8">
+          <span class="q">Sau khi bàn giao, ai đăng công trình mới lên?</span>
+          <span class="a">Nhân viên marketing</span>
+        </div>
+      </div>
+      <div class="stack g24 ctr">
+        <div class="card stack g14" data-anim="rise" style="--d:2">
+          <div class="meta">Mẫu khảo sát</div>
+          <div class="datum">
+            <span class="v" style="font-size:40px">40 câu · 1 phản hồi</span>
+            <span class="k">Chủ doanh nghiệp D3 (SH-01) · 27/08/2026</span>
+          </div>
+          <div class="rule"></div>
+          <p class="small" style="color:var(--faint)">
+            Khảo sát khách hàng cuối theo §4.1 — mẫu tối thiểu 80 người — <strong>chưa thực hiện</strong>. Số liệu ở đây là lời khai của bên đặt hàng.
+          </p>
+        </div>
+        <div class="card stack g14" data-anim="rise" style="--d:9">
+          <div class="meta">Tuyệt đối không đưa lên website</div>
+          <div class="strike">
+            <s>Bản vẽ kỹ thuật</s><s>Tên chủ nhà</s><s>Địa chỉ công trình</s>
+            <s>Nhà cung cấp vật tư</s><s>Đối tác thi công</s>
+          </div>
+          <div class="rule"></div>
+          <p class="small">Ảnh đăng lên <strong>đóng dấu tên D3 rõ</strong> — như dấu chìm đã có trên các ảnh trong deck này.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Nguồn: Website D3 Studio (Câu trả lời).xlsx</span><span>Khảo sát</span></div>
+</section>
+
+<!-- ══ 07 · KHẢO SÁT · Hướng thị giác ════════════════════════════════ -->
+<section class="slide" data-od-id="slide-survey-visual" data-enter="soft"
+         data-section="Khảo sát" data-sec-i="2" data-sec-n="2"
+         data-screen-label="07 Hướng thị giác" data-title="Hướng thị giác đã chốt">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 03 · Câu 18–22</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Khảo sát</h2>
+    <div class="sublabel" data-anim style="--d:2">Hướng thị giác khách hàng đã tự chốt</div>
+  </div>
+  <div class="canvas">
+    <div class="cols c-58">
+      <div class="stack ctr">
+        <div class="sld" data-anim style="--d:3">
+          <div class="ends"><b>Ấm cúng</b><span>Lạnh, sắc nét</span></div>
+          <div class="track">
+            <span class="pip" style="left:0"></span><span class="pip" style="left:25%"></span>
+            <span class="pip" style="left:50%"></span><span class="pip" style="left:75%"></span>
+            <span class="pip" style="left:100%"></span><span class="knob" style="--v:2">2</span>
+          </div>
+        </div>
+        <div class="sld" data-anim style="--d:4">
+          <div class="ends"><span>Sang trọng, đắt tiền</span><b>Gần gũi, dễ tiếp cận</b></div>
+          <div class="track">
+            <span class="pip" style="left:0"></span><span class="pip" style="left:25%"></span>
+            <span class="pip" style="left:50%"></span><span class="pip" style="left:75%"></span>
+            <span class="pip" style="left:100%"></span><span class="knob" style="--v:4">4</span>
+          </div>
+        </div>
+        <div class="sld" data-anim style="--d:5">
+          <div class="ends"><b>Tối giản, ít chi tiết</b><span>Phong phú, nhiều chi tiết</span></div>
+          <div class="track">
+            <span class="pip" style="left:0"></span><span class="pip" style="left:25%"></span>
+            <span class="pip" style="left:50%"></span><span class="pip" style="left:75%"></span>
+            <span class="pip" style="left:100%"></span><span class="knob" style="--v:1">1</span>
+          </div>
+        </div>
+        <div class="sld" data-anim style="--d:6">
+          <div class="ends"><span>Trầm, tĩnh</span><span>Nổi bật, gây chú ý</span></div>
+          <div class="track">
+            <span class="pip" style="left:0"></span><span class="pip" style="left:25%"></span>
+            <span class="pip" style="left:50%"></span><span class="pip" style="left:75%"></span>
+            <span class="pip" style="left:100%"></span><span class="knob" style="--v:3">3</span>
+          </div>
+        </div>
+        <div class="sld" data-anim style="--d:7">
+          <div class="ends"><span>Cổ điển</span><b>Hiện đại</b></div>
+          <div class="track">
+            <span class="pip" style="left:0"></span><span class="pip" style="left:25%"></span>
+            <span class="pip" style="left:50%"></span><span class="pip" style="left:75%"></span>
+            <span class="pip" style="left:100%"></span><span class="knob" style="--v:5">5</span>
+          </div>
+        </div>
+        <div class="sld last" data-anim style="--d:8">
+          <div class="ends"><span>Nghệ thuật, tự do</span><b>Ngăn nắp, hệ thống</b></div>
+          <div class="track">
+            <span class="pip" style="left:0"></span><span class="pip" style="left:25%"></span>
+            <span class="pip" style="left:50%"></span><span class="pip" style="left:75%"></span>
+            <span class="pip" style="left:100%"></span><span class="knob" style="--v:5">5</span>
+          </div>
+        </div>
+        <div class="note" data-anim style="--d:9">
+          <b>Đọc ra</b>
+          <span>Tối giản tuyệt đối, hiện đại tuyệt đối, có hệ thống tuyệt đối — nhưng ấm và gần gũi. Đúng là một trang portfolio để ảnh nói.</span>
+        </div>
+      </div>
+      <div class="stack g24 ctr">
+        <div class="card stack" data-anim="rise" style="--d:4">
+          <div class="meta" style="margin-bottom:6px">Bốn quyết định đã chốt</div>
+          <div class="qa tight oneup">
+            <span class="q">Nền trang web</span><span class="a">Tối gần đen</span>
+          </div>
+          <div class="qa tight oneup">
+            <span class="q">Màu nhấn — nút, link, thẻ lọc đang chọn</span>
+            <span class="a">Nâu gỗ hoặc terracotta</span>
+            <div class="sw"><i class="a"></i><i class="b"></i><span>#c96442 · #141413</span></div>
+          </div>
+          <div class="qa tight oneup">
+            <span class="q">Kiểu chữ</span><span class="a">Chữ không chân — hiện đại, sạch sẽ</span>
+          </div>
+          <div class="qa tight oneup">
+            <span class="q">Mật độ chữ trên trang sản phẩm</span>
+            <span class="a">Đoạn văn dài xen giữa ảnh, như bài tạp chí</span>
+          </div>
+        </div>
+        <div class="note" data-anim style="--d:9">
+          <b>Câu 30</b>
+          <span>Chuyển động trên website: “không cần, vào là hiện luôn”. Ràng buộc này chỉ áp cho website.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Nguồn: Website D3 Studio (Câu trả lời).xlsx · câu 18–22, 30</span><span>Khảo sát</span></div>
+</section>
+
+<!-- ══ 08 · NGƯỜI DÙNG ═══════════════════════════════════════════════ -->
+<section class="slide dark" data-od-id="slide-personas" data-enter="strong"
+         data-section="Người dùng" data-sec-i="1" data-sec-n="2"
+         data-screen-label="08 Người dùng" data-title="Người dùng">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 04 · §3.3 Chân dung người dùng</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Người dùng</h2>
+  </div>
+  <div class="canvas">
+    <div class="stack ctr" style="width:100%">
+      <div class="prow" data-anim style="--d:2">
+        <div class="who">Chị Linh, 32<span>P1 · Mua căn hộ đầu tiên</span></div>
+        <div class="pain">Lưu 200 ảnh Pinterest nhưng không gọi tên được phong cách mình thích — chỉ biết “kiểu ấm ấm, nhiều gỗ, sáng sủa”. Sợ bị hớ giá. Duyệt web bằng điện thoại lúc 22h–24h.</div>
+        <div class="need">Lọc theo cảm giác và hình ảnh chứ không theo thuật ngữ; tham chiếu chi phí; xem dự án cùng tòa nhà.</div>
+      </div>
+      <div class="prow" data-anim style="--d:3">
+        <div class="who">Anh Dũng, 45<span>P2 · Chủ biệt thự</span></div>
+        <div class="pain">Quan tâm năng lực thực thi: ảnh thi công thực tế có giống concept không, vật liệu dùng hãng nào.</div>
+        <div class="need">Đối chiếu concept ↔ thực tế; hồ sơ năng lực; chi tiết vật liệu.</div>
+      </div>
+      <div class="prow" data-anim style="--d:4">
+        <div class="who">Bạn Mai, 26<span>P3 · KTS của công ty</span></div>
+        <div class="pain">Mỗi tuần xuất 40–60 ảnh render. Đăng bài bằng cách kéo ảnh vào WordPress và gõ tay tiêu đề. Ghét gắn tag thủ công nên thường bỏ qua, khiến dữ liệu thiếu.</div>
+        <div class="need">Upload hàng loạt; AI gợi ý tag sẵn; chỉ cần bấm xác nhận.</div>
+      </div>
+      <div class="prow" data-anim style="--d:5">
+        <div class="who">Anh Sơn, 30<span>P4 · Nhân viên tư vấn</span></div>
+        <div class="pain">Ngày chat 20–30 khách qua Zalo và Messenger. Câu hỏi lặp lại: “báo giá chung cư 70m2?”, “có mẫu Indochine không?”, “làm bao lâu xong?”.</div>
+        <div class="need">Chatbot gánh vòng hỏi đầu; tra ảnh mẫu bằng bộ lọc trong 10 giây; biết khách đã xem gì.</div>
+      </div>
+      <div class="prow" data-anim style="--d:6">
+        <div class="who">Chị Hà, 38<span>P5 · Giám đốc</span></div>
+        <div class="pain">Cần biết tháng này khách hỏi nhiều về phong cách nào để phân bổ nhân sự thiết kế và đặt bài marketing.</div>
+        <div class="need">Dashboard xu hướng; báo cáo tự động hàng tuần.</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Năm chân dung này là đầu vào cho User story ở tài liệu 03</span><span>Người dùng</span></div>
+</section>
+
+<!-- ══ 09 · NGƯỜI DÙNG · Hành trình ══════════════════════════════════ -->
+<section class="slide dark" data-od-id="slide-journey" data-enter="soft"
+         data-section="Người dùng" data-sec-i="2" data-sec-n="2"
+         data-screen-label="09 Hành trình" data-title="Hành trình chị Linh">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 04 · Hành trình P1</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Người dùng</h2>
+    <div class="sublabel" data-anim style="--d:2">Hành trình chị Linh — 22h, trên điện thoại</div>
+  </div>
+  <div class="canvas">
+    <div class="jn">
+      <div class="jstep hot" data-anim="rise" style="--d:3">
+        <span class="dot"></span>
+        <span class="t">01 · 22H15</span>
+        <span class="w">Lưu tới ảnh thứ 200 trên Pinterest mà vẫn không gọi được tên phong cách.</span>
+        <span class="m">M1 · Lọc theo hình ảnh và cảm giác, không bắt khách biết thuật ngữ</span>
+      </div>
+      <div class="jstep" data-anim="rise" style="--d:4">
+        <span class="dot"></span>
+        <span class="t">02 · 22H31</span>
+        <span class="w">Gõ Google “thiết kế chung cư 70m2 tông ấm”. Kết quả toàn bài viết dài.</span>
+        <span class="m">M1 · Mỗi tổ hợp facet phổ biến có URL riêng để tìm thấy được</span>
+      </div>
+      <div class="jstep" data-anim="rise" style="--d:5">
+        <span class="dot"></span>
+        <span class="t">03 · 22H40</span>
+        <span class="w">Chồng bộ lọc: Chung cư × Phòng ngủ × Tông ấm × Indochine.</span>
+        <span class="m">M1 · Kết hợp nhiều điều kiện, số kết quả cập nhật thời gian thực</span>
+      </div>
+      <div class="jstep" data-anim="rise" style="--d:6">
+        <span class="dot"></span>
+        <span class="t">04 · 22H52</span>
+        <span class="w">Mở một không gian, bấm vào chiếc sofa trong ảnh vì thích đúng kiểu đó.</span>
+        <span class="m">M7 hotspot trên ảnh · M3 gợi ý không gian khác dùng sofa tương tự</span>
+      </div>
+      <div class="jstep" data-anim="rise" style="--d:7">
+        <span class="dot"></span>
+        <span class="t">05 · 23H10</span>
+        <span class="w">Hỏi trợ lý: “căn 70m2 làm bao lâu, tầm bao nhiêu?”</span>
+        <span class="m">M4 · RAG trả lời từ kho tri thức công ty, có dẫn nguồn kèm ảnh dự án thật</span>
+      </div>
+      <div class="jstep hot" data-anim="rise" style="--d:8">
+        <span class="dot"></span>
+        <span class="t">06 · 23H24</span>
+        <span class="w">Để lại số điện thoại. Sáng mai anh Sơn gọi, mở lời trúng đích ngay câu đầu.</span>
+        <span class="m">M6 · Lead kèm “dấu chân”: đã xem gì, lưu gì, nghiêng phong cách nào</span>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Mã module theo §5.2 · mốc giờ minh hoạ theo hành vi 22h–24h của P1</span><span>Người dùng</span></div>
+</section>
+
+<!-- ══ 10 · GIẢI PHÁP ════════════════════════════════════════════════ -->
+<section class="slide" data-od-id="slide-decision" data-enter="strong"
+         data-section="Giải pháp" data-sec-i="1" data-sec-n="4"
+         data-screen-label="10 Giải pháp" data-title="Giải pháp">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 05 · §5.2 M1 · Quyết định mô hình dữ liệu</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Giải pháp</h2>
+  </div>
+  <div class="canvas">
+    <div class="cols c-46">
+      <div class="stack g28">
+        <p class="statement" data-anim style="--d:2">
+          Đơn vị gắn nhãn phải là <em>không gian</em>, không phải dự án.
+        </p>
+        <p class="body" data-anim style="--d:3">
+          Một dự án biệt thự có phòng khách Indochine nhưng phòng ngủ lại Scandinavian. Gắn tag ở cấp dự án thì sai — và mọi bộ lọc, mọi gợi ý, mọi báo cáo xu hướng dựng trên nó cũng sai theo.
+        </p>
+        <p class="body" data-anim style="--d:4">
+          Đây là quyết định thiết kế quan trọng nhất của toàn hệ thống.
+        </p>
+        <div class="note" data-anim style="--d:5">
+          <b>Khách xác nhận</b>
+          <span>Câu 13 — “Một công trình của D3 thường mang mấy phong cách?” → <strong>Ghép nhiều, không cố định.</strong></span>
+        </div>
+        <div class="chips mt-auto" data-anim style="--d:6">
+          <span class="chip">10+ chiều độc lập</span>
+          <span class="chip">tag ở cấp Space</span>
+        </div>
+      </div>
+      <div class="proj" data-anim="rise" style="--d:5">
+        <span class="lb">Một dự án · Villa · hai không gian, hai phong cách</span>
+        <div class="spaces">
+          <div class="space">
+            <img src="pic_slides/pic9.jpg" alt="Góc phòng ngủ Indochine: tranh áo dài, bình gốm hoa lam, hoa sen">
+            <div class="cap">
+              <b>Phòng ngủ master</b>
+              <span>INDOCHINE · TÔNG TRẦM · GỖ SẪM</span>
+            </div>
+          </div>
+          <div class="space">
+            <img src="pic_slides/pic1.jpg" alt="Phòng ngủ và tủ áo kính tông be sáng, sàn gỗ">
+            <div class="cap">
+              <b>Phòng ngủ phụ + tủ áo</b>
+              <span>TỐI GIẢN · TÔNG SÁNG ẤM · GỖ NHẠT</span>
+            </div>
+          </div>
+        </div>
+        <p class="small" style="color:var(--faint)">
+          Cùng một hồ sơ dự án. Gắn nhãn ở cấp dự án thì buộc phải chọn một trong hai — và khách tìm phong cách nào cũng trượt.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>D3 Studio · PRJ1-INTERIOR-WEB</span><span>Giải pháp</span></div>
+</section>
+
+<!-- ══ 11 · GIẢI PHÁP · Mười hai module ══════════════════════════════ -->
+<section class="slide" data-od-id="slide-modules" data-enter="soft"
+         data-section="Giải pháp" data-sec-i="2" data-sec-n="4"
+         data-screen-label="11 Mười hai module" data-title="Mười hai module, ba lớp">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 05 · §5.1 Bản đồ module</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Giải pháp</h2>
+    <div class="sublabel" data-anim style="--d:2">Mười hai module, ba lớp, ba giai đoạn</div>
+  </div>
+  <div class="canvas">
+    <div class="stack ctr" style="width:100%">
+      <div class="layer" data-anim style="--d:3">
+        <div class="ph"><b>Giai đoạn 1</b><span>Bắt buộc · Nền trải nghiệm và nghiệp vụ</span></div>
+        <div class="mods">
+          <div class="mod key"><i>M1</i><span>Danh mục đa chiều — trái tim của hệ thống</span></div>
+          <div class="mod"><i>M2</i><span>Trang chi tiết dự án chuẩn hóa</span></div>
+          <div class="mod"><i>M5</i><span>CMS và quy trình xuất bản có trạng thái</span></div>
+          <div class="mod"><i>M8</i><span>Quản trị người dùng và phân quyền</span></div>
+        </div>
+      </div>
+      <div class="layer" data-anim style="--d:4">
+        <div class="ph"><b>Giai đoạn 2</b><span>Khai thác · Lớp dữ liệu và trí tuệ</span></div>
+        <div class="mods">
+          <div class="mod key"><i>M7</i><span>Vật liệu + hotspot — hạ tầng bắt buộc cho M3</span></div>
+          <div class="mod"><i>M9</i><span>Auto-tagging AI, luôn có người kiểm duyệt</span></div>
+          <div class="mod"><i>M10</i><span>Vector index — tìm kiếm lai vector và facet</span></div>
+          <div class="mod"><i>M3</i><span>Gợi ý “không gian tương tự”</span></div>
+          <div class="mod"><i>M6</i><span>Quản lý lead, chấm điểm theo hành vi</span></div>
+        </div>
+      </div>
+      <div class="layer last" data-anim style="--d:5">
+        <div class="ph"><b>Giai đoạn 3</b><span>Vòng lặp phản hồi</span></div>
+        <div class="mods">
+          <div class="mod"><i>M11</i><span>Thu thập hành vi — 11 loại sự kiện, gắn kèm facet</span></div>
+          <div class="mod"><i>M12</i><span>Phân tích xu hướng và dashboard theo tuần</span></div>
+          <div class="mod"><i>M4</i><span>RAG chatbot, có dẫn nguồn, biết bàn giao người thật</span></div>
+        </div>
+      </div>
+      <div class="cols c-2" style="margin-top:28px">
+        <div class="note" data-anim style="--d:6">
+          <b>Cần chốt</b>
+          <span>Thứ tự ba giai đoạn là <strong>đề xuất</strong>. §7 Lộ trình triển khai chưa có nội dung trong BAD v1.0.</span>
+        </div>
+        <div class="note" data-anim style="--d:7">
+          <b>Ngoài phạm vi</b>
+          <span>Sàn thương mại điện tử · phần mềm thi công, công nợ, kế toán · dựng 3D hay AR trên web · app native.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Mã module theo §5.2, bản mô tả chi tiết</span><span>Giải pháp</span></div>
+</section>
+
+<!-- ══ 12 · GIẢI PHÁP · Danh mục đa chiều ════════════════════════════ -->
+<section class="slide dark" data-od-id="slide-catalogue" data-enter="soft"
+         data-section="Giải pháp" data-sec-i="3" data-sec-n="4"
+         data-screen-label="12 Danh mục đa chiều" data-title="Danh mục đa chiều">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 05 · M1 · Bố cục theo câu 16, 26, 27, 31</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Giải pháp</h2>
+    <div class="sublabel" data-anim style="--d:2">Danh mục đa chiều — năm bộ lọc khách hàng đã chọn</div>
+  </div>
+  <div class="canvas">
+    <div class="cols c-64" style="gap:44px">
+      <div class="mock" data-anim="wipe" style="--d:3">
+        <div class="bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="url">d3studio.vn/portfolio/phong-ngu/chung-cu/indochine</div>
+        </div>
+        <div class="nav">
+          <span class="brand">D3</span>
+          <a href="#" class="on">Công trình</a><a href="#">Dịch vụ</a>
+          <a href="#">Về chúng tôi</a><a href="#">Liên hệ</a>
+        </div>
+        <div class="app">
+          <aside class="facets">
+            <div class="facet">
+              <div class="fl">Loại công trình</div>
+              <div class="fo"><span class="on">Chung cư</span><span>Nhà phố</span><span>Villa</span><span>Lounge</span></div>
+            </div>
+            <div class="facet">
+              <div class="fl">Không gian</div>
+              <div class="fo"><span>Phòng khách</span><span>Bếp</span><span class="on">Ngủ</span><span>Quầy bar</span></div>
+            </div>
+            <div class="facet">
+              <div class="fl">Phong cách</div>
+              <div class="fo"><span class="on">Indochine</span><span>Wabi-sabi</span><span>Japandi</span><span>Scandinavian</span></div>
+            </div>
+            <div class="facet">
+              <div class="fl">Tông màu</div>
+              <div class="fo"><span>Sáng</span><span>Tối</span><span class="on">Ấm</span><span>Lạnh</span></div>
+            </div>
+            <div class="facet">
+              <div class="fl">Diện tích</div>
+              <div class="fo"><span>&lt;60</span><span>60–80</span><span>80–120</span><span>&gt;120 m²</span></div>
+            </div>
+          </aside>
+          <div class="results">
+            <div class="rhead">
+              <span class="cnt">12 không gian</span>
+              <span class="lbl">cập nhật khi thêm hoặc bỏ điều kiện · số liệu và ảnh minh hoạ</span>
+            </div>
+            <div class="mosaic">
+              <figure class="m-big"><img src="pic_slides/pic9.jpg" alt="Không gian Indochine tông trầm"></figure>
+              <figure><img src="pic_slides/pic1.jpg" alt="Phòng ngủ tông be sáng"></figure>
+              <figure><img src="pic_slides/pic3.jpg" alt="Bàn trang điểm tường xanh ô liu"></figure>
+              <figure><img src="pic_slides/pic2.jpg" alt="Đảo bếp với ghế tông terracotta"></figure>
+              <figure><img src="pic_slides/pic7.jpg" alt="Phòng ăn tân cổ điển"></figure>
+              <figure class="m-wide"><img src="pic_slides/pic6.jpg" alt="Sảnh thông tầng tông tối"></figure>
+              <figure><img src="pic_slides/pic8.jpg" alt="Phòng ăn hiện đại tông tối"></figure>
+              <figure><img src="pic_slides/pic5.jpg" alt="Phòng khách tân cổ điển"></figure>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stack ctr">
+        <div class="qa tight oneup" data-anim style="--d:4">
+          <span class="q">Câu 31 · Bộ lọc đặt ở đâu?</span><span class="a">Cột dọc bên trái</span>
+        </div>
+        <div class="qa tight oneup" data-anim style="--d:5">
+          <span class="q">Câu 27 · Lưới công trình bày kiểu nào?</span><span class="a">Mosaic, ảnh to nhỏ xen kẽ</span>
+        </div>
+        <div class="qa tight oneup" data-anim style="--d:6">
+          <span class="q">Câu 26 · Mở trang chủ, khách thấy gì trước?</span><span class="a">Vài công trình nổi bật, rồi mới tới lưới đầy đủ</span>
+        </div>
+        <div class="qa tight oneup" data-anim style="--d:7">
+          <span class="q">Câu 32 · Khách xem web bằng gì là chính?</span><span class="a">Điện thoại và máy tính ngang nhau</span>
+        </div>
+        <div class="note" data-anim style="--d:8">
+          <b>Ràng buộc</b>
+          <span>NFR-04: ảnh giữ đúng màu, không nén vỡ, không méo tỉ lệ. NFR-01: áp bộ lọc phản hồi dưới 500ms.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Ảnh thật của D3 Studio, đã có dấu chìm theo câu 10</span><span>Giải pháp</span></div>
+</section>
+
+<!-- ══ 13 · GIẢI PHÁP · Kiến trúc thông tin ══════════════════════════ -->
+<section class="slide" data-od-id="slide-ia" data-enter="soft"
+         data-section="Giải pháp" data-sec-i="4" data-sec-n="4"
+         data-screen-label="13 Kiến trúc thông tin" data-title="Kiến trúc thông tin">
+  <div class="head">
+    <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Chương 05 · Sitemap · Câu 14, 26, 35, 37</span></div>
+    <h2 class="h-sec" data-anim style="--d:1">Giải pháp</h2>
+    <div class="sublabel" data-anim style="--d:2">Kiến trúc thông tin</div>
+  </div>
+  <div class="canvas">
+    <div class="cols c-58">
+      <div class="stack ctr">
+        <div class="tn" data-anim style="--d:3">
+          <span class="lv">/</span>
+          <span class="tx">Trang chủ — vài công trình nổi bật trước, rồi tới lưới đầy đủ</span>
+        </div>
+        <div class="tn" data-anim style="--d:4">
+          <span class="lv">/cong-trinh</span>
+          <span class="tx">Công trình — tách hẳn hai khu theo câu 14</span>
+        </div>
+        <div class="tn d2" data-anim style="--d:5">
+          <span class="lv">├─</span><span class="tx">Nhà ở — chung cư · nhà phố · villa</span>
+        </div>
+        <div class="tn d2" data-anim style="--d:6">
+          <span class="lv">├─</span><span class="tx">Thương mại — lounge · F&amp;B · showroom</span>
+        </div>
+        <div class="tn d3" data-anim style="--d:7">
+          <span class="lv">└─</span>
+          <span class="tx"><code>/portfolio/{không-gian}/{loại}/{phong-cách}</code>
+            <small>Mỗi tổ hợp facet phổ biến sinh một URL riêng để SEO.</small></span>
+        </div>
+        <div class="tn d3" data-anim style="--d:8">
+          <span class="lv">└─</span>
+          <span class="tx">Chi tiết công trình
+            <small>Thông số · dải màu · vật liệu · slider Concept ↔ Thực tế · dự án tương tự. Ảnh sắp theo trình tự đi trong nhà: cửa vào → khách → bếp → ngủ.</small></span>
+        </div>
+        <div class="tn" data-anim style="--d:9">
+          <span class="lv">/dich-vu</span><span class="tx">Dịch vụ và quy trình làm việc</span>
+        </div>
+        <div class="tn" data-anim style="--d:10">
+          <span class="lv">/ve-chung-toi</span><span class="tx">Về chúng tôi · Blog / bài viết</span>
+        </div>
+        <div class="tn last" data-anim style="--d:11">
+          <span class="lv">/lien-he</span>
+          <span class="tx">Liên hệ
+            <small>Điện thoại · email · địa chỉ và bản đồ · biểu mẫu · nút nhắn Zalo và Messenger.</small></span>
+        </div>
+      </div>
+      <div class="stack g24 ctr">
+        <div class="card stack g14" data-anim="rise" style="--d:5">
+          <div class="meta">Phía quản trị · M5 quy trình xuất bản</div>
+          <div class="chips">
+            <span class="chip">Draft</span><span class="chip">In Review</span><span class="chip">Approved</span>
+            <span class="chip">Cleared</span>
+            <span class="chip" style="color:var(--ink); border-color:var(--ink-2)">Published</span>
+          </div>
+          <p class="small">KTS tải ảnh hàng loạt → AI gợi ý tag và mô tả nháp → KTS xác nhận → Content biên tập và SEO → KTS trưởng duyệt → kiểm tra quyền công bố ảnh → xuất bản → theo dõi 30 ngày.</p>
+        </div>
+        <div class="card stack g14" data-anim="rise" style="--d:8">
+          <div class="meta">Bảy vai trò · M8</div>
+          <p class="small">Khách vãng lai · Khách đăng ký · KTS · Content · Sale · KTS trưởng · Quản trị. Có nhật ký thao tác.</p>
+          <div class="rule"></div>
+          <div class="meta">Ngôn ngữ · câu 34–35</div>
+          <p class="small">Tiếng Việt là chính, tên công trình để tiếng Anh.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>NFR-07 · Kết xuất phía máy chủ, schema.org, URL riêng cho mỗi tổ hợp facet chính</span><span>Giải pháp</span></div>
+</section>
+
+<!-- ══ 14 · KẾT LUẬN ═════════════════════════════════════════════════ -->
+<section class="slide dark bleed" data-od-id="slide-close" data-enter="soft"
+         data-screen-label="14 Kết luận" data-title="Kết luận & bước tiếp theo">
+  <div class="art">
+    <img class="kb" src="pic_slides/pic9.jpg" style="object-position:72% 42%"
+         alt="Góc phòng ngủ Indochine với tranh áo dài và bình gốm hoa lam">
+  </div>
+  <div class="scrim"></div>
+  <div class="inner">
+    <div class="cols c-2" style="gap:76px; align-items:start">
+      <div class="stack g28">
+        <div class="eyebrow" data-anim="left" style="--d:0"><i></i><span>Kết luận</span></div>
+        <h2 class="h-sec" data-anim style="--d:1; margin-top:0; font-size:70px">Kết luận</h2>
+        <p class="statement" data-anim style="--d:2; font-size:38px; max-width:23ch">
+          Website là một <em>cảm biến</em> thu thập dữ liệu thị hiếu thiết kế — không chỉ là kênh trưng bày.
+        </p>
+        <p class="body" data-anim style="--d:3; max-width:44ch">
+          Cấu trúc hóa dữ liệu ở cấp không gian là điều kiện để tìm kiếm, gợi ý, chatbot và báo cáo xu hướng cùng hoạt động. Bỏ bước đó thì ba trục còn lại không có gì để đứng lên.
+        </p>
+      </div>
+      <div class="stack g20" style="padding-top:14px">
+        <div class="meta" data-anim style="--d:3">Bước tiếp theo</div>
+        <div class="stack">
+        <div class="qa marker tight" data-anim style="--d:4">
+          <span class="n">01</span>
+          <span class="a">Chạy khảo sát khách hàng cuối, mẫu tối thiểu 80 — §4.1, <strong>chưa thực hiện</strong></span>
+        </div>
+        <div class="qa marker tight" data-anim style="--d:5">
+          <span class="n">02</span>
+          <span class="a">Chốt 3–5 công trình lên đầu trang chủ — câu 11 hiện <strong>để trống</strong></span>
+        </div>
+        <div class="qa marker tight" data-anim style="--d:6">
+          <span class="n">03</span>
+          <span class="a">Hoàn thiện cây facet 10+ chiều — tài liệu 05 Taxonomy</span>
+        </div>
+        <div class="qa marker tight" data-anim style="--d:7">
+          <span class="n">04</span>
+          <span class="a">Viết User story và tiêu chí chấp nhận — tài liệu 03</span>
+        </div>
+        <div class="qa marker tight" data-anim style="--d:8">
+          <span class="n">05</span>
+          <span class="a">Chốt số cho BO-01 đến BO-03 — bản v1.0 còn ghi định tính</span>
+        </div>
+        </div>
+        <div class="note" data-anim style="--d:9">
+          <b>Đo thành công</b>
+          <span>BO-01 lead mỗi tháng · BO-02 thời gian tư vấn vòng đầu · BO-03 thời gian đăng một dự án 40 ảnh (NFR-12: dưới 20 phút) · BO-04 báo cáo xu hướng tự động hàng tuần.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <span>D3 Studio · PRJ1-INTERIOR-WEB · BAD v1.0 · Người lập: Tuấn</span>
+    <span class="num">27 / 08 / 2026</span>
+  </div>
+</section>
+
+</div><!-- /#deck -->
+</div><!-- /#stage -->
+
+<div id="zones">
+  <button id="zprev" aria-label="Slide trước"></button>
+  <button id="znext" aria-label="Slide sau"></button>
+</div>
+<div id="chrome"><div id="bar"><div id="barfill"></div></div></div>
+<div id="hud"><span id="hsec"></span><span class="ct"><span id="hnow">01</span> / <span id="htot">14</span></span></div>
+<nav id="overview" aria-label="Danh sách slide"></nav>
+
+<script>
+(function(){
+  "use strict";
+  var deck   = document.getElementById('deck');
+  var slides = Array.prototype.slice.call(deck.querySelectorAll('.slide'));
+  var N      = slides.length;
+  var KEY    = 'd3-deck-position-v1';
+  var cur    = 0;
+  var busy   = false;
+
+  /* ── restore last position ─────────────────────────────────────── */
+  try {
+    var saved = parseInt(localStorage.getItem(KEY), 10);
+    if (saved >= 0 && saved < N) cur = saved;
+  } catch (e) {}
+
+  /* ── scale the fixed 1920×1080 canvas to fit any viewport ──────── */
+  function fit(){
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    deck.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', fit);
+  fit();
+
+  /* ── chapter tick strip: position within the current chapter ───── */
+  slides.forEach(function(sl){
+    var n = parseInt(sl.getAttribute('data-sec-n'), 10);
+    var i = parseInt(sl.getAttribute('data-sec-i'), 10);
+    if (!n || !i) return;
+    var strip = document.createElement('div');
+    strip.className = 'ticks';
+    for (var k = 1; k <= n; k++){
+      var t = document.createElement('i');
+      if (k === i) t.className = 'on';
+      strip.appendChild(t);
+    }
+    sl.appendChild(strip);
+  });
+
+  /* ── presenter chrome ──────────────────────────────────────────── */
+  var barfill = document.getElementById('barfill');
+  var hnow = document.getElementById('hnow');
+  var hsec = document.getElementById('hsec');
+  var ov   = document.getElementById('overview');
+  document.getElementById('htot').textContent = String(N);
+
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+
+  function chrome(){
+    barfill.style.width = ((cur + 1) / N * 100) + '%';
+    hnow.textContent = pad(cur + 1);
+    hsec.textContent = slides[cur].getAttribute('data-section') || '';
+    var btns = ov.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++){
+      btns[i].setAttribute('aria-current', i === cur ? 'true' : 'false');
+    }
+  }
+
+  /* ── slide-list overlay (key: O) ───────────────────────────────── */
+  var h5 = document.createElement('h5');
+  h5.textContent = 'Danh sách slide — bấm để nhảy tới · Esc để đóng';
+  ov.appendChild(h5);
+  slides.forEach(function(sl, i){
+    var b = document.createElement('button');
+    b.innerHTML = '<span class="n">' + pad(i + 1) + '</span>' +
+                  '<span>' + (sl.getAttribute('data-title') || '') + '</span>' +
+                  '<span class="s">' + (sl.getAttribute('data-section') || '') + '</span>';
+    b.addEventListener('click', function(){ ov.classList.remove('on'); go(i); });
+    ov.appendChild(b);
+  });
+
+  /* ── transition: Aperture on chapter openers, Drift elsewhere ───── */
+  function go(next){
+    if (busy || next === cur || next < 0 || next >= N) return;
+    busy = true;
+    var from = slides[cur], to = slides[next];
+    var strong = to.getAttribute('data-enter') === 'strong';
+    var inCls  = strong ? 'in-ap'  : 'in-dr';
+    var outCls = strong ? 'out-ap' : 'out-dr';
+
+    from.classList.remove('active');
+    from.classList.add('leaving', outCls);
+    to.classList.add('active', inCls);
+
+    cur = next;
+    try { localStorage.setItem(KEY, String(cur)); } catch (e) {}
+    chrome();
+
+    window.setTimeout(function(){
+      from.classList.remove('leaving', outCls);
+      to.classList.remove(inCls);
+      busy = false;
+    }, strong ? 1020 : 780);
+  }
+  function nextSlide(){ go(cur + 1); }
+  function prevSlide(){ go(cur - 1); }
+
+  /* ── keyboard + presentation clicker ──────────────────────────── */
+  document.addEventListener('keydown', function(e){
+    var k = e.key;
+    if (k === 'Escape'){ ov.classList.remove('on'); return; }
+    if (k === 'o' || k === 'O'){ ov.classList.toggle('on'); e.preventDefault(); return; }
+    if (k === 'f' || k === 'F'){
+      if (document.fullscreenElement){ document.exitFullscreen(); }
+      else if (document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen(); }
+      e.preventDefault(); return;
+    }
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ' || k === 'Enter'){
+      nextSlide(); e.preventDefault(); return;
+    }
+    if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace'){
+      prevSlide(); e.preventDefault(); return;
+    }
+    if (k === 'Home'){ go(0); e.preventDefault(); return; }
+    if (k === 'End'){ go(N - 1); e.preventDefault(); return; }
+  });
+
+  /* ── tap zones + swipe ────────────────────────────────────────── */
+  document.getElementById('znext').addEventListener('click', nextSlide);
+  document.getElementById('zprev').addEventListener('click', prevSlide);
+  var tx = 0, ty = 0;
+  document.addEventListener('touchstart', function(e){
+    tx = e.changedTouches[0].clientX; ty = e.changedTouches[0].clientY;
+  }, { passive:true });
+  document.addEventListener('touchend', function(e){
+    var dx = e.changedTouches[0].clientX - tx;
+    var dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)){ dx < 0 ? nextSlide() : prevSlide(); }
+  }, { passive:true });
+
+  /* ── first paint ──────────────────────────────────────────────── */
+  slides[cur].classList.add('active',
+    slides[cur].getAttribute('data-enter') === 'strong' ? 'in-ap' : 'in-dr');
+  chrome();
+})();
+</script>
+</body>
+</html>
