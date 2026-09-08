@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Công trình — D3 Studio</title>
+<meta name="description" content="Lọc thư viện công trình D3 Studio theo loại công trình, không gian, phong cách và tông màu.">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="app">
+  <site-nav current="cong-trinh"></site-nav>
+
+  <main class="wrap wrap-wide" style="padding-block:clamp(28px,4vw,56px)">
+    <p class="eyebrow">Công trình</p>
+    <h1 class="h-1" style="margin-top:12px; max-width:22ch">Lọc theo cách bạn đang hình dung</h1>
+    <p class="lead" style="margin-top:16px">
+      Mỗi ô trong lưới là một <strong>không gian</strong>, không phải cả dự án. Chồng bao
+      nhiêu điều kiện cũng được, số kết quả cập nhật ngay bên cạnh mỗi lựa chọn.
+    </p>
+
+    <div class="browse" style="margin-top:clamp(28px,3.4vw,48px)">
+      <!-- Cột bộ lọc, dọc bên trái theo câu 31 -->
+      <aside aria-label="Bộ lọc">
+        <div class="row between g10" style="margin-bottom:18px">
+          <span class="h-4">Bộ lọc</span>
+          <button v-if="activeChips.length" class="btn btn-ghost"
+                  style="min-height:auto;padding:2px 4px;font-size:13px"
+                  type="button" @click="clearAll">Bỏ hết</button>
+        </div>
+        <div style="display:none" class="d-desk"></div>
+        <facet-panel class="only-desk" :selected="selected" :counts="counts"
+                     @toggle="toggle" @clear="clear"></facet-panel>
+        <button class="btn btn-secondary facet-drawer-btn" type="button" @click="drawer = true">
+          Mở bộ lọc<span v-if="activeChips.length" class="num"> · {{ activeChips.length }}</span>
+        </button>
+      </aside>
+
+      <section>
+        <div class="facet-bar">
+          <span class="n num">{{ results.length }} không gian</span>
+          <span class="small" v-if="!activeChips.length">Chưa áp điều kiện nào</span>
+          <button v-for="c in activeChips" :key="c.fid + c.vid" class="chip"
+                  aria-pressed="true" type="button" @click="toggle(c.fid, c.vid)">
+            {{ c.label }}<span class="x" aria-hidden="true">×</span>
+            <span class="sr-only">— bỏ điều kiện này</span>
+          </button>
+        </div>
+
+        <div v-if="results.length" class="mosaic">
+          <space-card v-for="(s, i) in results" :key="s.id" :space="s"
+                      :class="wideAt(i) ? 'm-wide' : ''"
+                      :ratio="wideAt(i) ? 'l32' : ''"></space-card>
+        </div>
+
+        <div v-else class="empty">
+          <p class="h-3">Không có không gian nào khớp cả bốn điều kiện</p>
+          <p class="body" style="margin:12px auto 20px; max-width:44ch">
+            Thử bỏ một điều kiện — thường là phong cách — rồi lọc lại.
+          </p>
+          <button class="btn btn-secondary" type="button" @click="clearAll">Bỏ hết điều kiện</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Bộ lọc dạng ngăn kéo cho màn hẹp -->
+  <div v-if="drawer" class="drawer-back" @click="drawer = false"></div>
+  <aside v-if="drawer" class="drawer" role="dialog" aria-modal="true" aria-label="Bộ lọc">
+    <div class="drawer-top">
+      <span class="h-4">Bộ lọc</span>
+      <button class="btn btn-ghost" type="button" @click="drawer = false">Đóng</button>
+    </div>
+    <facet-panel :selected="selected" :counts="counts" @toggle="toggle" @clear="clear"></facet-panel>
+    <div class="row g10" style="margin-top:auto; padding-top:18px">
+      <button class="btn btn-secondary" type="button" style="flex:1" @click="clearAll">Bỏ hết</button>
+      <button class="btn btn-primary" type="button" style="flex:1" @click="drawer = false">
+        Xem {{ results.length }} kết quả
+      </button>
+    </div>
+  </aside>
+
+  <site-foot></site-foot>
+</div>
+
+<style>
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap }
+  .only-desk { display:none }
+  @media (min-width: 1024px) { .only-desk { display:flex } }
+</style>
+
+<script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="js/data.js"></script>
+<script src="js/components.js"></script>
+<script>
+(function () {
+  if (!window.Vue) {
+    document.getElementById('app').innerHTML =
+      '<div style="padding:48px 24px;max-width:60ch;margin:0 auto">' +
+      '<h1 style="font-size:24px;margin-bottom:12px">Không tải được Vue</h1>' +
+      '<p style="color:#87867f">Prototype nạp Vue 3 từ unpkg nên cần mạng ở lần mở đầu.</p></div>';
+    return;
+  }
+  const app = Vue.createApp({
+    setup() {
+      const browse = window.D3UI.useBrowse();
+      const drawer = Vue.ref(false);
+      /* Nhịp mosaic: cứ 7 ô thì có một ô rộng, để lưới không thành bàn cờ đều */
+      const wideAt = i => i % 7 === 0;
+      return { ...browse, drawer, wideAt };
+    }
+  });
+  window.D3UI.register(app).mount('#app');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D3 Studio — Thiết kế và thi công nội thất</title>
+<meta name="description" content="Thư viện công trình nội thất của D3 Studio, phân loại theo từng không gian: loại công trình, phòng, phong cách, tông màu.">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="app">
+  <site-nav current="trang-chu"></site-nav>
+
+  <!-- Hero — ảnh sảnh villa thật, tông tối theo câu 18 -->
+  <section class="hero">
+    <div class="media"><img src="img/pic6.jpg" alt="Sảnh thông tầng một villa do D3 Studio thiết kế"></div>
+    <div class="hero-scrim"></div>
+    <div class="hero-in wrap wrap-wide">
+      <p class="eyebrow">Thiết kế · Thi công · Nội thất</p>
+      <h1 class="h-hero" style="margin-top:14px; max-width:19ch">
+        Tìm đúng không gian bạn đang hình dung.
+      </h1>
+      <p class="lead" style="margin-top:18px; max-width:46ch">
+        Thư viện công trình của D3 được gắn nhãn theo từng không gian — không phải
+        theo từng dự án. Nên bạn lọc được “phòng ngủ chung cư tông ấm” thay vì phải
+        đọc hết từng bài viết.
+      </p>
+      <div class="row wrapx g10" style="margin-top:26px">
+        <a class="btn btn-primary" href="cong-trinh.html">Xem công trình</a>
+        <a class="btn btn-secondary" href="dich-vu.html">Quy trình làm việc</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Câu 26: vài công trình nổi bật trước, rồi mới tới lưới đầy đủ -->
+  <section class="sec wrap wrap-wide">
+    <div class="row between wrapx g20" style="align-items:flex-end; margin-bottom:26px">
+      <div>
+        <p class="eyebrow">Nổi bật</p>
+        <h2 class="h-1" style="margin-top:10px">Bốn không gian gần đây</h2>
+      </div>
+      <a class="btn btn-secondary" href="cong-trinh.html">Toàn bộ công trình</a>
+    </div>
+    <div class="mosaic">
+      <space-card v-for="(s, i) in featured" :key="s.id" :space="s"
+                  :class="i === 0 ? 'm-wide' : ''"
+                  :ratio="i === 0 ? 'l32' : ''"></space-card>
+    </div>
+  </section>
+
+  <!-- Câu 21: đoạn văn dài xen giữa ảnh, kiểu bài tạp chí -->
+  <section class="sec sec-line wrap wrap-wide">
+    <div class="mag">
+      <div class="media p45"><img src="img/pic9.jpg" alt="Phòng ngủ chính phong cách Đông Dương" loading="lazy"></div>
+      <div>
+        <p class="eyebrow">Cách chúng tôi làm</p>
+        <h2 class="h-2" style="margin-top:12px">Một dự án thường mang nhiều phong cách</h2>
+        <p class="body" style="margin-top:18px">
+          Cùng một căn villa, phòng ngủ chính có thể đi theo hướng Đông Dương với gỗ sơn
+          đen và gốm hoa lam, còn phòng của con lại là tông sáng, gỗ nhạt, hình khối tròn.
+          Ghép cả căn vào một cái nhãn duy nhất là làm mất phần lớn thông tin.
+        </p>
+        <p class="body">
+          Vì vậy thư viện của D3 gắn nhãn ở cấp <strong>không gian</strong>: mỗi phòng có
+          loại hình, phong cách, tông màu và vật liệu riêng. Bạn thích đúng góc trang điểm
+          trong một dự án thì tìm được các góc tương tự, không bị kéo sang cả những phòng
+          không liên quan.
+        </p>
+        <a class="btn btn-secondary" style="margin-top:22px" href="cong-trinh.html#phongcach=indochine">
+          Xem các không gian Indochine
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Câu 14: tách hẳn hai khu Nhà ở và Thương mại -->
+  <section class="sec sec-line wrap wrap-wide">
+    <p class="eyebrow">Hai nhóm công trình</p>
+    <div class="cols t2" style="margin-top:22px">
+      <a class="pcard" href="cong-trinh.html#loai=chung-cu,nha-pho,villa">
+        <div class="media l32"><img src="img/pic1.jpg" alt="Phòng ngủ căn hộ tông sáng ấm" loading="lazy"></div>
+        <div class="pcard-cap">
+          <span class="h-3">Nhà ở</span>
+          <span class="small">Chung cư · nhà phố · villa</span>
+        </div>
+      </a>
+      <a class="pcard" href="cong-trinh.html#loai=lounge">
+        <div class="media l32"><img src="img/pic8.jpg" alt="Phòng ăn tông tối với đèn thả đồng" loading="lazy"></div>
+        <div class="pcard-cap">
+          <span class="h-3">Thương mại</span>
+          <span class="small">Lounge · F&amp;B · showroom</span>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Lưới đầy đủ -->
+  <section class="sec sec-line wrap wrap-wide">
+    <div class="row between wrapx g20" style="align-items:flex-end; margin-bottom:24px">
+      <h2 class="h-2">Tất cả không gian</h2>
+      <span class="meta num">{{ all.length }} không gian</span>
+    </div>
+    <div class="mosaic">
+      <space-card v-for="s in all" :key="s.id" :space="s"></space-card>
+    </div>
+    <div style="margin-top:32px">
+      <a class="btn btn-primary" href="cong-trinh.html">Lọc theo không gian, phong cách, tông màu</a>
+    </div>
+  </section>
+
+  <section class="sec sec-line wrap wrap-wide">
+    <div class="panel" style="display:grid; gap:18px; max-width:66ch">
+      <h2 class="h-2">Bạn đang có một căn cần làm?</h2>
+      <p class="body" style="margin:0">
+        Gửi cho chúng tôi loại căn, diện tích và vài không gian bạn thích trong thư viện.
+        Đội thiết kế sẽ xem trước rồi mới gọi lại, để buổi nói chuyện đầu tiên đi thẳng
+        vào việc.
+      </p>
+      <div class="row wrapx g10">
+        <a class="btn btn-primary" href="lien-he.html">Gửi yêu cầu tư vấn</a>
+        <a class="btn btn-secondary" href="cong-trinh.html">Chọn không gian bạn thích</a>
+      </div>
+    </div>
+  </section>
+
+  <site-foot></site-foot>
+</div>
+
+<script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="js/data.js"></script>
+<script src="js/components.js"></script>
+<script>
+(function () {
+  if (!window.Vue) {
+    document.getElementById('app').innerHTML =
+      '<div style="padding:48px 24px;max-width:60ch;margin:0 auto">' +
+      '<h1 style="font-size:24px;margin-bottom:12px">Không tải được Vue</h1>' +
+      '<p style="color:#87867f">Prototype này nạp Vue 3 từ unpkg nên cần mạng ở lần mở đầu. ' +
+      'Kiểm tra kết nối rồi tải lại trang.</p></div>';
+    return;
+  }
+  const D = window.D3;
+  const app = Vue.createApp({
+    setup() {
+      return {
+        featured: [D.SPACES[3], D.SPACES[0], D.SPACES[2], D.SPACES[4]].filter(Boolean),
+        all: D.SPACES
+      };
+    }
+  });
+  window.D3UI.register(app).mount('#app');
+})();
+</script>
+</body>
+</html>

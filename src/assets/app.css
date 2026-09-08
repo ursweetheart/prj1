@@ -1,0 +1,462 @@
+/* ═══════════════════════════════════════════════════════════════════════
+ * D3 Studio · prototype website
+ * Hướng thị giác KHÔNG do người dựng chọn — chính chủ D3 chốt trong
+ * "Website D3 Studio (Câu trả lời).xlsx":
+ *   câu 18 · nền tối gần đen
+ *   câu 19 · màu nhấn nâu gỗ / terracotta
+ *   câu 20 · chữ không chân (sans-serif)
+ *   câu 21 · đoạn văn dài xen giữa ảnh, như bài tạp chí
+ *   câu 27 · lưới mosaic, ảnh to nhỏ xen kẽ
+ *   câu 30 · không cần hiệu ứng chuyển động — "vào là hiện luôn"
+ *   câu 31 · bộ lọc ở cột dọc bên trái
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Khối token của design system, dán nguyên văn ─────────────────── */
+:root {
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
+
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #5e5d59;
+  --meta: #87867f;
+
+  --border: #f0eee6;
+  --border-soft: #e8e6dc;
+
+  --accent: #c96442;
+  --accent-on: #faf9f5;
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --accent-active: color-mix(in oklab, var(--accent), black 14%);
+
+  --success: #17a34a;
+  --warn: #eab308;
+  --danger: #b53333;
+
+  --font-display: "Anthropic Serif", Georgia, "Times New Roman", serif;
+  --font-body: "Anthropic Sans", "Arial", system-ui, -apple-system, sans-serif;
+  --font-mono: "Anthropic Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+
+  --text-xs: 10px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 25px;
+  --text-2xl: 32px;
+  --text-3xl: 52px;
+  --text-4xl: 64px;
+
+  --leading-body: 1.6;
+  --leading-tight: 1.1;
+  --tracking-display: 0em;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --section-y-desktop: 96px;
+  --section-y-tablet: 64px;
+  --section-y-phone: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: rgba(0, 0, 0, 0.05) 0px 4px 24px;
+
+  --focus-ring: 0 0 0 3px rgba(56, 152, 236, 0.3);
+
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --container-max: 1200px;
+  --container-gutter-desktop: 24px;
+  --container-gutter-tablet: 16px;
+  --container-gutter-phone: 12px;
+}
+
+/* ─── Map sang giao diện nền tối (câu 18) ──────────────────────────────
+ * Mọi giá trị đều dẫn xuất từ khối token ở trên, không thêm hex mới.
+ * Chữ trên website là sans (câu 20) nên --face dùng --font-body;
+ * đổi một dòng này sang var(--font-display) là quay lại serif. */
+html {
+  --face: var(--font-body);
+
+  --page:      var(--fg);
+  --panel:     color-mix(in oklab, var(--fg), var(--surface) 6%);
+  --panel-2:   var(--fg-2);
+  --ink:       var(--surface);
+  --ink-2:     color-mix(in oklab, var(--surface), var(--fg) 22%);
+  --dim:       color-mix(in oklab, var(--surface), var(--fg) 40%);
+  --faint:     color-mix(in oklab, var(--surface), var(--fg) 56%);
+  --line:      color-mix(in oklab, var(--fg), var(--surface) 15%);
+  --line-soft: color-mix(in oklab, var(--fg), var(--surface) 9%);
+
+  --gutter: var(--container-gutter-phone);
+  --sec-y:  var(--section-y-phone);
+}
+@media (min-width: 768px) {
+  html { --gutter: var(--container-gutter-tablet); --sec-y: var(--section-y-tablet) }
+}
+@media (min-width: 1024px) {
+  html { --gutter: var(--container-gutter-desktop); --sec-y: var(--section-y-desktop) }
+}
+
+/* ─── Nền tảng ────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box }
+* { margin: 0; padding: 0 }
+html { -webkit-text-size-adjust: 100% }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--face);
+  font-size: clamp(15px, 0.4vw + 14px, 17px);
+  line-height: var(--leading-body);
+  overflow-x: hidden;
+}
+img, svg, video { display: block; max-width: 100% }
+a { color: inherit; text-decoration: none }
+button, input, textarea, select { font: inherit; color: inherit }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm) }
+[v-cloak] { display: none }
+
+/* ─── Chữ ─────────────────────────────────────────────────────────────
+ * Sans làm mặt chữ tiêu đề nên phải bù bằng cỡ lớn, tracking âm và
+ * độ tương phản đậm/nhạt — nếu không sẽ đọc ra như chữ mặc định. */
+.h-hero, .h-1, .h-2, .h-3, .h-4 {
+  font-family: var(--face);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+.h-hero { font-size: clamp(38px, 6.4vw, 88px); letter-spacing: -0.03em }
+.h-1    { font-size: clamp(30px, 4.2vw, 56px); letter-spacing: -0.026em }
+.h-2    { font-size: clamp(24px, 2.6vw, 36px) }
+.h-3    { font-size: clamp(19px, 1.5vw, 25px); letter-spacing: -0.016em }
+.h-4    { font-size: clamp(16px, 1vw, 18px); font-weight: 600; letter-spacing: -0.01em }
+
+.eyebrow {
+  font-size: var(--text-sm);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 500;
+}
+.lead  { font-size: clamp(17px, 1.1vw, 21px); line-height: 1.55; color: var(--ink-2); max-width: 62ch }
+.body  { color: var(--dim); max-width: 72ch }
+.body + .body { margin-top: 1.1em }
+.small { font-size: var(--text-sm); line-height: 1.5; color: var(--dim) }
+.meta  { font-size: var(--text-sm); letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint) }
+.num   { font-variant-numeric: tabular-nums; letter-spacing: -0.01em }
+strong { color: var(--ink); font-weight: 600 }
+em     { font-style: normal; color: var(--accent) }
+code   { font-family: var(--font-mono); font-size: 0.94em }
+
+/* ─── Bố cục ──────────────────────────────────────────────────────── */
+.wrap { width: 100%; max-width: var(--container-max); margin-inline: auto; padding-inline: var(--gutter) }
+.wrap-wide { max-width: 1560px }
+.sec { padding-block: var(--sec-y) }
+.sec-line { border-top: 1px solid var(--line-soft) }
+.stack   { display: flex; flex-direction: column; min-width: 0 }
+.row     { display: flex; align-items: center; min-width: 0 }
+.between { justify-content: space-between }
+.wrapx   { flex-wrap: wrap }
+.g6  { gap: 6px }  .g10 { gap: 10px } .g14 { gap: 14px }
+.g20 { gap: 20px } .g28 { gap: 28px } .g40 { gap: 40px }
+.mt-auto { margin-top: auto }
+.rule { height: 1px; background: var(--line-soft) }
+
+/* ─── Khung ảnh · component .media ────────────────────────────────────
+ * Ảnh được đưa ra khỏi flow để chiều cao nội tại của ảnh không trở
+ * thành chiều cao tối thiểu của flex/grid item. */
+.media { position: relative; overflow: hidden; background: var(--panel-2);
+         border-radius: var(--radius-md); min-width: 0; min-height: 0 }
+.media > img { position: absolute; inset: 0; width: 100%; height: 100%;
+               object-fit: cover; object-position: center }
+.media.r-lg { border-radius: var(--radius-lg) }
+.media.sq   { aspect-ratio: 1 / 1 }
+.media.p45  { aspect-ratio: 4 / 5 }
+.media.l32  { aspect-ratio: 3 / 2 }
+.media.w169 { aspect-ratio: 16 / 9 }
+
+/* ─── Nút ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  font-family: var(--face); font-size: var(--text-sm); font-weight: 500;
+  padding: 11px 18px; border: 1px solid transparent; border-radius: var(--radius-md);
+  background: transparent; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard);
+  min-height: 44px;
+}
+.btn-primary   { background: var(--accent); color: var(--accent-on) }
+.btn-primary:hover  { background: var(--accent-hover) }
+.btn-primary:active { background: var(--accent-active) }
+.btn-secondary { background: transparent; color: var(--ink); border-color: var(--line) }
+.btn-secondary:hover { background: var(--panel); border-color: var(--ink-2) }
+.btn-ghost { color: var(--dim); padding-inline: 10px }
+.btn-ghost:hover { color: var(--ink) }
+.btn[disabled] { opacity: .45; cursor: not-allowed }
+
+/* ─── Chip / thẻ lọc ──────────────────────────────────────────────── */
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: var(--text-sm); line-height: 1.3;
+  padding: 8px 13px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: transparent; color: var(--dim);
+  cursor: pointer; min-height: 38px;
+  transition: color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              background var(--motion-fast) var(--ease-standard);
+}
+.chip:hover { color: var(--ink); border-color: var(--ink-2) }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-on) }
+.chip .x { font-size: 15px; line-height: 1; opacity: .8 }
+.chip-static { cursor: default; color: var(--dim) }
+.chip-static:hover { color: var(--dim); border-color: var(--line) }
+
+/* ─── Tấm / bảng ──────────────────────────────────────────────────── */
+.panel { background: var(--panel); border: 1px solid var(--line-soft);
+         border-radius: var(--radius-lg); padding: clamp(18px, 2vw, 28px) }
+
+/* ─── Thanh điều hướng ────────────────────────────────────────────── */
+.nav {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in oklab, var(--fg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.nav-in { display: flex; align-items: center; gap: 20px; min-height: 66px }
+.brand { display: inline-flex; align-items: center; gap: 12px; flex: none }
+.brand-mark { width: 30px; height: 30px; color: var(--ink) }
+.brand-word { font-size: var(--text-sm); letter-spacing: 0.34em; text-transform: uppercase;
+              font-weight: 600; color: var(--ink) }
+.nav-links { display: none; gap: 26px; margin-left: auto }
+.nav-links a { font-size: 15px; color: var(--dim); padding-block: 6px }
+.nav-links a:hover { color: var(--ink) }
+.nav-links a[aria-current="page"] { color: var(--ink) }
+.nav-cta { display: none; margin-left: 8px }
+.nav-burger { margin-left: auto; display: inline-flex; width: 44px; height: 44px;
+              align-items: center; justify-content: center; border: 1px solid var(--line);
+              border-radius: var(--radius-sm); background: transparent; cursor: pointer }
+.nav-burger span { display: block; width: 17px; height: 1px; background: var(--ink);
+                   box-shadow: 0 -5px 0 var(--ink), 0 5px 0 var(--ink) }
+.nav-sheet { border-top: 1px solid var(--line-soft); padding: 12px var(--gutter) 20px;
+             display: flex; flex-direction: column; gap: 2px }
+.nav-sheet a { padding: 13px 4px; font-size: 17px; color: var(--ink-2);
+               border-bottom: 1px solid var(--line-soft); min-height: 44px }
+.nav-sheet a:last-of-type { border-bottom: 0 }
+@media (min-width: 900px) {
+  .nav-links, .nav-cta { display: flex }
+  .nav-burger, .nav-sheet { display: none }
+}
+
+/* ─── Hero ────────────────────────────────────────────────────────── */
+.hero { position: relative; min-height: clamp(440px, 72vh, 760px); display: grid }
+.hero > .media { position: absolute; inset: 0; border-radius: 0 }
+.hero-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(74deg,
+    color-mix(in oklab, var(--fg) 90%, transparent) 0%,
+    color-mix(in oklab, var(--fg) 66%, transparent) 46%,
+    color-mix(in oklab, var(--fg) 22%, transparent) 100%);
+}
+.hero-in { position: relative; align-self: end; padding-block: clamp(32px, 6vw, 80px) }
+
+/* ─── Lưới mosaic (câu 27: ảnh to nhỏ xen kẽ) ─────────────────────── */
+.mosaic { display: grid; gap: clamp(10px, 1.1vw, 18px);
+          grid-template-columns: repeat(2, minmax(0, 1fr)) }
+.mosaic > * { min-width: 0; min-height: 0 }
+@media (min-width: 600px)  { .mosaic { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
+@media (min-width: 1024px) { .mosaic { grid-template-columns: repeat(4, minmax(0, 1fr)) } }
+.m-tall { grid-row: span 2 }
+@media (min-width: 600px) { .m-wide { grid-column: span 2 } }
+
+/* ─── Thẻ công trình ──────────────────────────────────────────────── */
+.pcard { display: flex; flex-direction: column; min-width: 0 }
+.pcard .media { transition: opacity var(--motion-base) var(--ease-standard) }
+.pcard:hover .media { opacity: .86 }
+.pcard.tall .media { height: 100%; aspect-ratio: auto }
+.pcard-cap { padding-top: 11px; display: flex; flex-direction: column; gap: 5px }
+.pcard-name { font-size: clamp(15px, 1vw, 17px); font-weight: 600; color: var(--ink);
+              letter-spacing: -0.01em }
+.pcard-facets { font-size: 13px; color: var(--faint); letter-spacing: 0.02em }
+.pcard-save { position: absolute; top: 9px; right: 9px; z-index: 2;
+              width: 36px; height: 36px; display: grid; place-items: center;
+              border: 0; border-radius: var(--radius-pill); cursor: pointer;
+              background: color-mix(in oklab, var(--fg) 62%, transparent);
+              backdrop-filter: blur(6px); color: var(--surface-warm) }
+.pcard-save[aria-pressed="true"] { color: var(--accent) }
+.pcard-save svg { width: 17px; height: 17px }
+
+/* ─── Bộ lọc (câu 31: cột dọc bên trái) ───────────────────────────── */
+.browse { display: grid; gap: clamp(20px, 2.4vw, 44px); align-items: start }
+@media (min-width: 1024px) { .browse { grid-template-columns: 244px minmax(0, 1fr) } }
+.facets { display: flex; flex-direction: column; gap: 22px }
+@media (min-width: 1024px) { .facets { position: sticky; top: 90px } }
+.facet-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+           margin-bottom: 10px }
+.facet-h .meta { font-size: 12px }
+.facet-opts { display: flex; flex-wrap: wrap; gap: 6px }
+.facet-count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums }
+.facet-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+             padding-bottom: 16px; border-bottom: 1px solid var(--line-soft); margin-bottom: 20px }
+.facet-bar .n { font-size: clamp(17px, 1.3vw, 21px); font-weight: 600; color: var(--ink);
+                font-variant-numeric: tabular-nums }
+.facet-drawer-btn { display: inline-flex }
+@media (min-width: 1024px) { .facet-drawer-btn { display: none } }
+.drawer-back { position: fixed; inset: 0; z-index: 60;
+               background: color-mix(in oklab, var(--fg) 70%, transparent) }
+.drawer { position: fixed; inset: 0 0 0 auto; z-index: 61; width: min(88vw, 360px);
+          background: var(--page); border-left: 1px solid var(--line);
+          padding: 18px 18px 28px; overflow-y: auto;
+          display: flex; flex-direction: column; gap: 22px }
+.drawer-top { display: flex; align-items: center; justify-content: space-between; gap: 12px }
+.empty { padding: clamp(36px, 6vw, 72px) 0; text-align: center; color: var(--dim) }
+
+/* ─── Bảng thông số ───────────────────────────────────────────────── */
+.specs { display: grid; gap: 0 }
+.spec { display: grid; grid-template-columns: minmax(120px, 38%) 1fr; gap: 14px;
+        padding: 13px 0; border-top: 1px solid var(--line-soft); align-items: baseline }
+.spec:last-child { border-bottom: 1px solid var(--line-soft) }
+.spec dt { font-size: var(--text-sm); color: var(--faint) }
+.spec dd { font-size: 15px; color: var(--ink); font-weight: 500 }
+.spec dd.blank { color: var(--faint); font-weight: 400 }
+
+/* ─── Dải màu chủ đạo (M2) ────────────────────────────────────────── */
+.palette { display: flex; gap: 8px; flex-wrap: wrap }
+.sw { display: flex; flex-direction: column; gap: 7px; width: 74px }
+.sw i { display: block; height: 52px; border-radius: var(--radius-sm);
+        border: 1px solid var(--line-soft) }
+.sw span { font-size: 12px; color: var(--faint); line-height: 1.35 }
+
+/* ─── Concept ↔ Thực tế (M2) ──────────────────────────────────────── */
+.ba { position: relative; overflow: hidden; border-radius: var(--radius-lg);
+      aspect-ratio: 1 / 1; touch-action: none; cursor: ew-resize; user-select: none;
+      background: var(--panel-2) }
+.ba img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover }
+.ba-top { clip-path: inset(0 calc(100% - var(--pos, 50%)) 0 0) }
+.ba-handle { position: absolute; top: 0; bottom: 0; left: var(--pos, 50%);
+             width: 2px; background: var(--surface); transform: translateX(-1px); z-index: 3 }
+.ba-knob { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+           width: 44px; height: 44px; border-radius: var(--radius-pill);
+           background: var(--surface); color: var(--fg);
+           display: grid; place-items: center; font-size: 13px; font-weight: 600 }
+.ba-tag { position: absolute; bottom: 12px; z-index: 4; font-size: 12px;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          padding: 6px 11px; border-radius: var(--radius-pill);
+          background: color-mix(in oklab, var(--fg) 68%, transparent);
+          backdrop-filter: blur(6px); color: var(--surface-warm) }
+.ba-tag.l { left: 12px } .ba-tag.r { right: 12px }
+
+/* ─── Điểm nóng trên ảnh (M7) ─────────────────────────────────────── */
+.hs-wrap { position: relative }
+.hs {
+  position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%);
+  border-radius: var(--radius-pill); border: 1px solid var(--surface);
+  background: color-mix(in oklab, var(--fg) 46%, transparent);
+  backdrop-filter: blur(4px); cursor: pointer; z-index: 2;
+  display: grid; place-items: center; color: var(--surface); font-size: 15px; line-height: 1;
+}
+.hs[aria-expanded="true"] { background: var(--accent); border-color: var(--accent) }
+.hs-card { position: absolute; z-index: 5; width: min(268px, 74vw);
+           background: var(--page); border: 1px solid var(--line);
+           border-radius: var(--radius-md); padding: 14px; box-shadow: var(--elev-raised);
+           display: flex; flex-direction: column; gap: 8px }
+.hs-card b { font-size: 15px; color: var(--ink) }
+.hs-card .small { color: var(--dim) }
+
+/* ─── Lightbox (câu 29: bấm để phóng to) ──────────────────────────── */
+.lb { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+      background: color-mix(in oklab, var(--fg) 94%, transparent); padding: clamp(12px, 3vw, 48px) }
+.lb img { max-width: 100%; max-height: 84vh; width: auto; height: auto;
+          object-fit: contain; border-radius: var(--radius-md) }
+.lb-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center;
+          justify-content: space-between; gap: 12px; padding: 14px clamp(12px, 3vw, 24px) }
+.lb-nav { position: absolute; top: 50%; transform: translateY(-50%);
+          width: 48px; height: 48px; border-radius: var(--radius-pill); border: 1px solid var(--line);
+          background: color-mix(in oklab, var(--fg) 70%, transparent); color: var(--ink);
+          display: grid; place-items: center; cursor: pointer; font-size: 20px }
+.lb-nav.p { left: clamp(8px, 2vw, 24px) } .lb-nav.n { right: clamp(8px, 2vw, 24px) }
+
+/* ─── Biểu mẫu (câu 37) ───────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: var(--space-2) }
+.field label { font-size: var(--text-sm); color: var(--dim) }
+.field input, .field textarea, .field select {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 12px 14px; min-height: 46px;
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+.field textarea { min-height: 116px; resize: vertical; line-height: 1.5 }
+.field input::placeholder, .field textarea::placeholder { color: var(--faint) }
+.field input:focus-visible, .field textarea:focus-visible, .field select:focus-visible {
+  border-color: var(--accent); box-shadow: var(--focus-ring)
+}
+.field-help { font-size: 13px; color: var(--faint) }
+.field-err  { font-size: 13px; color: var(--accent) }
+.field.bad input, .field.bad textarea { border-color: var(--accent) }
+.form-grid { display: grid; gap: 16px }
+@media (min-width: 640px) { .form-grid.two { grid-template-columns: 1fr 1fr } }
+.form-ok { display: flex; gap: 12px; align-items: flex-start;
+           border: 1px solid var(--line); border-radius: var(--radius-md);
+           padding: 16px; background: var(--panel) }
+.form-ok .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--success);
+                margin-top: 7px; flex: none }
+
+/* ─── Lưới nội dung dùng lại ──────────────────────────────────────── */
+.cols { display: grid; gap: clamp(20px, 2.4vw, 44px) }
+@media (min-width: 768px)  { .cols.t2 { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+@media (min-width: 1024px) { .cols.d3 { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+                             .cols.d4 { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+                             .cols.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) }
+                             .cols.aside { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) } }
+
+/* Hàng kiểu tạp chí: đoạn văn dài xen ảnh (câu 21) */
+.mag { display: grid; gap: clamp(18px, 2.4vw, 40px); align-items: center }
+@media (min-width: 900px) {
+  .mag { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) }
+  .mag.flip > .media { order: 2 }
+}
+
+/* Bước quy trình */
+.step { display: grid; grid-template-columns: 46px 1fr; gap: 16px;
+        padding: 18px 0; border-top: 1px solid var(--line-soft) }
+.step:last-child { border-bottom: 1px solid var(--line-soft) }
+.step .n { font-size: var(--text-sm); color: var(--faint); font-variant-numeric: tabular-nums;
+           letter-spacing: 0.08em; padding-top: 3px }
+
+/* ─── Chân trang ──────────────────────────────────────────────────── */
+.foot { border-top: 1px solid var(--line-soft); padding-block: clamp(32px, 4vw, 56px) 28px }
+.foot-grid { display: grid; gap: 28px }
+@media (min-width: 768px) { .foot-grid { grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) } }
+.foot h5 { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+           color: var(--faint); font-weight: 500; margin-bottom: 12px }
+.foot a { display: block; padding: 5px 0; font-size: 15px; color: var(--dim) }
+.foot a:hover { color: var(--ink) }
+.foot-base { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line-soft);
+             display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between;
+             font-size: 13px; color: var(--faint) }
+
+/* ─── Câu 30: khách chốt "không cần hiệu ứng, vào là hiện luôn".
+ * Vì vậy chỉ giữ transition trên tương tác thật (hover, kéo, mở lớp),
+ * không có animation lúc tải trang hay khi cuộn. */
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 1ms !important; animation-duration: 1ms !important }
+}
+
+@media print {
+  .nav, .foot, .lb, .drawer, .drawer-back, .pcard-save { display: none !important }
+  body { background: #fff; color: #000 }
+}
