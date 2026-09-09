@@ -283,11 +283,15 @@ FACETS.forEach(f => {
 
 /* Danh sách phẳng các không gian */
 export const SPACES = PROJECTS.flatMap(p =>
-  p.spaces.map(s => ({
-    ...s,
-    projectId: p.id, projectSlug: p.slug, projectName: p.name,
-    loai: p.loai, year: p.year
-  }))
+  p.spaces.map(s => {
+    const imgPath = s.img.startsWith('/') ? s.img.slice(1) : s.img;
+    return {
+      ...s,
+      img: import.meta.env.BASE_URL + imgPath,
+      projectId: p.id, projectSlug: p.slug, projectName: p.name,
+      loai: p.loai, year: p.year
+    }
+  })
 )
 
 export const bySlug = slug => PROJECTS.find(p => p.slug === slug) || null
