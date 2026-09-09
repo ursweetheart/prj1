@@ -1,22 +1,16 @@
 <template>
   <!-- Hero -->
   <section class="hero">
-    <div class="media"><img src="/img/pic6.jpg" alt="Lorem ipsum dolor sit amet"></div>
+    <div class="media"><img src="/img/indochine-apartment-hero.jpg" alt="D3 Studio - Indochine Apartment"></div>
     <div class="hero-scrim"></div>
     <div class="hero-in wrap wrap-wide">
-      <p class="eyebrow">Lorem · Ipsum · Dolor</p>
-      <h1 class="h-hero" style="margin-top:14px; max-width:19ch">
-        Sed ut perspiciatis unde omnis iste natus.
+      <p class="eyebrow">Kiến trúc · Nội thất · Diễn họa 3D</p>
+      <h1 class="h-hero" style="margin-top:14px; max-width:18ch">
+        Không gian sống tinh tế, tĩnh lặng và chuẩn mực.
       </h1>
-      <p class="lead" style="margin-top:18px; max-width:46ch">
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut enim ad
-        minima veniam, quis nostrum exercitationem ullam corporis suscipit
-        laboriosam, nisi ut aliquid ex ea commodi consequatur.
+      <p class="lead" style="margin-top:18px; max-width:48ch">
+        D3 Studio — Đơn vị tư vấn thiết kế kiến trúc, nội thất cao cấp và diễn họa 3D chuyên nghiệp tại Hà Nội. Nơi mỗi công trình là sự giao thoa hài hòa giữa nghệ thuật, ánh sáng và bản sắc sống riêng biệt.
       </p>
-      <div class="row wrapx g10" style="margin-top:26px">
-        <router-link class="btn btn-primary" to="/cong-trinh">Xem công trình</router-link>
-        <router-link class="btn btn-secondary" to="/dich-vu">Quy trình làm việc</router-link>
-      </div>
     </div>
   </section>
 
