@@ -11,6 +11,8 @@
  *   câu 31 · bộ lọc ở cột dọc bên trái
  * ═══════════════════════════════════════════════════════════════════ */
 
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Inter:wght@300;400;500;600;700&display=swap');
+
 /* ─── Khối token của design system, dán nguyên văn ─────────────────── */
 :root {
   --bg: #f5f4ed;
@@ -34,9 +36,9 @@
   --warn: #eab308;
   --danger: #b53333;
 
-  --font-display: "Anthropic Serif", Georgia, "Times New Roman", serif;
-  --font-body: "Anthropic Sans", "Arial", system-ui, -apple-system, sans-serif;
-  --font-mono: "Anthropic Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --font-display: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
 
   --text-xs: 10px;
   --text-sm: 14px;
@@ -233,26 +235,39 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 
 /* ─── Thanh điều hướng (AHL Architectural Transparent Header) ────── */
 .nav {
-  position: sticky; top: 0; z-index: 100;
-  background: rgba(18, 18, 18, 0.45);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  transition: background 0.3s ease, border-color 0.3s ease;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: transparent;
+  border-bottom: none;
+  transition: background 0.3s ease;
 }
-.nav-in { display: flex; align-items: center; justify-content: space-between; min-height: 72px }
+.nav::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; bottom: -40px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
+  pointer-events: none;
+  z-index: -1;
+}
+.nav-in { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 96px; }
 
-.brand { display: inline-flex; align-items: center; gap: 12px; flex: none; text-decoration: none }
-.brand-mark { width: 32px; height: 32px; color: #ffffff }
-.brand-word { font-size: 14px; letter-spacing: 0.3em; text-transform: uppercase;
-              font-weight: 700; color: #ffffff }
+.brand { display: inline-flex; align-items: center; gap: 16px; flex: none; text-decoration: none }
+.brand-mark { 
+  height: 72px; 
+  width: auto; 
+  max-width: 100px; 
+  object-fit: contain; 
+  filter: brightness(0) invert(1); 
+}
+.brand-word { font-family: var(--font-display); font-size: 36px; font-variant-numeric: lining-nums; letter-spacing: 0.08em; text-transform: uppercase;
+              font-weight: 600; color: #ffffff }
 
-.nav-right { display: none; align-items: center; gap: 32px; margin-left: auto }
-.nav-links { display: flex; align-items: center; gap: 28px }
+.nav-left { display: flex; align-items: center; justify-content: flex-start; }
+.nav-center { display: none; align-items: center; justify-content: center; }
+.nav-right { display: flex; align-items: center; justify-content: flex-end; gap: 32px; }
+.nav-links { display: flex; align-items: center; gap: 40px }
 .nav-links a {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.9);
   padding-block: 6px;
   transition: color 0.2s ease;
 }
@@ -267,7 +282,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: 15px;
   color: rgba(255, 255, 255, 0.6);
   margin-left: 4px;
 }
@@ -277,7 +292,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   padding: 0;
   font: inherit;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.8);
   font-weight: 500;
   transition: color 0.2s ease;
 }
@@ -286,7 +301,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   color: #ffffff;
   font-weight: 700;
 }
-.lang-switch .sep { color: rgba(255, 255, 255, 0.3); font-weight: 300; font-size: 12px }
+.lang-switch .sep { color: rgba(255, 255, 255, 0.4); font-weight: 300; font-size: 13px }
 
 .nav-burger { margin-left: auto; display: inline-flex; width: 44px; height: 44px;
               align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.2);
@@ -306,25 +321,17 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .nav-sheet-lang button.active { color: #ffffff; font-weight: 700 }
 
 @media (min-width: 900px) {
-  .nav-right { display: flex }
+  .nav-center { display: flex }
   .nav-burger, .nav-sheet { display: none }
 }
 
 /* ─── Hero ────────────────────────────────────────────────────────── */
 .hero {
   position: relative;
-  min-height: clamp(540px, 80vh, 880px);
+  min-height: 100vh;
   display: grid;
-  margin-top: -72px; /* Phủ ảnh nền lên kín khu vực navbar ở trên cùng */
 }
 .hero > .media { position: absolute; inset: 0; border-radius: 0 }
-.hero-scrim {
-  position: absolute; inset: 0;
-  background: linear-gradient(74deg,
-    color-mix(in oklab, var(--fg) 90%, transparent) 0%,
-    color-mix(in oklab, var(--fg) 66%, transparent) 46%,
-    color-mix(in oklab, var(--fg) 22%, transparent) 100%);
-}
 .hero-in {
   position: relative;
   align-self: end;

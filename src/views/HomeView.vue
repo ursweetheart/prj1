@@ -1,17 +1,7 @@
 <template>
   <!-- Hero -->
   <section class="hero">
-    <div class="media"><img src="/img/indochine-apartment-hero.jpg" alt="D3 Studio - Indochine Apartment"></div>
-    <div class="hero-scrim"></div>
-    <div class="hero-in wrap wrap-wide">
-      <p class="eyebrow">Kiến trúc · Nội thất · Diễn họa 3D</p>
-      <h1 class="h-hero" style="margin-top:14px; max-width:18ch">
-        Không gian sống tinh tế, tĩnh lặng và chuẩn mực.
-      </h1>
-      <p class="lead" style="margin-top:18px; max-width:48ch">
-        D3 Studio — Đơn vị tư vấn thiết kế kiến trúc, nội thất cao cấp và diễn họa 3D chuyên nghiệp tại Hà Nội. Nơi mỗi công trình là sự giao thoa hài hòa giữa nghệ thuật, ánh sáng và bản sắc sống riêng biệt.
-      </p>
-    </div>
+    <div class="media"><img :src="base + 'img/indochine-apartment-hero.jpg'" alt="D3 Studio - Indochine Apartment"></div>
   </section>
 
   <!-- Nổi bật -->
@@ -33,7 +23,7 @@
   <!-- Magazine section -->
   <section class="sec sec-line wrap wrap-wide">
     <div class="mag">
-      <div class="media p45"><img src="/img/pic9.jpg" alt="Lorem ipsum dolor sit amet" loading="lazy"></div>
+      <div class="media p45"><img :src="base + 'img/pic9.jpg'" alt="Lorem ipsum dolor sit amet" loading="lazy"></div>
       <div>
         <p class="eyebrow">Quomodo facimus</p>
         <h2 class="h-2" style="margin-top:12px">Unum opus saepe multos modos habet</h2>
@@ -59,14 +49,14 @@
     <p class="eyebrow">Duo genera operum</p>
     <div class="cols t2" style="margin-top:22px">
       <router-link class="pcard" to="/cong-trinh#loai=chung-cu,nha-pho,villa">
-        <div class="media l32"><img src="/img/pic1.jpg" alt="Lorem ipsum" loading="lazy"></div>
+        <div class="media l32"><img :src="base + 'img/pic1.jpg'" alt="Lorem ipsum" loading="lazy"></div>
         <div class="pcard-cap">
           <span class="h-3">Nhà ở</span>
           <span class="small">Chung cư · nhà phố · villa</span>
         </div>
       </router-link>
       <router-link class="pcard" to="/cong-trinh#loai=lounge">
-        <div class="media l32"><img src="/img/pic8.jpg" alt="Lorem ipsum" loading="lazy"></div>
+        <div class="media l32"><img :src="base + 'img/pic8.jpg'" alt="Lorem ipsum" loading="lazy"></div>
         <div class="pcard-cap">
           <span class="h-3">Thương mại</span>
           <span class="small">Lounge · F&amp;B · showroom</span>
@@ -110,6 +100,7 @@
 import { SPACES } from '@/data'
 import SpaceCard from '@/components/SpaceCard.vue'
 
+const base = import.meta.env.BASE_URL
 const featured = [SPACES[3], SPACES[0], SPACES[2], SPACES[4]].filter(Boolean)
 const all = SPACES
 </script>

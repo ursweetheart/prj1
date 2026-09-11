@@ -3,7 +3,7 @@
     <div style="position:relative">
       <router-link :to="href" :aria-label="space.projectName + ' — ' + space.space">
         <div class="media" :class="ratio || space.ratio">
-          <img :src="space.img" :alt="space.projectName + ' — ' + space.space" loading="lazy">
+          <img :src="imageUrl" :alt="space.projectName + ' — ' + space.space" loading="lazy">
         </div>
       </router-link>
       <button class="pcard-save" type="button"
@@ -44,4 +44,9 @@ const facetLine = computed(() => [
 
 const href = computed(() =>
   '/cong-trinh-chi-tiet#' + props.space.projectSlug + '/' + props.space.id)
+
+const imageUrl = computed(() => {
+  const imgPath = props.space.img.startsWith('/') ? props.space.img.slice(1) : props.space.img
+  return import.meta.env.BASE_URL + imgPath
+})
 </script>
