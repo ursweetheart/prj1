@@ -19,7 +19,7 @@ class SpaceImageProcessor:
     def __init__(
         self,
         model_yolo: str = "yolov8s.pt",
-        clip_model: str = "ViT-B-32",
+        clip_model: str = "hf-hub:timm/ViT-B-16-SigLIP2",
         device: Optional[str] = None,
     ):
         self.device = device

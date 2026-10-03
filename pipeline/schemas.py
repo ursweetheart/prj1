@@ -87,5 +87,5 @@ class SpaceRecord(BaseModel):
     furniture_detection: FurnitureDetectionResult
     classification: Optional[SpaceClassificationResult] = None
     llm_usage: Optional[LLMUsage] = None
-    embedding_dimension: int = 512
-    embedding: Optional[List[float]] = Field(default=None, description="CLIP vector stored in Postgres/pgvector")
+    embedding_dimension: int = 768
+    embedding: Optional[List[float]] = Field(default=None, description="SigLIP2 vector stored in Postgres/pgvector")

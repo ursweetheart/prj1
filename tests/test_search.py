@@ -12,5 +12,5 @@ def test_similar_same_space_type_and_excludes_self():
 
 
 def test_text_search_filters_space_type():
-    res = by_text("a bedroom with warm wood tones", "phong_ngu_master", k=5)
+    res = by_text("phòng ngủ ấm áp tông gỗ", "phong_ngu_master", k=5)
     assert res and all(r[1] == "phong_ngu_master" for r in res)

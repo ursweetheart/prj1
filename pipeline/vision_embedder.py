@@ -1,6 +1,6 @@
-"""Vision Embedder using OpenCLIP ViT-B/32.
+"""Vision Embedder using OpenCLIP SigLIP2 ViT-B/16 (multilingual, understands Vietnamese queries).
 
-Extracts normalized 512-dimensional semantic feature vectors for M3 and M10.
+Extracts normalized 768-dimensional semantic feature vectors for M3 and M10.
 Runs in FP16 on GPU keeping VRAM < 0.9 GB.
 """
 
@@ -14,8 +14,8 @@ from PIL import Image
 class VisionEmbedder:
     def __init__(
         self,
-        model_name: str = "ViT-B-32",
-        pretrained: str = "laion2b_s34b_b79k",
+        model_name: str = "hf-hub:timm/ViT-B-16-SigLIP2",
+        pretrained: Optional[str] = None,
         device: Optional[str] = None,
     ):
         try:
@@ -58,7 +58,7 @@ class VisionEmbedder:
             self.preprocess = None
 
     def embed_image(self, image_path: str | Path) -> List[float]:
-        """Generate a 512-dim normalized feature vector from image."""
+        """Generate a 768-dim normalized feature vector from image."""
         img = Image.open(image_path).convert("RGB")
 
         if self.model is not None and self.preprocess is not None:
@@ -79,14 +79,14 @@ class VisionEmbedder:
 
             return vector
         else:
-            # Fallback mock 512-dim normalized vector for testing environments
+            # Fallback mock 768-dim normalized vector for testing environments
             rng = np.random.default_rng(seed=hash(str(image_path)) % (2**32))
-            dummy = rng.standard_normal(512).astype(np.float32)
+            dummy = rng.standard_normal(768).astype(np.float32)
             dummy /= np.linalg.norm(dummy)
             return dummy.tolist()
 
     def embed_text(self, text: str) -> List[float]:
-        """512-dim normalized CLIP text vector, same space as embed_image. English works best."""
+        """768-dim normalized text vector, same space as embed_image. Vietnamese works."""
         import open_clip
         import torch
 
