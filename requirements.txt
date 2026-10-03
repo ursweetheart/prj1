@@ -1,0 +1,10 @@
+numpy>=1.26.0
+pillow>=10.2.0
+scikit-learn>=1.4.0
+opencv-python-headless>=4.9.0.80
+pydantic>=2.6.0
+requests>=2.31.0
+google-auth>=2.27.0
+psycopg[binary]>=3.2
+pgvector>=0.3
+pytest
