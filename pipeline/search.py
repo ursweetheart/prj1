@@ -6,7 +6,7 @@ import psycopg
 from pgvector.psycopg import register_vector
 from pipeline.store import DSN
 
-COLS = "relative_path, space_type, design_style, 1 - (embedding <=> %(v)s) AS score"
+COLS = "relative_path, space_type, design_style, 1 - (embedding <=> %(v)s) AS score, id"
 
 
 def _query(conn, vec, space_type, k, exclude=None):
@@ -18,11 +18,11 @@ def _query(conn, vec, space_type, k, exclude=None):
 
 
 def similar_to(relative_path: str, k: int = 6):
-    """Same space_type only, so a bedroom never returns a kitchen (seq-2 rule)."""
+    """Same space_type only, so a bedroom never returns a kitchen (seq-2 rule). Unknown path -> []."""
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         row = conn.execute("SELECT embedding, space_type FROM space WHERE relative_path=%s", (relative_path,)).fetchone()
-        return _query(conn, row[0], row[1], k, exclude=relative_path)
+        return _query(conn, row[0], row[1], k, exclude=relative_path) if row else []
 
 
 def by_text(text: str, space_type: str | None = None, k: int = 6):
