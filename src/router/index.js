@@ -12,6 +12,11 @@ const router = createRouter({
       path: '/cong-trinh',
       name: 'cong-trinh',
       component: () => import('@/views/CongTrinhView.vue')
+    },
+    {
+      path: '/khong-gian/:id(\\d+)',
+      name: 'khong-gian',
+      component: () => import('@/views/SpaceView.vue')
     }
   ]
 })
