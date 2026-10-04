@@ -39,12 +39,12 @@
 
 ## 6. Access control (follow-up; protects space-review-api)
 
-- [ ] 6.1 Decide auth approach (own accounts, Google OAuth, or both) and the roles (visitor, architect, content, sales, lead architect, admin)
-- [ ] 6.2 User registration and login with hashed passwords and token/session issuance
-- [ ] 6.3 OAuth sign-in with an external provider and account linking
-- [ ] 6.4 Authorization: only architect roles may ingest and edit facets; approval/publish limited to lead architect; anonymous visitors see only `published` spaces
-- [ ] 6.5 Audit log of review actions (who changed what, when)
-- [ ] 6.6 Tests for each role against each protected endpoint
+- [x] 6.1 Approach: own accounts (email + argon2 password, JWT bearer, 60 min) plus Google OIDC; roles visitor, architect, content, sales, lead_architect, admin; self sign-up yields visitor, admin grants roles (`set_role.py`)
+- [x] 6.2 User registration and login with hashed passwords and token/session issuance
+- [x] 6.3 Google sign-in (authorization-code + OIDC) with account linking by verified email; linking clears the password. Needs GOOGLE_CLIENT_ID/SECRET: linking logic tested, live redirect not tested
+- [x] 6.4 Authorization: only architect roles may ingest and edit facets; approval/publish limited to lead architect; anonymous visitors see only `published` spaces
+- [x] 6.5 Audit log of review actions (who changed what, when)
+- [x] 6.6 Tests for each role against each protected endpoint
 
 ## 7. Remainder of the week (RAG assistant, seq-3)
 

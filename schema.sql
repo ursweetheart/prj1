@@ -15,3 +15,24 @@ CREATE TABLE IF NOT EXISTS space (
   review_status text NOT NULL DEFAULT 'draft',
   embedding vector(768)  -- SigLIP2 ViT-B/16; re-run reembed.py if the embedder changes
 );
+
+-- Access control (task group 6). Safe to re-run on an existing database.
+CREATE TABLE IF NOT EXISTS app_user (
+  id serial PRIMARY KEY,
+  email text UNIQUE NOT NULL,
+  password_hash text,           -- NULL for Google-only accounts
+  google_sub text UNIQUE,
+  role text NOT NULL DEFAULT 'visitor'
+    CHECK (role IN ('visitor','architect','content','sales','lead_architect','admin')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Audit trail of review actions; survives user deletion.
+CREATE TABLE IF NOT EXISTS review_log (
+  id serial PRIMARY KEY,
+  space_id int REFERENCES space(id) ON DELETE CASCADE,
+  user_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  action text NOT NULL,         -- ingest | edit | advance
+  detail jsonb,
+  at timestamptz NOT NULL DEFAULT now()
+);
