@@ -37,3 +37,19 @@ def test_review_flow_and_validation():
     finally:  # leave the data as found
         with psycopg.connect(DSN) as c:
             c.execute("UPDATE space SET review_status='draft', design_style=%s WHERE id=%s", (orig, sid))
+
+
+def test_ingest_rejects_non_image():
+    r = client.post("/spaces/ingest", files={"file": ("notes.txt", b"hello", "text/plain")})
+    assert r.status_code == 415
+
+
+def test_review_cannot_pass_final_state():
+    sid = client.get("/spaces", params={"review_status": "draft", "limit": 1}).json()[0]["id"]
+    try:
+        for expected in ("in_review", "approved", "published"):
+            assert client.patch(f"/spaces/{sid}", json={"advance": True}).json()["review_status"] == expected
+        assert client.patch(f"/spaces/{sid}", json={"advance": True}).status_code == 409
+    finally:
+        with psycopg.connect(DSN) as c:
+            c.execute("UPDATE space SET review_status='draft' WHERE id=%s", (sid,))

@@ -7,7 +7,6 @@ Runs in FP16 on GPU keeping VRAM < 0.9 GB.
 from pathlib import Path
 import time
 from typing import List, Optional
-import numpy as np
 from PIL import Image
 
 
@@ -34,56 +33,42 @@ class VisionEmbedder:
         self._load_model()
 
     def _load_model(self):
-        try:
-            import open_clip
-            import torch
+        # No silent fallback: a failed load must fail ingest, never store fake vectors.
+        import open_clip
 
-            model, _, preprocess = open_clip.create_model_and_transforms(
-                self.model_name,
-                pretrained=self.pretrained,
-                device=self.device,
-            )
-            model.eval()
+        model, _, preprocess = open_clip.create_model_and_transforms(
+            self.model_name,
+            pretrained=self.pretrained,
+            device=self.device,
+        )
+        model.eval()
 
-            # Convert to FP16 on GPU
-            if self.device == "cuda":
-                model = model.half()
+        # Convert to FP16 on GPU
+        if self.device == "cuda":
+            model = model.half()
 
-            self.model = model
-            self.preprocess = preprocess
-            print(f"[INFO] VisionEmbedder loaded {self.model_name} ({self.pretrained}) on {self.device}")
-        except Exception as e:
-            print(f"[WARN] OpenCLIP initialization note: {e}")
-            self.model = None
-            self.preprocess = None
+        self.model = model
+        self.preprocess = preprocess
+        print(f"[INFO] VisionEmbedder loaded {self.model_name} ({self.pretrained}) on {self.device}")
 
     def embed_image(self, image_path: str | Path) -> List[float]:
         """Generate a 768-dim normalized feature vector from image."""
+        import torch
+
         img = Image.open(image_path).convert("RGB")
+        image_tensor = self.preprocess(img).unsqueeze(0).to(self.device)
+        if self.device == "cuda":
+            image_tensor = image_tensor.half()
 
-        if self.model is not None and self.preprocess is not None:
-            import torch
+        with torch.no_grad():
+            features = self.model.encode_image(image_tensor)
+            features /= features.norm(dim=-1, keepdim=True)  # L2 normalize
+            vector = features.squeeze(0).cpu().float().numpy().tolist()
 
-            image_tensor = self.preprocess(img).unsqueeze(0).to(self.device)
-            if self.device == "cuda":
-                image_tensor = image_tensor.half()
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
 
-            with torch.no_grad():
-                features = self.model.encode_image(image_tensor)
-                # Normalize L2
-                features /= features.norm(dim=-1, keepdim=True)
-                vector = features.squeeze(0).cpu().float().numpy().tolist()
-
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
-
-            return vector
-        else:
-            # Fallback mock 768-dim normalized vector for testing environments
-            rng = np.random.default_rng(seed=hash(str(image_path)) % (2**32))
-            dummy = rng.standard_normal(768).astype(np.float32)
-            dummy /= np.linalg.norm(dummy)
-            return dummy.tolist()
+        return vector
 
     def embed_text(self, text: str) -> List[float]:
         """768-dim normalized text vector, same space as embed_image. Vietnamese works."""

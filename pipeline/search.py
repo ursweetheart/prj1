@@ -1,6 +1,7 @@
 """Similarity search over `space` (seq-2). python -m pipeline.search "warm wood bedroom" [space_type]"""
 
 import sys
+from functools import lru_cache
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
@@ -9,7 +10,17 @@ from pipeline.store import DSN
 COLS = "relative_path, space_type, design_style, 1 - (embedding <=> %(v)s) AS score, id"
 
 
+MAX_K = 24
+
+
+@lru_cache(maxsize=1)
+def _embedder():  # load the model once per process, not per query
+    from pipeline.vision_embedder import VisionEmbedder
+    return VisionEmbedder()
+
+
 def _query(conn, vec, space_type, k, exclude=None):
+    k = max(1, min(k, MAX_K))
     return conn.execute(
         f"SELECT {COLS} FROM space WHERE (%(t)s::text IS NULL OR space_type = %(t)s) "
         "AND (%(x)s::text IS NULL OR relative_path <> %(x)s) ORDER BY embedding <=> %(v)s LIMIT %(k)s",
@@ -26,9 +37,7 @@ def similar_to(relative_path: str, k: int = 6):
 
 
 def by_text(text: str, space_type: str | None = None, k: int = 6):
-    from pipeline.vision_embedder import VisionEmbedder
-
-    vec = np.asarray(VisionEmbedder().embed_text(text), dtype=np.float32)
+    vec = np.asarray(_embedder().embed_text(text), dtype=np.float32)
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         return _query(conn, vec, space_type, k)
