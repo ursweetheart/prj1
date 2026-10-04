@@ -11,9 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import auth
+from pipeline.assistant import respond, with_services
 from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_text, similar_to
@@ -76,6 +77,7 @@ def get_space(space_id: int, user=Depends(optional_user)):
         row = c.execute(f"SELECT {FIELDS}, palette, hotspots FROM space WHERE id=%s", (space_id,)).fetchone()
     if not row or (row["review_status"] != "published" and not _is_staff(user)):
         raise HTTPException(404, "space not found")  # 404, not 403: do not reveal unpublished spaces
+    row["hotspots"] = with_services(row["hotspots"])
     return row
 
 
@@ -145,3 +147,15 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF))):
         if body.advance:
             _log(c, space_id, user, "advance", {"from": row["review_status"], "to": status})
         return new
+
+
+class Chat(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    history: list[dict] = Field(default_factory=list, max_length=40)  # earlier turns, kept by the client
+    contact: Optional[str] = Field(default=None, max_length=200)
+
+
+@app.post("/chat")
+def chat(body: Chat):
+    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
+    return respond(body.message, body.history, body.contact)

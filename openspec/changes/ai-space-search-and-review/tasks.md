@@ -48,10 +48,10 @@
 
 ## 7. Remainder of the week (RAG assistant, seq-3)
 
-- [ ] 7.1 Knowledge base: ingest project descriptions, price list and FAQ, chunk and embed
-- [ ] 7.2 Chat endpoint: extract request (project type, area, style, price intent), hybrid retrieval, grounded answer with sources and three project images
-- [ ] 7.3 Anti-hallucination threshold: below it, answer that the information is missing and hand off to an architect
-- [ ] 7.4 Lead handoff: create a lead with the conversation when price or appointment intent is detected
-- [ ] 7.5 Hotspot "item → service" from `furniture_detection`
-- [ ] 7.6 Evaluation set (about 30 images/questions): facet accuracy against NFR-10 (≥85%), cost per image, run guide
+- [x] 7.1 Knowledge base: `kb_chunk` table, `kb/sample.json` (SAMPLE data, replace with the real price list, FAQ, projects), loaded by `python -m pipeline.assistant kb/sample.json`; embeds title + match phrases with SigLIP2
+- [x] 7.2 Chat endpoint: extract request (project type, area, style, price intent), hybrid retrieval, grounded answer with sources and three project images
+- [x] 7.3 Anti-hallucination threshold `MIN_SCORE` 0.88 in `pipeline/assistant.py`, below it: fixed "no information" answer + handoff lead (7/7 off-topic refused)
+- [x] 7.4 Lead handoff: create a lead with the conversation when price or appointment intent is detected
+- [x] 7.5 Hotspot "item → service" from `furniture_detection`
+- [~] 7.6 Chat evaluation set (30 questions) + `eval_assistant.py` done: top-1 19/23, off-topic refused 7/7. Still open: facet accuracy vs NFR-10 needs human-labelled images, and cost per image (~$0.0003 Gemini) in a run guide
 

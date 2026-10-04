@@ -36,3 +36,22 @@ CREATE TABLE IF NOT EXISTS review_log (
   detail jsonb,
   at timestamptz NOT NULL DEFAULT now()
 );
+
+-- RAG assistant (task group 7). Sample data lives in kb/sample.json.
+CREATE TABLE IF NOT EXISTS kb_chunk (
+  id serial PRIMARY KEY,
+  kind text NOT NULL CHECK (kind IN ('price','faq','service','project')),
+  title text UNIQUE NOT NULL,
+  content text NOT NULL,
+  embedding vector(768)         -- of title + match phrases (short: the SigLIP2 text tower reads ~64 tokens)
+);
+
+CREATE TABLE IF NOT EXISTS lead (
+  id serial PRIMARY KEY,
+  intent text NOT NULL,         -- price | appointment | handoff
+  request jsonb,
+  conversation jsonb,
+  contact text,
+  status text NOT NULL DEFAULT 'new',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
