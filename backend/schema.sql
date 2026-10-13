@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS app_user (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS facebook_id text UNIQUE;  -- Facebook-only accounts have a placeholder email
+
 -- Audit trail of review actions; survives user deletion.
 CREATE TABLE IF NOT EXISTS review_log (
   id serial PRIMARY KEY,

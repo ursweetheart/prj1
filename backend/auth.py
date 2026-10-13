@@ -1,4 +1,4 @@
-"""Accounts, JWT bearer tokens, role checks and Google sign-in (OIDC)."""
+"""Accounts, JWT bearer tokens, role checks, Google (OIDC) and Facebook (OAuth2) sign-in."""
 
 import os
 import secrets
@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
@@ -139,6 +140,14 @@ def upsert_google_user(sub: str, email: str) -> int:
         return c.execute("INSERT INTO app_user (email, google_sub) VALUES (%s, %s) RETURNING id", (email, sub)).fetchone()["id"]
 
 
+def _signed_in(user_id: int):
+    """JSON for API clients; with D3_FRONTEND_URL set (browser flow) redirect to the site with the token in the fragment."""
+    token = make_token(user_id)
+    if url := os.getenv("D3_FRONTEND_URL"):
+        return RedirectResponse(f"{url}#token={token}")
+    return {"access_token": token, "token_type": "bearer"}
+
+
 @router.get("/auth/google/login")
 async def google_login(request: Request):
     if oauth is None:
@@ -154,4 +163,49 @@ async def google_callback(request: Request):
     info = tok.get("userinfo") or {}
     if not info.get("email_verified"):
         raise HTTPException(403, "Google account email is not verified")
-    return {"access_token": make_token(upsert_google_user(info["sub"], info["email"])), "token_type": "bearer"}
+    return _signed_in(upsert_google_user(info["sub"], info["email"]))
+
+
+# ---- Facebook sign-in (plain OAuth2: no ID token, profile comes from the Graph API) ----
+if os.getenv("FACEBOOK_APP_ID") and os.getenv("FACEBOOK_APP_SECRET"):
+    from authlib.integrations.starlette_client import OAuth
+
+    oauth = oauth or OAuth()
+    oauth.register(
+        "facebook",
+        client_id=os.environ["FACEBOOK_APP_ID"],
+        client_secret=os.environ["FACEBOOK_APP_SECRET"],
+        authorize_url="https://www.facebook.com/v19.0/dialog/oauth",
+        access_token_url="https://graph.facebook.com/v19.0/oauth/access_token",
+        api_base_url="https://graph.facebook.com/v19.0/",
+        client_kwargs={"scope": "public_profile"},
+    )
+
+
+def upsert_facebook_user(fb_id: str) -> int:
+    """Find by Facebook id, else create a visitor. Never link by email: Facebook does not guarantee a verified one,
+    so an attacker could otherwise claim an existing account (or a later Google/password sign-up) by faking it."""
+    with _conn() as c:
+        u = c.execute("SELECT id FROM app_user WHERE facebook_id=%s", (fb_id,)).fetchone()
+        if u:
+            return u["id"]
+        # placeholder address on a reserved TLD: unique, can never collide with a real account
+        return c.execute("INSERT INTO app_user (email, facebook_id) VALUES (%s, %s) RETURNING id",
+                         (f"facebook-{fb_id}@facebook.invalid", fb_id)).fetchone()["id"]
+
+
+@router.get("/auth/facebook/login")
+async def facebook_login(request: Request):
+    if oauth is None or not hasattr(oauth, "facebook"):
+        raise HTTPException(501, "Facebook sign-in is not configured (FACEBOOK_APP_ID / FACEBOOK_APP_SECRET)")
+    return await oauth.facebook.authorize_redirect(request, str(request.url_for("facebook_callback")))
+
+
+@router.get("/auth/facebook/callback")
+async def facebook_callback(request: Request):
+    if oauth is None or not hasattr(oauth, "facebook"):
+        raise HTTPException(501, "Facebook sign-in is not configured")
+    tok = await oauth.facebook.authorize_access_token(request)
+    resp = await oauth.facebook.get("me", params={"fields": "id"}, token=tok)
+    resp.raise_for_status()
+    return _signed_in(upsert_facebook_user(resp.json()["id"]))
