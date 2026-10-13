@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
-// Dev: the AI API runs on :8000 (uvicorn api:app, started from the repo root)
+// Dev: the AI API runs on :8000 (uvicorn api:app, started from backend/: cd backend && uvicorn api:app)
 const api = 'http://localhost:8000'
 
 export default defineConfig({

@@ -1,0 +1,4 @@
+.venv/
+sa-key.json
+__pycache__/
+*.pt
