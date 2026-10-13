@@ -79,3 +79,11 @@ def test_leads_visible_to_sales_only(as_role):
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE contact = '0922222222'")
+
+
+def test_validate_kb():
+    from pipeline.assistant import validate_kb
+    ok = {"kind": "faq", "title": "A", "match": "m", "content": "c"}
+    assert validate_kb([ok]) == []
+    errs = validate_kb([ok, ok, {"kind": "x", "title": "B", "match": "", "content": "c"}])
+    assert any("duplicate" in e for e in errs) and any("'match'" in e for e in errs) and any("kind must" in e for e in errs)
