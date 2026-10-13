@@ -18,6 +18,10 @@ npm run dev       # http://localhost:5173/prj1/ ; /api và /images được prox
 npm run build     # ra dist/, giống bước build của CI
 ```
 
+Biến của frontend (tuỳ chọn): `VITE_BACKEND_URL` (mặc định `http://localhost:8000`), địa chỉ backend cho nút đăng nhập Google/Facebook.
+
+Trang quản trị: `/quan-tri` (kiến trúc sư duyệt không gian), `/khach-hang` (sales xem lead); cả hai cần đăng nhập đúng role. Tài khoản tự đăng ký luôn là `visitor`; admin nâng role bằng `PATCH /users/{id}/role` hoặc `python set_role.py`.
+
 Bản deploy: https://ursweetheart.github.io/prj1/ (trang tĩnh nên tìm kiếm AI chỉ chạy khi bật backend).
 
 ## Backend
@@ -41,7 +45,9 @@ Biến môi trường (tuỳ chọn, có mặc định cho dev):
 |---|---|
 | `D3_DSN` | chuỗi kết nối Postgres, mặc định `postgresql://d3:d3@localhost:5432/d3` (chỉ dùng cho dev) |
 | `D3_JWT_SECRET` | khoá ký JWT, đặt giá trị riêng khi chạy thật |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | đăng nhập Google |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | đăng nhập Google. Redirect URI cần khai báo: `<backend>/auth/google/callback` |
+| `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | đăng nhập Facebook. Redirect URI: `<backend>/auth/facebook/callback` |
+| `D3_FRONTEND_URL` | sau khi đăng nhập OAuth, backend chuyển về địa chỉ này (vd `http://localhost:5173/prj1/`) kèm token; để trống thì trả JSON |
 | `GEMINI_API_KEY` hoặc `GOOGLE_API_KEY` | phân loại ảnh bằng Gemini |
 | `GOOGLE_APPLICATION_CREDENTIALS` / `VERTEX_SA_KEY` | khoá service account (`sa-key.json`, đã nằm trong `.gitignore`, không commit) |
 
