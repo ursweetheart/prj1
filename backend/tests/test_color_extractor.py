@@ -9,7 +9,7 @@ from pipeline.color_extractor import analyze_color_palette
 
 
 def test_color_extraction():
-    img_path = Path("D:/prj1/image_d3/Indochine/behance_img_1.jpg")
+    img_path = Path(__file__).resolve().parent.parent / "image_d3/Indochine/behance_img_1.jpg"
     assert img_path.exists(), f"Image not found at {img_path}"
 
     start_t = time.perf_counter()
