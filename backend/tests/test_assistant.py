@@ -67,3 +67,23 @@ def test_hotspots_link_to_services(as_role):
     objs = client.get(f"/spaces/{sid}", headers=admin).json()["hotspots"]["objects"]
     assert all("service" in o for o in objs)
     assert any(o["service"] == "Dịch vụ thiết kế phòng khách" for o in objs if o["label"] == "couch") or not any(o["label"] == "couch" for o in objs)
+
+
+def test_leads_visible_to_sales_only(as_role):
+    try:
+        lead_id = client.post("/chat", json={"message": "Cách nấu phở bò ngon", "contact": "0922222222"}).json()["lead_id"]
+        assert client.get("/leads").status_code == 401
+        assert client.get("/leads", headers=as_role("visitor")).status_code == 403
+        rows = client.get("/leads", headers=as_role("sales")).json()
+        assert any(r["id"] == lead_id and r["intent"] == "handoff" for r in rows)
+    finally:
+        with psycopg.connect(DSN) as c:
+            c.execute("DELETE FROM lead WHERE contact = '0922222222'")
+
+
+def test_validate_kb():
+    from pipeline.assistant import validate_kb
+    ok = {"kind": "faq", "title": "A", "match": "m", "content": "c"}
+    assert validate_kb([ok]) == []
+    errs = validate_kb([ok, ok, {"kind": "x", "title": "B", "match": "", "content": "c"}])
+    assert any("duplicate" in e for e in errs) and any("'match'" in e for e in errs) and any("kind must" in e for e in errs)

@@ -1,0 +1,5 @@
+[
+  {"kind": "price", "title": "Tiêu đề ngắn, duy nhất (khách không thấy)",
+   "match": "các cách khách hay hỏi, viết tự nhiên, khoảng 10-15 từ (dùng để tìm đoạn này)",
+   "content": "Câu trả lời đầy đủ mà khách sẽ đọc, có số liệu thật. kind là một trong: price, faq, service, project."}
+]

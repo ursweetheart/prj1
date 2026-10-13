@@ -11,7 +11,6 @@ The system SHALL extract the dominant color palette and categorize lighting tone
 - **THEN** the system returns a palette of 5 distinct hex color codes with their corresponding pixel occupancy percentages
 - **AND** determines brightness category (`light`, `dark`, or `balanced`) and color temperature (`warm`, `cool`, or `neutral`)
 - **AND** execution completes without allocating GPU VRAM (CPU-bound operation).
-
 ### Requirement: Furniture Object Detection for Hotspots
 The system SHALL detect interior furniture objects and output localized bounding box coordinates compatible with the CMS Hotspot feature (`M7`).
 
@@ -19,15 +18,17 @@ The system SHALL detect interior furniture objects and output localized bounding
 - **WHEN** an interior image is passed through the lightweight `YOLO-World-S` model
 - **THEN** the system outputs a list of detected furniture items (such as `sofa`, `coffee table`, `bed`, `pendant light`, `dining table`, `wardrobe`)
 - **AND** provides bounding box normalized coordinates `[x_min, y_min, x_max, y_max]` and confidence scores $\ge 0.35$.
-
 ### Requirement: Multimodal Vision Embedding Generation
-The system SHALL generate high-dimensional semantic feature vectors from images using OpenCLIP ViT-B/32 for downstream similarity search (`M3`) and vector indexing (`M10`).
+The system SHALL generate high-dimensional semantic feature vectors from images using OpenCLIP SigLIP2 ViT-B/16 for downstream similarity search (`M3`) and vector indexing (`M10`), and SHALL persist the vector with the space record.
 
 #### Scenario: Generate normalized vector embedding
-- **WHEN** an interior image is loaded into the OpenCLIP model
-- **THEN** the system outputs a 512-dimensional normalized float32 vector embedding
-- **AND** the embedding is formatted ready for insertion into the vector index.
+- **WHEN** an interior image is loaded into the SigLIP2 model
+- **THEN** the system outputs a 768-dimensional normalized float32 vector embedding
+- **AND** the embedding is stored in the vector index together with the space record
 
+#### Scenario: Text query in the same space
+- **WHEN** a Vietnamese text description is embedded with the same model
+- **THEN** the resulting 768-dimensional normalized vector is directly comparable to image vectors by cosine similarity
 ### Requirement: Strict VRAM Boundary on 4GB GPUs
 The system SHALL enforce sequential pipeline execution and memory cleanup to maintain total VRAM usage below 2.5GB on 4GB GPUs (RTX 3050).
 
@@ -35,4 +36,3 @@ The system SHALL enforce sequential pipeline execution and memory cleanup to mai
 - **WHEN** 50 interior images are processed consecutively in batch or stream mode
 - **THEN** peak GPU VRAM allocation remains under 2.5GB at all times
 - **AND** `torch.cuda.empty_cache()` or explicit garbage collection is triggered between stages to prevent CUDA Out Of Memory (OOM) errors.
-

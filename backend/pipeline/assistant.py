@@ -58,8 +58,32 @@ def parse_request(message: str) -> dict:
     }
 
 
+KB_KINDS = ("price", "faq", "service", "project")
+SAMPLE_MARK = "[DỮ LIỆU MẪU]"
+
+
+def validate_kb(chunks: list) -> list[str]:
+    """Problems that must be fixed before loading (empty list = ok)."""
+    errors, seen = [], set()
+    for i, ch in enumerate(chunks):
+        where = f"#{i + 1} {ch.get('title', '?')!r}"
+        for f in ("kind", "title", "match", "content"):
+            if not str(ch.get(f, "")).strip():
+                errors.append(f"{where}: missing '{f}'")
+        if ch.get("kind") not in KB_KINDS:
+            errors.append(f"{where}: kind must be one of {KB_KINDS}")
+        if ch.get("title") in seen:
+            errors.append(f"{where}: duplicate title")
+        seen.add(ch.get("title"))
+    return errors
+
+
 def load_kb(path: str) -> int:
     chunks = json.load(open(path, encoding="utf-8"))
+    if errors := validate_kb(chunks):
+        raise ValueError("knowledge base not loaded:\n  " + "\n  ".join(errors))
+    if sample := sum(SAMPLE_MARK in ch["content"] for ch in chunks):
+        print(f"WARNING: {sample}/{len(chunks)} chunks are still sample data (marked in content); replace before going live")
     emb = _embedder()
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
