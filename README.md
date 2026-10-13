@@ -1,0 +1,49 @@
+# D3 Studio
+
+Website portfolio thiết kế nội thất tích hợp AI (tìm không gian tương tự, trợ lý hỏi đáp).
+
+```
+.                frontend (Vue 3 + Vite), deploy lên GitHub Pages
+├── backend/     API FastAPI, pipeline AI, Postgres + pgvector, tests
+├── docs/        tài liệu khảo sát
+├── openspec/    spec của frontend (backend có openspec/ riêng)
+└── .github/     workflow deploy Pages (chạy khi push vào main)
+```
+
+## Frontend
+
+```
+npm ci
+npm run dev       # http://localhost:5173/prj1/ ; /api và /images được proxy sang backend :8000
+npm run build     # ra dist/, giống bước build của CI
+```
+
+Bản deploy: https://ursweetheart.github.io/prj1/ (trang tĩnh nên tìm kiếm AI chỉ chạy khi bật backend).
+
+## Backend
+
+Chạy mọi lệnh trong `backend/`.
+
+```
+docker compose up -d                              # Postgres + pgvector (project "prj1", volume prj1_pgdata)
+python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python ingest.py image_d3           # gán nhãn + embedding ảnh, ghi vào DB
+.venv\Scripts\python -m pipeline.assistant kb/sample.json   # nạp kho tri thức cho chatbot
+.venv\Scripts\python -m uvicorn api:app --port 8000
+.venv\Scripts\python -m pytest                    # cần DB đang chạy và đã ingest
+```
+
+Dùng `python -m ...` thay vì chạy thẳng file trong `.venv\Scripts` (venv đã đổi đường dẫn).
+
+Biến môi trường (tuỳ chọn, có mặc định cho dev):
+
+| Biến | Dùng cho |
+|---|---|
+| `D3_DSN` | chuỗi kết nối Postgres, mặc định `postgresql://d3:d3@localhost:5432/d3` (chỉ dùng cho dev) |
+| `D3_JWT_SECRET` | khoá ký JWT, đặt giá trị riêng khi chạy thật |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | đăng nhập Google |
+| `GEMINI_API_KEY` hoặc `GOOGLE_API_KEY` | phân loại ảnh bằng Gemini |
+| `GOOGLE_APPLICATION_CREDENTIALS` / `VERTEX_SA_KEY` | khoá service account (`sa-key.json`, đã nằm trong `.gitignore`, không commit) |
+
+Dữ liệu `backend/kb/sample.json` là **dữ liệu mẫu** (đánh dấu `[DỮ LIỆU MẪU]`), cần thay bằng bảng giá và FAQ thật của D3 Studio.
+`python eval_assistant.py` đo chất lượng truy hồi của chatbot trên `eval/chat_eval.json`.
