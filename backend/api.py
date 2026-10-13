@@ -159,3 +159,13 @@ class Chat(BaseModel):
 def chat(body: Chat):
     """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
     return respond(body.message, body.history, body.contact)
+
+
+@app.get("/leads")
+def list_leads(status: Optional[str] = None, limit: int = 50, offset: int = 0, user=Depends(require("sales", *APPROVERS))):
+    """Leads created by the chat (price / appointment / handoff), newest first."""
+    with _db() as c:
+        return c.execute(
+            "SELECT id, intent, request, conversation, contact, status, created_at FROM lead "
+            "WHERE (%(s)s::text IS NULL OR status=%(s)s) ORDER BY id DESC LIMIT %(l)s OFFSET %(o)s",
+            {"s": status, "l": limit, "o": offset}).fetchall()

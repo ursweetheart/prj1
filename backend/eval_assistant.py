@@ -1,5 +1,8 @@
 """Evaluate retrieval on eval/chat_eval.json and suggest the MIN_SCORE threshold.  python eval_assistant.py"""
 import json
+import sys
+
+sys.stdout.reconfigure(encoding="utf-8")  # Vietnamese output on the Windows console
 
 from pipeline.assistant import MIN_SCORE, retrieve
 
