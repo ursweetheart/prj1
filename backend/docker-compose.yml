@@ -1,3 +1,4 @@
+name: prj1
 services:
   db:
     image: pgvector/pgvector:pg16
