@@ -58,4 +58,5 @@ Giới hạn tần suất (theo IP, trong bộ nhớ): `/chat` 20 lần/phút, �
 Kho tri thức: copy `backend/kb/template.json`, điền nội dung thật (mỗi đoạn có `kind`, `title` duy nhất, `match`, `content`), rồi nạp bằng lệnh trên. Lệnh nạp báo lỗi nếu thiếu trường, trùng tiêu đề hoặc sai `kind`, và cảnh báo nếu còn dữ liệu mẫu.
 
 Dữ liệu `backend/kb/sample.json` là **dữ liệu mẫu** (đánh dấu `[DỮ LIỆU MẪU]`), cần thay bằng bảng giá và FAQ thật của D3 Studio.
+`python eval_labels.py` đo độ chính xác gán nhãn ảnh trên các không gian đã được người duyệt ở `/quan-tri` (mục tiêu ≥85%, cần ít nhất 30 ảnh đã duyệt).
 `python eval_assistant.py` đo chất lượng truy hồi của chatbot trên `eval/chat_eval.json`.
