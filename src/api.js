@@ -48,7 +48,26 @@ function setToken(t) {
   session.token = t
   store.set(t)
   if (!t) session.user = null
+  scheduleRefresh()
 }
+
+/* Sliding session: the JWT lives 60 min, so swap it for a fresh one shortly before it expires. */
+export function tokenExpiry(token) { // ms since epoch, 0 when unreadable
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000 } catch { return 0 }
+}
+const REFRESH_BEFORE = 5 * 60 * 1000
+let timer
+function scheduleRefresh() {
+  clearTimeout(timer)
+  if (!session.token) return
+  timer = setTimeout(refreshToken, Math.max(tokenExpiry(session.token) - Date.now() - REFRESH_BEFORE, 0))
+}
+async function refreshToken() {
+  try { setToken((await request('POST', '/auth/refresh')).access_token) } catch { /* a 401 already signed the user out */ }
+}
+if (typeof document !== 'undefined') // timers are throttled in background tabs: re-check when the tab comes back
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRefresh() })
+scheduleRefresh()
 export async function loadUser() {
   if (!session.token) return null
   try { session.user = await get('/auth/me') } catch { session.user = null }

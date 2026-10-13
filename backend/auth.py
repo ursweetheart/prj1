@@ -95,6 +95,12 @@ def me(user=Depends(require(*ROLES))):
     return user
 
 
+@router.post("/auth/refresh")
+def refresh(user=Depends(require(*ROLES))):
+    """A fresh token for a still-valid one (sliding session). A deleted user already fails in optional_user."""
+    return {"access_token": make_token(user["id"]), "token_type": "bearer"}
+
+
 class RoleChange(BaseModel):
     role: str
 

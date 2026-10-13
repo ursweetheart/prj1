@@ -16,6 +16,7 @@ Website portfolio thiết kế nội thất tích hợp AI (tìm không gian tư
 npm ci
 npm run dev       # http://localhost:5173/prj1/ ; /api và /images được proxy sang backend :8000
 npm run build     # ra dist/, giống bước build của CI
+npm test          # vitest: kiểm tra phần phiên đăng nhập trong src/api.js
 ```
 
 Biến của frontend (tuỳ chọn): `VITE_BACKEND_URL` (mặc định `http://localhost:8000`), địa chỉ backend cho nút đăng nhập Google/Facebook.

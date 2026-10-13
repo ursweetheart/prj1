@@ -145,3 +145,11 @@ def test_oauth_returns_to_the_site_when_frontend_url_is_set(monkeypatch):
     monkeypatch.setenv("D3_FRONTEND_URL", "http://localhost:5173/prj1/")
     r = auth._signed_in(1)
     assert r.status_code == 307 and r.headers["location"].startswith("http://localhost:5173/prj1/#token=")
+
+
+def test_refresh_issues_a_new_token_only_for_a_valid_one(as_role):
+    assert client.post("/auth/refresh").status_code == 401
+    assert client.post("/auth/refresh", headers={"Authorization": "Bearer nonsense"}).status_code == 401
+    r = client.post("/auth/refresh", headers=as_role("visitor"))
+    assert r.status_code == 200
+    assert client.get("/auth/me", headers={"Authorization": "Bearer " + r.json()["access_token"]}).status_code == 200
