@@ -4,10 +4,16 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+import ratelimit
 from api import app
 from pipeline.store import DSN
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    ratelimit.reset()  # tests share one client IP
 
 
 @pytest.fixture(scope="session")

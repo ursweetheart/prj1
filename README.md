@@ -52,6 +52,8 @@ Biến môi trường (tuỳ chọn, có mặc định cho dev):
 | `GEMINI_API_KEY` hoặc `GOOGLE_API_KEY` | phân loại ảnh bằng Gemini |
 | `GOOGLE_APPLICATION_CREDENTIALS` / `VERTEX_SA_KEY` | khoá service account (`sa-key.json`, đã nằm trong `.gitignore`, không commit) |
 
+Giới hạn tần suất (theo IP, trong bộ nhớ): `/chat` 20 lần/phút, đăng nhập và đăng ký 10 lần/phút, vượt thì trả 429 kèm `Retry-After`. Phía sau reverse proxy mọi người dùng chung IP của proxy nên cần đọc `X-Forwarded-For`, xem `backend/ratelimit.py`.
+
 Kho tri thức: copy `backend/kb/template.json`, điền nội dung thật (mỗi đoạn có `kind`, `title` duy nhất, `match`, `content`), rồi nạp bằng lệnh trên. Lệnh nạp báo lỗi nếu thiếu trường, trùng tiêu đề hoặc sai `kind`, và cảnh báo nếu còn dữ liệu mẫu.
 
 Dữ liệu `backend/kb/sample.json` là **dữ liệu mẫu** (đánh dấu `[DỮ LIỆU MẪU]`), cần thay bằng bảng giá và FAQ thật của D3 Studio.

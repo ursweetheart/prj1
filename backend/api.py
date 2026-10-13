@@ -19,6 +19,7 @@ from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_text, similar_to
 from pipeline.store import DSN, save_records
+from ratelimit import limit
 
 IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
@@ -155,7 +156,7 @@ class Chat(BaseModel):
     contact: Optional[str] = Field(default=None, max_length=200)
 
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(limit("chat", 20, 60))])
 def chat(body: Chat):
     """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
     return respond(body.message, body.history, body.contact)
