@@ -35,7 +35,7 @@
 - [x] 5.3 Add `SpaceView.vue` at `/khong-gian/:id` with caption, materials, palette and "Dự án tương tự"; add route; give `SpaceCard` an `href` prop
 - [x] 5.4 `vite build` passes
 - [x] 5.5 Verify in a browser against the live API: search, open a result, follow a similar space, unknown id, API down (all five checked; note `/cong-trinh` without trailing slash serves the old static cong-trinh.html in dev)
-- [ ] 5.6 Commit the prototype changes. `prototype/` is its own git repo (branch `Tuan`); the commit currently sits on its `master` and must be moved to `Tuan`. No `.gitignore` needed: `dist/` is tracked there
+- [x] 5.6 Commit the prototype changes (pushed on branch `Tuan` of prj1).
 
 ## 6. Access control (follow-up; protects space-review-api)
 
