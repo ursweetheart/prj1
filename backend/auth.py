@@ -1,5 +1,6 @@
 """Accounts, JWT bearer tokens, role checks, Google (OIDC) and Facebook (OAuth2) sign-in."""
 
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,8 @@ from ratelimit import limit
 
 # ponytail: random per-process secret when unset, so tokens die on restart; set D3_JWT_SECRET in production
 SECRET = os.getenv("D3_JWT_SECRET") or secrets.token_urlsafe(32)
+if not os.getenv("D3_JWT_SECRET"):
+    logging.getLogger(__name__).warning("D3_JWT_SECRET is not set: login tokens stop working whenever the server restarts")
 TOKEN_TTL = timedelta(minutes=60)
 ROLES = ("visitor", "architect", "content", "sales", "lead_architect", "admin")
 STAFF = {"architect", "lead_architect", "admin"}  # may see drafts, ingest and edit facets

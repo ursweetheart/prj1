@@ -1,5 +1,6 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
+import os
 import shutil
 from functools import lru_cache
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Optional
 
 import psycopg
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
@@ -31,6 +33,9 @@ STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__arg
 
 app = FastAPI(title="D3 Studio AI")
 app.add_middleware(SessionMiddleware, secret_key=auth.SECRET)  # only holds the OAuth state during Google sign-in
+if origins := [o.strip() for o in os.getenv("D3_CORS_ORIGINS", "").split(",") if o.strip()]:
+    # the site on GitHub Pages calls this API from another origin; tokens travel in the Authorization header, so no cookies
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(auth.router)
 IMG_DIR.mkdir(exist_ok=True)
 app.mount("/images", StaticFiles(directory=IMG_DIR), name="images")

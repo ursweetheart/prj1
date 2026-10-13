@@ -23,7 +23,11 @@ const store = {
   set(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY) } catch { /* private mode */ } }
 }
 export const session = reactive({ token: store.get(), user: null })
-export const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000' // OAuth redirects leave the SPA, so no /api proxy here
+// VITE_API_URL = origin of the hosted backend. Unset (dev): fetch goes through the Vite proxy under /api,
+// but OAuth redirects leave the SPA, so they need the real address.
+const ORIGIN = import.meta.env.VITE_API_URL || ''
+const API = ORIGIN || '/api'
+export const BACKEND = ORIGIN || 'http://localhost:8000'
 export const STAFF = ['architect', 'lead_architect', 'admin']
 export const APPROVERS = ['lead_architect', 'admin']
 export const SALES = ['sales', 'lead_architect', 'admin']
@@ -33,7 +37,7 @@ async function request(method, path, { params, body, form } = {}) {
   const headers = {}
   if (session.token) headers.Authorization = 'Bearer ' + session.token
   if (body) headers['Content-Type'] = 'application/json'
-  const res = await fetch('/api' + path + qs, { method, headers, body: form || (body && JSON.stringify(body)) })
+  const res = await fetch(API + path + qs, { method, headers, body: form || (body && JSON.stringify(body)) })
   if (res.status === 401 && session.token) setToken(null) // expired or revoked
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
@@ -81,7 +85,7 @@ export function adoptTokenFromHash() {
   history.replaceState(null, '', location.pathname + location.search)
 }
 export async function login(email, password) {
-  const res = await fetch('/api/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
+  const res = await fetch(API + '/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
   if (!res.ok) throw new Error(res.status === 401 ? 'Sai email hoặc mật khẩu.' : 'Không đăng nhập được (' + res.status + ').')
   setToken((await res.json()).access_token)
   return loadUser()
@@ -93,7 +97,7 @@ export async function register(email, password) {
 export const logout = () => setToken(null)
 export const hasRole = roles => !!session.user && roles.includes(session.user.role)
 
-export const imageUrl = path => '/images/' + encodeURI(path)
+export const imageUrl = path => ORIGIN + '/images/' + encodeURI(path)
 export const spaceLabel = type => SPACE_VI[type] || 'Không gian'
 
 /* API row -> shape SpaceCard expects */

@@ -19,7 +19,7 @@ npm run build     # ra dist/, giống bước build của CI
 npm test          # vitest: kiểm tra phần phiên đăng nhập trong src/api.js
 ```
 
-Biến của frontend (tuỳ chọn): `VITE_BACKEND_URL` (mặc định `http://localhost:8000`), địa chỉ backend cho nút đăng nhập Google/Facebook.
+Biến của frontend (tuỳ chọn): `VITE_API_URL`, địa chỉ backend đã host (vd `https://api.example.com`). Để trống khi dev: frontend gọi qua proxy `/api` của Vite, nút Google/Facebook trỏ `http://localhost:8000`.
 
 Trang quản trị: `/quan-tri` (kiến trúc sư duyệt không gian), `/khach-hang` (sales xem lead); cả hai cần đăng nhập đúng role. Tài khoản tự đăng ký luôn là `visitor`; admin nâng role bằng `PATCH /users/{id}/role` hoặc `python set_role.py`.
 
@@ -34,7 +34,7 @@ docker compose up -d                              # Postgres + pgvector (project
 python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python ingest.py image_d3           # gán nhãn + embedding ảnh, ghi vào DB
 .venv\Scripts\python -m pipeline.assistant kb/sample.json   # nạp kho tri thức cho chatbot
-.venv\Scripts\python -m uvicorn api:app --port 8000
+.venv\Scripts\python -m uvicorn api:app --port 8000 --env-file .env   # .env: copy từ .env.example, không commit
 .venv\Scripts\python -m pytest                    # cần DB đang chạy và đã ingest
 ```
 
@@ -48,6 +48,7 @@ Biến môi trường (tuỳ chọn, có mặc định cho dev):
 | `D3_JWT_SECRET` | khoá ký JWT, đặt giá trị riêng khi chạy thật |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | đăng nhập Google. Redirect URI cần khai báo: `<backend>/auth/google/callback` |
 | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | đăng nhập Facebook. Redirect URI: `<backend>/auth/facebook/callback` |
+| `D3_CORS_ORIGINS` | các origin được gọi API từ trình duyệt, cách nhau bằng dấu phẩy (vd `https://ursweetheart.github.io`); trống thì không bật CORS |
 | `D3_FRONTEND_URL` | sau khi đăng nhập OAuth, backend chuyển về địa chỉ này (vd `http://localhost:5173/prj1/`) kèm token; để trống thì trả JSON |
 | `GEMINI_API_KEY` hoặc `GOOGLE_API_KEY` | phân loại ảnh bằng Gemini |
 | `GOOGLE_APPLICATION_CREDENTIALS` / `VERTEX_SA_KEY` | khoá service account (`sa-key.json`, đã nằm trong `.gitignore`, không commit) |
