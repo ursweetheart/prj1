@@ -59,7 +59,7 @@ def parse_request(message: str) -> dict:
 
 
 KB_KINDS = ("price", "faq", "service", "project")
-SAMPLE_MARK = "[DỮ LIỆU MẪU]"
+MARKS = ("[DỮ LIỆU MẪU]", "[AI SINH - CHƯA DUYỆT]")  # sample / machine-written text nobody has checked
 
 
 def validate_kb(chunks: list) -> list[str]:
@@ -82,8 +82,8 @@ def load_kb(path: str) -> int:
     chunks = json.load(open(path, encoding="utf-8"))
     if errors := validate_kb(chunks):
         raise ValueError("knowledge base not loaded:\n  " + "\n  ".join(errors))
-    if sample := sum(SAMPLE_MARK in ch["content"] for ch in chunks):
-        print(f"WARNING: {sample}/{len(chunks)} chunks are still sample data (marked in content); replace before going live")
+    if sample := sum(any(m in ch["content"] for m in MARKS) for ch in chunks):
+        print(f"WARNING: {sample}/{len(chunks)} chunks still carry a sample/unreviewed marker; check the text and delete the marker before going live")
     emb = _embedder()
     with psycopg.connect(DSN) as conn:
         register_vector(conn)

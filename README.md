@@ -57,6 +57,8 @@ Giới hạn tần suất (theo IP, trong bộ nhớ): `/chat` 20 lần/phút, �
 
 Kho tri thức: copy `backend/kb/template.json`, điền nội dung thật (mỗi đoạn có `kind`, `title` duy nhất, `match`, `content`), rồi nạp bằng lệnh trên. Lệnh nạp báo lỗi nếu thiếu trường, trùng tiêu đề hoặc sai `kind`, và cảnh báo nếu còn dữ liệu mẫu.
 
+Sinh nháp mô tả dự án từ ảnh: `python generate_kb.py --dry-run` (xem trước), rồi `python generate_kb.py` (gọi Gemini qua Vertex, mỗi thư mục ảnh một lần). Ra `kb/generated.json` (các mục `project`, nội dung có dấu `[AI SINH - CHƯA DUYỆT]`) và `eval/chat_eval.generated.json` (câu hỏi đánh giá). Chỉ sinh mô tả dự án: giá, bảo hành, thời gian, chính sách không đọc ra được từ ảnh, và bộ lọc trong code từ chối mọi bản nháp có số tiền hay lời cam kết. Xem lại nội dung, xoá dấu đánh dấu ở những mục giữ lại rồi nạp; đo bằng `python eval_assistant.py eval/chat_eval.generated.json`.
+
 Dữ liệu `backend/kb/sample.json` là **dữ liệu mẫu** (đánh dấu `[DỮ LIỆU MẪU]`), cần thay bằng bảng giá và FAQ thật của D3 Studio.
 `python eval_labels.py` đo độ chính xác gán nhãn ảnh trên các không gian đã được người duyệt ở `/quan-tri` (mục tiêu ≥85%, cần ít nhất 30 ảnh đã duyệt).
 `python eval_assistant.py` đo chất lượng truy hồi của chatbot trên `eval/chat_eval.json`.
