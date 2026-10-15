@@ -25,17 +25,18 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { FACETS } from '@/data'
 
-defineProps({
+const props = defineProps({
   selected: Object,
-  counts: Object
+  counts: Object,
+  locks: { type: Object, default: () => ({}) } // facet id -> why it cannot be filtered with the current data
 })
 
 defineEmits(['toggle', 'clear'])
 
-const facets = FACETS
+const facets = computed(() => FACETS.map(f => ({ ...f, locked: props.locks[f.id] || f.locked })))
 const expanded = reactive({})
 
 function visible(f) {

@@ -21,6 +21,8 @@ npm test          # vitest: kiểm tra phần phiên đăng nhập trong src/api
 
 Biến của frontend (tuỳ chọn): `VITE_API_URL`, địa chỉ backend đã host (vd `https://api.example.com`). Để trống khi dev: frontend gọi qua proxy `/api` của Vite, nút Google/Facebook trỏ `http://localhost:8000`.
 
+Trang chủ và `/cong-trinh` hiển thị các không gian **đã đăng** lấy từ API; nếu không gọi được API (bản tĩnh trên Pages không có backend) thì dùng dữ liệu minh hoạ trong `src/data` và ghi chú rõ. Chưa có không gian nào được đăng thì trang công trình báo trống.
+
 Trang quản trị: `/quan-tri` (kiến trúc sư duyệt không gian), `/khach-hang` (sales xem lead); cả hai cần đăng nhập đúng role. Tài khoản tự đăng ký luôn là `visitor`; admin nâng role bằng `PATCH /users/{id}/role` hoặc `python set_role.py`.
 
 Bản deploy: https://ursweetheart.github.io/prj1/ (trang tĩnh nên tìm kiếm AI chỉ chạy khi bật backend).
@@ -62,5 +64,6 @@ Sinh nháp mô tả dự án từ ảnh: `python generate_kb.py --dry-run` (xem 
 Trả lời từ mô tả ảnh (RAG): `python generate_transcripts.py` (có `--dry-run`, `--limit`, `--redo`) nhờ Gemini viết mô tả chi tiết cho từng ảnh và embed bằng `text-multilingual-embedding-002` (Vertex, 768 chiều), lưu ở bảng `space_text`; chạy lại được, ảnh đã có mô tả thì bỏ qua. Trong `/chat`, câu hỏi nào kho tri thức không trả lời được sẽ tìm trong mô tả của các ảnh **đã đăng** (ngưỡng `MIN_TEXT_SCORE`), rồi Gemini viết câu trả lời chỉ dựa vào đó, kèm ảnh nguồn. Câu trả lời có số tiền hay lời cam kết bị bỏ và chuyển cho kiến trúc sư. Không có khoá Vertex thì chat vẫn chạy như cũ, chỉ không có bước này. `python eval_photo_rag.py --answers 3` đo điểm tương đồng và in thử câu trả lời. Có thể đổi model bằng `VERTEX_LOCATION`, `VERTEX_GEN_MODEL`, `VERTEX_EMBED_MODEL`.
 
 Dữ liệu `backend/kb/sample.json` là **dữ liệu mẫu** (đánh dấu `[DỮ LIỆU MẪU]`), cần thay bằng bảng giá và FAQ thật của D3 Studio.
+`python relabel.py` (có `--dry-run`, `--limit`) gán nhãn lại các không gian còn ở trạng thái nháp, chỉ gọi lại bước Gemini và dùng bảng màu, đồ nội thất đã lưu (không cần GPU). Nhãn đã được người duyệt không bao giờ bị ghi đè; mỗi thay đổi ghi vào `review_log` với action `relabel`. Prompt gán nhãn không còn nhận tên thư mục ảnh.
 `python eval_labels.py` đo độ chính xác gán nhãn ảnh trên các không gian đã được người duyệt ở `/quan-tri` (mục tiêu ≥85%, cần ít nhất 30 ảnh đã duyệt).
 `python eval_assistant.py` đo chất lượng truy hồi của chatbot trên `eval/chat_eval.json`.

@@ -9,8 +9,11 @@ const SPACE_VI = {
 // DB values -> facet ids used by the prototype's labels in data/index.js
 const KG = {
   phong_khach: 'phong-khach', phong_ngu_master: 'phong-ngu', phong_ngu_phu: 'phong-ngu',
-  bep_va_an: 'bep', lounge_thuong_mai: 'quay-bar', sanh_thong_tang: 'sanh'
+  bep_va_an: 'bep', lounge_thuong_mai: 'quay-bar', sanh_thong_tang: 'sanh',
+  phong_lam_viec: 'phong-lam-viec', phong_tam: 'phong-tam', ban_cong: 'ban-cong'
 }
+// palette brightness / temperature -> the "Tông màu" facet
+const TONE = { light: 'sang', dark: 'toi', warm: 'am', cool: 'lanh' }
 const PC = {
   Indochine: 'indochine', Japandi: 'japandi', Wabi_sabi: 'wabi-sabi', Hien_dai: 'hien-dai',
   Tan_co_dien: 'tan-co-dien', Luxury: 'luxury', Toi_gian: 'toi-gian', Scandinavian: 'scandi'
@@ -109,7 +112,8 @@ export const toCard = r => ({
   img: imageUrl(r.relative_path),
   ratio: 'sq',
   khonggian: KG[r.space_type],
-  phongcach: PC[r.design_style]
+  phongcach: PC[r.design_style],
+  tongmau: [TONE[r.brightness], TONE[r.temperature]].filter(Boolean)
 })
 
 export const searchSpaces = (q, k = 12) => get('/search', { q, k })
@@ -126,3 +130,5 @@ export const reviewSpace = (id, body) => request('PATCH', '/spaces/' + id, { bod
 export const listLeads = (params = {}) => get('/leads', params)
 export const sendChat = (message, history, contact) =>
   request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}) } })
+/* Every published space, for the portfolio grid (the API caps one page at 200) */
+export const listPublished = () => get('/spaces', { review_status: 'published', limit: 200 })

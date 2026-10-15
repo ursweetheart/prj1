@@ -24,7 +24,10 @@ export const FACETS = [
       { id: 'bep',         label: 'Bếp' },
       { id: 'phong-an',    label: 'Phòng ăn' },
       { id: 'sanh',        label: 'Sảnh' },
-      { id: 'quay-bar',    label: 'Quầy bar' }
+      { id: 'quay-bar',    label: 'Quầy bar' },
+      { id: 'phong-lam-viec', label: 'Phòng làm việc' },
+      { id: 'phong-tam',   label: 'Phòng tắm' },
+      { id: 'ban-cong',    label: 'Ban công' }
     ]
   },
   {

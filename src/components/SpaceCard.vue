@@ -44,5 +44,6 @@ const facetLine = computed(() => [
 ].filter(Boolean).join(' · '))
 
 const link = computed(() => props.href ||
-  '/cong-trinh-chi-tiet#' + props.space.projectSlug + '/' + props.space.id)
+  (props.space.apiId ? '/khong-gian/' + props.space.apiId
+                     : '/cong-trinh-chi-tiet#' + props.space.projectSlug + '/' + props.space.id))
 </script>

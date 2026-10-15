@@ -71,7 +71,8 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
         return c.execute(
-            f"SELECT {FIELDS} FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
+            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature "
+            "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "ORDER BY id LIMIT %(l)s OFFSET %(o)s",
             {"t": space_type, "s": design_style, "r": review_status, "l": min(limit, 200), "o": offset}).fetchall()

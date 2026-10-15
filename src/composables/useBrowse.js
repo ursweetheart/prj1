@@ -2,9 +2,11 @@
  * Lọc đa chiều + đếm kết quả thời gian thực + đồng bộ URL hash
  * ═══════════════════════════════════════════════════════════════════ */
 import { reactive, computed, watch } from 'vue'
-import { FACETS, SPACES } from '@/data'
+import { FACETS } from '@/data'
 
-export function useBrowse() {
+/* spaces: a ref / reactive getter of the list to filter (API data or the demo data) */
+export function useBrowse(spaces) {
+  const all = () => (typeof spaces === 'function' ? spaces() : spaces.value) || []
   const selected = reactive({})
   FACETS.forEach(f => { selected[f.id] = [] })
 
@@ -35,7 +37,7 @@ export function useBrowse() {
     return Array.isArray(v) ? v.some(x => vals.includes(x)) : vals.includes(v)
   })
 
-  const results = computed(() => SPACES.filter(s => matches(s, selected)))
+  const results = computed(() => all().filter(s => matches(s, selected)))
 
   /* Đếm kiểu facet */
   const counts = computed(() => {
@@ -46,7 +48,7 @@ export function useBrowse() {
         const probe = {}
         Object.keys(selected).forEach(k => { probe[k] = selected[k] })
         probe[f.id] = selected[f.id].includes(o.id) ? selected[f.id] : selected[f.id].concat(o.id)
-        out[f.id][o.id] = SPACES.filter(s => matches(s, probe)).length
+        out[f.id][o.id] = all().filter(s => matches(s, probe)).length
       })
     })
     return out
