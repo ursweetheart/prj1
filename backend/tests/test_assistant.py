@@ -1,8 +1,10 @@
 """RAG assistant skeleton. Needs Postgres with kb/sample.json loaded (python -m pipeline.assistant kb/sample.json)."""
+import json
+
 import psycopg
 
 from conftest import client
-from pipeline.assistant import parse_request
+from pipeline.assistant import load_kb, parse_request
 from pipeline.store import DSN
 
 
@@ -19,15 +21,24 @@ def _leads():
         return c.execute("SELECT count(*) FROM lead").fetchone()[0]
 
 
-def test_answer_has_sources_and_creates_price_lead():
+PRICE = {"kind": "price", "title": "TEST bảng giá thiết kế nội thất biệt thự",
+         "match": "báo giá thiết kế nội thất biệt thự nhà phố giá bao nhiêu tính phí thế nào", "content": "Nội dung kiểm thử."}
+
+
+def test_answer_has_sources_and_creates_price_lead(tmp_path):
+    # the knowledge base holds no price list until D3 Studio provides one: load a throw-away chunk for this test
+    kb = tmp_path / "price.json"
+    kb.write_text(json.dumps([PRICE], ensure_ascii=False), encoding="utf-8")
+    load_kb(str(kb))
     before = _leads()
     try:
         r = client.post("/chat", json={"message": "Làm nội thất biệt thự tính phí thế nào?", "contact": "0900000000"}).json()
-        assert r["answered"] and r["sources"][0]["title"] == "Bảng giá thiết kế nội thất biệt thự"
+        assert r["answered"] and r["sources"][0]["title"] == PRICE["title"]
         assert r["lead_id"] and _leads() == before + 1
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE id > 0 AND contact = '0900000000'")
+            c.execute("DELETE FROM kb_chunk WHERE title = %s", (PRICE["title"],))
 
 
 def test_off_topic_is_refused_and_handed_off():

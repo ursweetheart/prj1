@@ -1,10 +1,4 @@
 [
-  {"kind": "price", "title": "Bảng giá thiết kế nội thất căn hộ", "match": "báo giá thiết kế nội thất căn hộ chung cư giá bao nhiêu một mét vuông",
-   "content": "[DỮ LIỆU MẪU] Thiết kế nội thất căn hộ: từ 350.000 đến 600.000 đồng/m² tùy phong cách và độ phức tạp. Phí thiết kế được trừ vào hợp đồng thi công nếu ký trọn gói."},
-  {"kind": "price", "title": "Bảng giá thiết kế nội thất biệt thự", "match": "báo giá thiết kế nội thất biệt thự nhà phố giá bao nhiêu",
-   "content": "[DỮ LIỆU MẪU] Thiết kế nội thất biệt thự và nhà phố: từ 450.000 đến 800.000 đồng/m². Phong cách Luxury và Tân cổ điển nằm ở mức cao của khung giá."},
-  {"kind": "price", "title": "Chi phí thi công nội thất trọn gói", "match": "chi phí thi công nội thất trọn gói bao nhiêu tiền",
-   "content": "[DỮ LIỆU MẪU] Thi công nội thất trọn gói: từ 6 đến 12 triệu đồng/m² sàn, chưa gồm thiết bị rời. Báo giá chi tiết được lập sau khi khảo sát và chốt bản vẽ."},
   {"kind": "faq", "title": "Quy trình làm việc với D3 Studio", "match": "quy trình thiết kế các bước làm việc từ tư vấn đến bàn giao",
    "content": "[DỮ LIỆU MẪU] Quy trình 5 bước: tư vấn và khảo sát, ý tưởng mặt bằng, phối cảnh 3D, bản vẽ thi công, thi công và bàn giao. Khách duyệt từng bước trước khi sang bước tiếp theo."},
   {"kind": "faq", "title": "Thời gian thiết kế và thi công", "match": "mất bao lâu thời gian hoàn thành thiết kế thi công",
