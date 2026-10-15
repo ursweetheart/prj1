@@ -18,14 +18,12 @@ from pathlib import Path
 import psycopg
 import requests
 
-from pipeline.assistant import validate_kb
+from pipeline.assistant import FORBIDDEN, validate_kb
 from pipeline.multimodal_classifier import MultimodalClassifier
 from pipeline.store import DSN
 
 MARK = "[AI SINH - CHƯA DUYỆT]"
 QUESTIONS = 5
-# A photo says nothing about money, guarantees or promises: refuse any draft that makes such claims.
-FORBIDDEN = re.compile(r"\d\s*(đ|đồng|vnd|vnđ|k|tr|triệu|tỷ|usd|\$)\b|bảo hành|cam kết|giảm giá|khuyến mãi|miễn phí", re.I)
 
 PROMPT = """Bạn viết nội dung cho trợ lý chat của D3 Studio (thiết kế nội thất). Dưới đây là {n} ảnh thuộc một nhóm dự án \
 và các nhãn do AI gán trước đó.

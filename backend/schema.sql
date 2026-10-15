@@ -57,3 +57,11 @@ CREATE TABLE IF NOT EXISTS lead (
   status text NOT NULL DEFAULT 'new',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Long-form description of each photo (Gemini) and its text embedding (Vertex text-multilingual-embedding-002), for chat RAG.
+CREATE TABLE IF NOT EXISTS space_text (
+  space_id int PRIMARY KEY REFERENCES space(id) ON DELETE CASCADE,
+  transcript text NOT NULL,
+  embedding vector(768),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
