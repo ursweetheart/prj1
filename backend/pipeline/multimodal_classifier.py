@@ -126,17 +126,19 @@ class MultimodalClassifier:
         path_obj = Path(image_path)
         folder_name = path_obj.parent.name.lower()
 
+        # The model sees only the photo and measured evidence. The folder name (a keyword the photos were collected
+        # under) used to be passed too, which made labels echo the folder; only the offline heuristic still uses it.
         # 1. Try Vertex AI via Service Account key if available
         if self.sa_key_path:
             try:
-                return self._call_vertex_ai(path_obj, color_res, furniture_res, folder_name)
+                return self._call_vertex_ai(path_obj, color_res, furniture_res, None)
             except Exception as e:
                 print(f"[WARN] Vertex AI call failed ({e}), attempting fallback.")
 
         # 2. Try Gemini API key if available
         if self.api_key:
             try:
-                return self._call_vlm_api(path_obj, color_res, furniture_res, folder_name)
+                return self._call_vlm_api(path_obj, color_res, furniture_res, None)
             except Exception as e:
                 print(f"[WARN] VLM API call failed ({e}), falling back to grounded heuristic.")
 

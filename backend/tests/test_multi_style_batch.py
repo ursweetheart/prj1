@@ -1,13 +1,22 @@
-"""Benchmark test across 5 distinct design styles in image_d3/."""
+"""Benchmark across 5 design styles in image_d3/. Calls Gemini for real, so it only runs with D3_LIVE_AI=1.
 
+The expected styles are guesses from the folder names the photos were collected under, not labels an architect
+confirmed, and the model's answer varies between runs: a miss here is a question about the label as much as about
+the model. NFR-10 is measured on reviewed spaces by eval_labels.py.
+"""
+
+import os
 from pathlib import Path
 import sys
 import time
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline.processor import SpaceImageProcessor
 
 
+@pytest.mark.skipif(os.getenv("D3_LIVE_AI") != "1", reason="calls Gemini (costs money, varies per run); set D3_LIVE_AI=1")
 def test_multi_style():
     processor = SpaceImageProcessor()
 
