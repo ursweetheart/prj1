@@ -13,6 +13,12 @@
                :aria-current="(current === l.key || ($route && $route.path === l.to)) ? 'page' : undefined">{{ l.label }}</router-link>
           </nav>
 
+          <div class="nav-account">
+            <router-link v-for="l in roleLinks" :key="l.to" :to="l.to">{{ l.label }}</router-link>
+            <button v-if="session.user" type="button" @click="signOut">Đăng xuất</button>
+            <router-link v-else to="/dang-nhap">Đăng nhập</router-link>
+          </div>
+
           <div class="lang-switch" aria-label="Chuyển đổi ngôn ngữ">
             <button type="button" :class="{ active: currentLang === 'VI' }" @click="currentLang = 'VI'">Vi</button>
             <span class="sep">|</span>
@@ -28,6 +34,9 @@
     <div class="nav-sheet" v-if="open">
       <router-link v-for="l in links" :key="l.key" :to="l.to" @click="open = false"
                    :class="{ 'is-active': current === l.key || ($route && $route.path === l.to) }">{{ l.label }}</router-link>
+      <router-link v-for="l in roleLinks" :key="l.to" :to="l.to" @click="open = false">{{ l.label }}</router-link>
+      <button v-if="session.user" type="button" @click="signOut(); open = false">Đăng xuất</button>
+      <router-link v-else to="/dang-nhap" @click="open = false">Đăng nhập</router-link>
       <div class="nav-sheet-lang">
         <button type="button" :class="{ active: currentLang === 'VI' }" @click="currentLang = 'VI'">Vi</button>
         <span class="sep">|</span>
@@ -38,8 +47,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { SALES, STAFF, hasRole, logout, session } from '@/api'
 import BrandMark from './BrandMark.vue'
 
 defineProps({
@@ -47,6 +57,7 @@ defineProps({
 })
 
 const route = useRoute()
+const router = useRouter()
 const open = ref(false)
 const currentLang = ref('VI')
 
@@ -56,4 +67,11 @@ const links = [
   { to: '/ve-chung-toi', label: 'Về chúng tôi', key: 've-chung-toi' },
   { to: '/lien-he',     label: 'Liên hệ',    key: 'lien-he' }
 ]
+
+const roleLinks = computed(() => [
+  hasRole(STAFF) && { to: '/quan-tri', label: 'Duyệt' },
+  hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' }
+].filter(Boolean))
+
+function signOut() { logout(); router.push('/') }
 </script>

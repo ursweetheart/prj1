@@ -2,6 +2,7 @@
   <SiteNav :current="currentNav" />
   <router-view />
   <SiteFoot />
+  <ChatWidget />
 </template>
 
 <script setup>
@@ -9,6 +10,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import SiteNav from '@/components/SiteNav.vue'
 import SiteFoot from '@/components/SiteFoot.vue'
+import ChatWidget from '@/components/ChatWidget.vue'
 
 const route = useRoute()
 const currentNav = computed(() => {

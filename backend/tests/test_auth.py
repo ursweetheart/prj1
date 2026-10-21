@@ -124,3 +124,24 @@ def test_google_sign_in_linking_and_config():
             assert c.execute("SELECT role FROM app_user WHERE id=%s", (new,)).fetchone()[0] == "visitor"
         finally:
             c.execute("DELETE FROM app_user WHERE google_sub IN ('sub-123','sub-456')")
+
+
+def test_facebook_sign_in_never_links_by_email(monkeypatch):
+    assert client.get("/auth/facebook/login").status_code == 501  # not configured in tests
+    email = "victim@example.com"
+    with psycopg.connect(DSN) as c:
+        try:
+            victim = client.post("/auth/register", json={"email": email, "password": "password-before"}).json()["id"]
+            uid = auth.upsert_facebook_user("fb-1")
+            assert uid != victim and auth.upsert_facebook_user("fb-1") == uid  # stable per Facebook id
+            assert c.execute("SELECT role FROM app_user WHERE id=%s", (uid,)).fetchone()[0] == "visitor"
+            assert client.post("/auth/login", data={"username": email, "password": "password-before"}).status_code == 200
+        finally:
+            c.execute("DELETE FROM app_user WHERE facebook_id = 'fb-1' OR email = %s", (email,))
+
+
+def test_oauth_returns_to_the_site_when_frontend_url_is_set(monkeypatch):
+    assert auth._signed_in(1)["token_type"] == "bearer"
+    monkeypatch.setenv("D3_FRONTEND_URL", "http://localhost:5173/prj1/")
+    r = auth._signed_in(1)
+    assert r.status_code == 307 and r.headers["location"].startswith("http://localhost:5173/prj1/#token=")
