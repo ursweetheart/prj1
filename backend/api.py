@@ -13,9 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
+from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field
 
 import auth
+from pipeline import taxonomy
 from pipeline.assistant import respond, with_services
 from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -176,3 +178,81 @@ def list_leads(status: Optional[str] = None, limit: int = 50, offset: int = 0, u
             "SELECT id, intent, request, conversation, contact, status, created_at FROM lead "
             "WHERE (%(s)s::text IS NULL OR status=%(s)s) ORDER BY id DESC LIMIT %(l)s OFFSET %(o)s",
             {"s": status, "l": limit, "o": offset}).fetchall()
+
+
+# ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────
+@app.get("/taxonomy")
+def taxonomy_list():
+    """Dimensions with their values. Public: the portfolio filters read this too."""
+    with _db() as c:
+        dims = c.execute("SELECT id, ma_dinh_danh, ten, bat_buoc, cho_phep_nhieu_gia_tri, hien_thi_cho_khach, thu_tu "
+                         "FROM chieu_phan_loai ORDER BY thu_tu, id").fetchall()
+        vals = c.execute("SELECT id, chieu_id, ma_dinh_danh, ten, tu_dong_nghia "
+                         "FROM gia_tri_phan_loai ORDER BY id").fetchall()
+    by_dim: dict = {}
+    for v in vals:
+        by_dim.setdefault(v["chieu_id"], []).append(v)
+    for d in dims:
+        d["values"] = by_dim.get(d["id"], [])
+    return dims
+
+
+class NewValue(BaseModel):
+    ma_dinh_danh: str = Field(min_length=1, max_length=64)
+    ten: str = Field(min_length=1, max_length=120)
+    tu_dong_nghia: list[str] = Field(default_factory=list)
+
+
+@app.post("/taxonomy/{dim_id}/values", status_code=201)
+def add_value(dim_id: int, body: NewValue, user=Depends(require(*APPROVERS))):
+    with _db() as c:
+        if not c.execute("SELECT 1 FROM chieu_phan_loai WHERE id=%s", (dim_id,)).fetchone():
+            raise HTTPException(404, "dimension not found")
+        try:
+            row = c.execute(
+                "INSERT INTO gia_tri_phan_loai (chieu_id, ma_dinh_danh, ten, tu_dong_nghia) "
+                "VALUES (%s,%s,%s,%s) RETURNING id, chieu_id, ma_dinh_danh, ten, tu_dong_nghia",
+                (dim_id, body.ma_dinh_danh, body.ten, Jsonb(body.tu_dong_nghia))).fetchone()
+        except UniqueViolation:
+            raise HTTPException(409, "value already exists in this dimension")
+    taxonomy.reload()
+    return row
+
+
+class RenameValue(BaseModel):
+    ten: str = Field(min_length=1, max_length=120)
+
+
+@app.patch("/taxonomy/values/{value_id}")
+def rename_value(value_id: int, body: RenameValue, user=Depends(require(*APPROVERS))):
+    """Rename keeps ma_dinh_danh, so facet URLs stay valid (seq-15 b13)."""
+    with _db() as c:
+        row = c.execute("UPDATE gia_tri_phan_loai SET ten=%s WHERE id=%s RETURNING id, ma_dinh_danh, ten",
+                        (body.ten, value_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "value not found")
+    taxonomy.reload()
+    return row
+
+
+class MergeValue(BaseModel):
+    target_id: int
+
+
+@app.post("/taxonomy/values/{value_id}/merge")
+def merge_value(value_id: int, body: MergeValue, user=Depends(require(*APPROVERS))):
+    """Move every space tag from the source value to the target, then delete the source (seq-15 b19)."""
+    if value_id == body.target_id:
+        raise HTTPException(422, "cannot merge a value into itself")
+    with _db() as c:
+        if len(c.execute("SELECT id FROM gia_tri_phan_loai WHERE id IN (%s,%s)",
+                         (value_id, body.target_id)).fetchall()) != 2:
+            raise HTTPException(404, "value not found")
+        affected = c.execute("SELECT COUNT(*) AS n FROM space_gia_tri WHERE gia_tri_id=%s", (value_id,)).fetchone()["n"]
+        c.execute("UPDATE space_gia_tri SET gia_tri_id=%s WHERE gia_tri_id=%s "
+                  "AND space_id NOT IN (SELECT space_id FROM space_gia_tri WHERE gia_tri_id=%s)",
+                  (body.target_id, value_id, body.target_id))
+        c.execute("DELETE FROM space_gia_tri WHERE gia_tri_id=%s", (value_id,))  # any duplicates left behind
+        c.execute("DELETE FROM gia_tri_phan_loai WHERE id=%s", (value_id,))
+    taxonomy.reload()  # ponytail: vector-index label refresh (seq-15 b20-22) is a future queue job
+    return {"merged_into": body.target_id, "affected": affected}

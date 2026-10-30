@@ -14,8 +14,7 @@ import psycopg
 from pgvector.psycopg import register_vector
 from psycopg.types.json import Jsonb
 
-from pipeline import vertex
-from pipeline.schemas import SpaceClassificationResult
+from pipeline import taxonomy, vertex
 from pipeline.search import _embedder, by_text
 from pipeline.store import DSN
 
@@ -25,8 +24,7 @@ MIN_SCORE = 0.88
 MIN_TEXT_SCORE = 0.72  # on-topic questions scored 0.78-0.96, off-topic at most 0.66 (eval_photo_rag.py)
 # A photo says nothing about money, guarantees or promises: such claims never go out as an answer or a draft.
 FORBIDDEN = re.compile(r"\d\s*(đ|đồng|vnd|vnđ|k|tr|triệu|tỷ|usd|\$)\b|bảo hành|cam kết|giảm giá|khuyến mãi|miễn phí", re.I)
-STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__args__
-FALLBACK = ("Mình chưa có thông tin chính xác về câu hỏi này. Mình đã chuyển cho kiến trúc sư của D3 Studio, "
+FALLBACK =("Mình chưa có thông tin chính xác về câu hỏi này. Mình đã chuyển cho kiến trúc sư của D3 Studio, "
             "họ sẽ phản hồi bạn sớm.")
 
 
@@ -35,12 +33,7 @@ def _fold(s: str) -> str:  # lower-case, no diacritics: "Phòng ngủ" == "phong
     return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
 
 
-# keyword -> value, matched on folded text. Order matters: first hit wins.
-PROJECT_TYPES = {"can ho": "can_ho", "chung cu": "can_ho", "biet thu": "biet_thu", "nha pho": "nha_pho",
-                 "van phong": "van_phong", "showroom": "thuong_mai", "cua hang": "thuong_mai"}
-SPACE_TYPES = {"phong khach": "phong_khach", "phong ngu": "phong_ngu_master", "bep": "bep_va_an", "phong an": "bep_va_an",
-               "phong lam viec": "phong_lam_viec", "ban cong": "ban_cong", "phong tam": "phong_tam"}
-STYLE_ALIASES = {"hien dai": "Hien_dai", "tan co dien": "Tan_co_dien", "toi gian": "Toi_gian", "wabi sabi": "Wabi_sabi"}
+# Keyword matching now reads from the data-driven taxonomy (tu_dong_nghia); see parse_request.
 PRICE_WORDS = ("gia", "bao gia", "chi phi", "phi", "bao nhieu", "tien")
 APPOINTMENT_WORDS = ("hen", "dat lich", "tu van truc tiep", "gap kien truc su", "khao sat", "lien he")
 
@@ -52,11 +45,13 @@ def _has(text: str, words) -> bool:
 def parse_request(message: str) -> dict:
     t = _fold(message)
     area = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:m2|m²|met vuong)", t)
-    style = next((v for k, v in STYLE_ALIASES.items() if k in t), None) or next(
-        (s for s in STYLES if _fold(s.replace("_", " ")) in t and s != "Khac"), None)
+    styles = taxonomy.synonym_map("phong_cach")
+    style = next((v for k, v in styles.items() if k in t), None) or next(
+        (s for s in taxonomy.values("phong_cach") if _fold(s.replace("_", " ")) in t and s != "Khac"), None)
+    project, space = taxonomy.synonym_map("loai_cong_trinh"), taxonomy.synonym_map("khong_gian")
     return {
-        "project_type": next((v for k, v in PROJECT_TYPES.items() if k in t), None),
-        "space_type": next((v for k, v in SPACE_TYPES.items() if k in t), None),
+        "project_type": next((v for k, v in project.items() if k in t), None),
+        "space_type": next((v for k, v in space.items() if k in t), None),
         "area_m2": float(area.group(1).replace(",", ".")) if area else None,
         "design_style": style,
         "price_intent": _has(t, PRICE_WORDS),

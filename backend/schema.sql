@@ -65,3 +65,47 @@ CREATE TABLE IF NOT EXISTS space_text (
   embedding vector(768),
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ── Data-driven taxonomy (change: discover-taxonomy-dimensions) ───────────────
+-- Replaces the Literal enums in pipeline/schemas.py and the synonym dicts in
+-- pipeline/assistant.py. ma_dinh_danh is the STABLE id used in facet URLs (NFR-07);
+-- ten is the editable label, so a rename changes ten only and never breaks a URL.
+CREATE TABLE IF NOT EXISTS chieu_phan_loai (
+  id serial PRIMARY KEY,
+  ma_dinh_danh text UNIQUE NOT NULL,
+  ten text NOT NULL,
+  bat_buoc boolean NOT NULL DEFAULT false,
+  cho_phep_nhieu_gia_tri boolean NOT NULL DEFAULT false,
+  hien_thi_cho_khach boolean NOT NULL DEFAULT true,
+  thu_tu int NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS gia_tri_phan_loai (
+  id serial PRIMARY KEY,
+  chieu_id int NOT NULL REFERENCES chieu_phan_loai(id) ON DELETE CASCADE,
+  ma_dinh_danh text NOT NULL,
+  ten text NOT NULL,
+  mo_ta text,
+  tu_dong_nghia jsonb NOT NULL DEFAULT '[]',  -- customer vocabulary -> this value (seeds parse_request)
+  anh_minh_hoa text,
+  UNIQUE (chieu_id, ma_dinh_danh)
+);
+
+-- Space is the unit of tagging (M1): a space carries values across many dimensions.
+CREATE TABLE IF NOT EXISTS space_gia_tri (
+  space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  gia_tri_id int NOT NULL REFERENCES gia_tri_phan_loai(id) ON DELETE CASCADE,
+  do_tin_cay real,              -- tagging confidence; low ones flagged for review (QT01)
+  nguon_tao text,               -- 'ai' | 'nguoi'
+  PRIMARY KEY (space_id, gia_tri_id)
+);
+
+-- AI-proposed taxonomy changes awaiting human approval; never live until accepted (M9, seq-15).
+CREATE TABLE IF NOT EXISTS ung_vien_phan_loai (
+  id serial PRIMARY KEY,
+  loai text NOT NULL CHECK (loai IN ('chieu','gia_tri','dong_nghia')),  -- dimension | value | synonym
+  ten_de_xuat text NOT NULL,
+  bang_chung jsonb,             -- variance explained, #images, #chat, #sessions, pole example ids
+  trang_thai text NOT NULL DEFAULT 'cho_duyet' CHECK (trang_thai IN ('cho_duyet','chap_nhan','tu_choi')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);

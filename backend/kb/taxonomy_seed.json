@@ -1,0 +1,36 @@
+{
+  "_comment": "Current taxonomy captured as data (change: discover-taxonomy-dimensions). ma_dinh_danh values match the strings already stored in space.space_type / space.design_style so the later cutover maps 1:1. Synonyms are lifted from parse_request in pipeline/assistant.py. 'loai_cong_trinh' exists today only inside parse_request (PROJECT_TYPES), not as a space column.",
+  "chieu": [
+    {"ma_dinh_danh": "khong_gian", "ten": "Không gian", "bat_buoc": true, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 1},
+    {"ma_dinh_danh": "phong_cach", "ten": "Phong cách", "bat_buoc": true, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 2},
+    {"ma_dinh_danh": "loai_cong_trinh", "ten": "Loại công trình", "bat_buoc": false, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 3}
+  ],
+  "gia_tri": [
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_khach", "ten": "Phòng khách", "tu_dong_nghia": ["phong khach"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_ngu_master", "ten": "Phòng ngủ master", "tu_dong_nghia": ["phong ngu"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_ngu_phu", "ten": "Phòng ngủ phụ", "tu_dong_nghia": []},
+    {"chieu": "khong_gian", "ma_dinh_danh": "bep_va_an", "ten": "Bếp & phòng ăn", "tu_dong_nghia": ["bep", "phong an"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_lam_viec", "ten": "Phòng làm việc", "tu_dong_nghia": ["phong lam viec"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "sanh_thong_tang", "ten": "Sảnh thông tầng", "tu_dong_nghia": []},
+    {"chieu": "khong_gian", "ma_dinh_danh": "ban_cong", "ten": "Ban công", "tu_dong_nghia": ["ban cong"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_tam", "ten": "Phòng tắm", "tu_dong_nghia": ["phong tam"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "lounge_thuong_mai", "ten": "Lounge thương mại", "tu_dong_nghia": []},
+    {"chieu": "khong_gian", "ma_dinh_danh": "khac", "ten": "Khác", "tu_dong_nghia": []},
+
+    {"chieu": "phong_cach", "ma_dinh_danh": "Indochine", "ten": "Indochine", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Japandi", "ten": "Japandi", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Wabi_sabi", "ten": "Wabi-sabi", "tu_dong_nghia": ["wabi sabi"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Hien_dai", "ten": "Hiện đại", "tu_dong_nghia": ["hien dai"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Tan_co_dien", "ten": "Tân cổ điển", "tu_dong_nghia": ["tan co dien"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Luxury", "ten": "Luxury", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Toi_gian", "ten": "Tối giản", "tu_dong_nghia": ["toi gian"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Scandinavian", "ten": "Scandinavian", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Khac", "ten": "Khác", "tu_dong_nghia": []},
+
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "can_ho", "ten": "Căn hộ / Chung cư", "tu_dong_nghia": ["can ho", "chung cu"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "biet_thu", "ten": "Biệt thự", "tu_dong_nghia": ["biet thu"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "nha_pho", "ten": "Nhà phố", "tu_dong_nghia": ["nha pho"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "van_phong", "ten": "Văn phòng", "tu_dong_nghia": ["van phong"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "thuong_mai", "ten": "Thương mại / Showroom", "tu_dong_nghia": ["showroom", "cua hang"]}
+  ]
+}
