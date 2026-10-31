@@ -34,7 +34,7 @@ TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_d
         "FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id JOIN chieu_phan_loai d ON d.id = v.chieu_id "
         "WHERE sg.space_id = space.id GROUP BY d.ma_dinh_danh) t) AS tags")
 # QT-01 order; an architect confirms AI tags before anything is published
-NEXT = {"draft": "in_review", "in_review": "approved", "approved": "published"}
+NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
 SPACE_TYPES = SpaceClassificationResult.model_fields["space_type"].annotation.__args__
 STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__args__
 
@@ -52,8 +52,8 @@ def _db():
     return psycopg.connect(DSN, row_factory=dict_row)
 
 
-def _is_staff(user) -> bool:  # staff see every review state; everyone else only published spaces
-    return bool(user) and user["role"] in STAFF
+def _is_staff(user) -> bool:  # staff and content editors see every review state; everyone else only published spaces
+    return bool(user) and user["role"] in STAFF | {"content"}
 
 
 def _log(c, space_id, user, action, detail):
@@ -134,39 +134,127 @@ def ingest(file: UploadFile = File(...), project: str = Form(""), user=Depends(r
         return row
 
 
+class HotspotKeep(BaseModel):
+    index: int = Field(ge=0)  # position in the detector's objects list
+    label_vi: str = Field(min_length=1, max_length=120)
+
+
 class Review(BaseModel):
     space_type: Optional[str] = None
     design_style: Optional[str] = None
+    caption: Optional[str] = Field(default=None, max_length=2000)
+    alt_text: Optional[str] = Field(default=None, max_length=300)
+    materials: Optional[list[str]] = Field(default=None, max_length=12)
+    hotspots: Optional[list[HotspotKeep]] = None  # objects to keep, in order; the rest are dropped
     advance: bool = False  # move to the next review state
+    rights_confirmed: bool = False  # the client allowed publishing these photos; needed to reach 'cleared'
+
+
+EDITABLE = ("space_type", "design_style", "caption", "alt_text", "materials")
+TEXT = {"caption", "alt_text"}  # all the content role may touch
+
+
+def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str:
+    """One QT-01 step with its role and rights rules. Raising inside `with _db()` rolls the transaction back."""
+    if status not in NEXT:
+        raise HTTPException(409, f"space {space_id}: '{status}' is the final state")
+    if status != "draft" and user["role"] not in APPROVERS:  # only the lead architect approves, clears, publishes
+        raise HTTPException(403, f"space {space_id}: approving, clearing and publishing require lead_architect")
+    new = NEXT[status]
+    if new == "cleared" and not rights_confirmed:
+        raise HTTPException(422, f"space {space_id}: confirm the client allowed publishing these photos (rights_confirmed)")
+    c.execute("UPDATE space SET review_status=%s WHERE id=%s", (new, space_id))
+    _log(c, space_id, user, "advance", {"from": status, "to": new, **({"rights_confirmed": True} if new == "cleared" else {})})
+    return new
 
 
 @app.patch("/spaces/{space_id}")
-def review(space_id: int, body: Review, user=Depends(require(*STAFF))):
+def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))):
     if body.space_type and body.space_type not in SPACE_TYPES:
         raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
     if body.design_style and body.design_style not in STYLES:
         raise HTTPException(422, f"design_style must be one of {STYLES}")
+    sent = {k: v for k, v in body.model_dump(include=set(EDITABLE)).items() if v is not None}
+    if "materials" in sent:
+        sent["materials"] = [m.strip() for m in sent["materials"] if m.strip()]
     with _db() as c:
-        row = c.execute("SELECT review_status, space_type, design_style FROM space WHERE id=%s FOR UPDATE", (space_id,)).fetchone()
+        row = c.execute("SELECT review_status, space_type, design_style, caption, alt_text, materials, hotspots "
+                        "FROM space WHERE id=%s FOR UPDATE", (space_id,)).fetchone()
         if not row:
             raise HTTPException(404, "space not found")
-        status = row["review_status"]
+        if user["role"] == "content" and (body.advance or body.hotspots is not None or set(sent) - TEXT
+                                          or row["review_status"] != "in_review"):
+            raise HTTPException(403, "content editors may only edit the caption and alt text of spaces in review")
+        if changes := {k: v for k, v in sent.items() if v != row[k]}:
+            c.execute(f"UPDATE space SET {', '.join(k + '=%s' for k in changes)} WHERE id=%s", (*changes.values(), space_id))
+            _log(c, space_id, user, "edit", {"from": {k: row[k] for k in changes}, "to": changes})
+        if body.hotspots is not None:
+            objs = (row["hotspots"] or {}).get("objects", [])
+            if bad := [h.index for h in body.hotspots if h.index >= len(objs)]:
+                raise HTTPException(422, f"no detected object at index {bad[0]}")
+            kept = [{**objs[h.index], "label_vi": h.label_vi} for h in body.hotspots]  # coordinates stay as detected
+            c.execute("UPDATE space SET hotspots = jsonb_set(hotspots, '{objects}', %s) WHERE id=%s", (Jsonb(kept), space_id))
+            _log(c, space_id, user, "hotspots", {"kept": [h.index for h in body.hotspots], "of": len(objs)})
         if body.advance:
-            if status not in NEXT:
-                raise HTTPException(409, f"'{status}' is the final state")
-            if status != "draft" and user["role"] not in APPROVERS:  # only the lead architect approves / publishes
-                raise HTTPException(403, "approval and publishing require lead_architect")
-            status = NEXT[status]
-        new = c.execute(
-            f"UPDATE space SET space_type=COALESCE(%s,space_type), design_style=COALESCE(%s,design_style), "
-            f"review_status=%s WHERE id=%s RETURNING {FIELDS}",
-            (body.space_type, body.design_style, status, space_id)).fetchone()
-        if body.space_type or body.design_style:
-            _log(c, space_id, user, "edit", {"from": {"space_type": row["space_type"], "design_style": row["design_style"]},
-                                              "to": {"space_type": new["space_type"], "design_style": new["design_style"]}})
-        if body.advance:
-            _log(c, space_id, user, "advance", {"from": row["review_status"], "to": status})
-        return new
+            _advance(c, space_id, row["review_status"], user, body.rights_confirmed)
+        return c.execute(f"SELECT {FIELDS} FROM space WHERE id=%s", (space_id,)).fetchone()
+
+
+class AdvanceMany(BaseModel):
+    space_ids: list[int] = Field(min_length=1, max_length=500)
+    rights_confirmed: bool = False
+
+
+@app.post("/spaces/advance")
+def advance_many(body: AdvanceMany, user=Depends(require(*STAFF))):
+    """All or nothing: one space that cannot move rolls the whole selection back, and the error names it."""
+    with _db() as c:
+        rows = c.execute("SELECT id, review_status FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+                         (body.space_ids,)).fetchall()
+        if missing := set(body.space_ids) - {r["id"] for r in rows}:
+            raise HTTPException(404, f"space {min(missing)} not found")
+        moved = {r["id"]: _advance(c, r["id"], r["review_status"], user, body.rights_confirmed) for r in rows}
+    return {"advanced": sorted(moved), "status": sorted(set(moved.values()))}
+
+
+AI_DIMS = {"khong_gian", "phong_cach", "tong_mau", "vat_lieu"}  # mirrored from space columns by sync_ai_tags
+
+
+class SetTags(BaseModel):
+    space_ids: list[int] = Field(default_factory=list, max_length=500)
+    project: Optional[str] = None  # first folder of relative_path: every space of that project
+    dimension: str
+    values: list[str] = Field(default_factory=list, max_length=20)
+
+
+@app.put("/spaces/tags")
+def set_tags(body: SetTags, user=Depends(require(*STAFF))):
+    """Human tags (loai_cong_trinh, muc_dau_tu, ...): replaces that dimension's human values on the chosen spaces."""
+    if body.dimension in AI_DIMS:
+        raise HTTPException(422, f"{body.dimension} follows the AI labels; edit space_type / design_style / materials instead")
+    with _db() as c:
+        dim = c.execute("SELECT id, cho_phep_nhieu_gia_tri FROM chieu_phan_loai WHERE ma_dinh_danh=%s",
+                        (body.dimension,)).fetchone()
+        if not dim:
+            raise HTTPException(422, f"unknown dimension {body.dimension}")
+        vals = c.execute("SELECT id, ma_dinh_danh FROM gia_tri_phan_loai WHERE chieu_id=%s AND ma_dinh_danh = ANY(%s)",
+                         (dim["id"], body.values)).fetchall()
+        if len(vals) != len(set(body.values)):
+            raise HTTPException(422, f"unknown value for {body.dimension}")
+        if len(vals) > 1 and not dim["cho_phep_nhieu_gia_tri"]:
+            raise HTTPException(422, f"{body.dimension} takes a single value")
+        ids = [r["id"] for r in c.execute("SELECT id FROM space WHERE id = ANY(%s) OR split_part(relative_path, '/', 1) = %s",
+                                          (body.space_ids, body.project)).fetchall()]
+        if not ids:
+            raise HTTPException(404, "no space matches")
+        c.execute("DELETE FROM space_gia_tri sg USING gia_tri_phan_loai v WHERE sg.gia_tri_id = v.id AND v.chieu_id = %s "
+                  "AND sg.nguon_tao = 'nguoi' AND sg.space_id = ANY(%s)", (dim["id"], ids))
+        for v in vals:
+            c.execute("INSERT INTO space_gia_tri (space_id, gia_tri_id, nguon_tao) SELECT unnest(%s::int[]), %s, 'nguoi' "
+                      "ON CONFLICT DO NOTHING", (ids, v["id"]))
+        for sid in ids:
+            _log(c, sid, user, "tags", {body.dimension: [v["ma_dinh_danh"] for v in vals]})
+    return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
 
 
 class Chat(BaseModel):

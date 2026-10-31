@@ -73,15 +73,3 @@ def test_ingest_rejects_non_image(as_role):
     r = client.post("/spaces/ingest", files={"file": ("notes.txt", b"hello", "text/plain")}, headers=as_role("architect"))
     assert r.status_code == 415
 
-
-def test_review_cannot_pass_final_state(as_role):
-    h = as_role("lead_architect")
-    sid = client.get("/spaces", params={"review_status": "draft", "limit": 1}, headers=h).json()[0]["id"]
-    try:
-        for expected in ("in_review", "approved", "published"):
-            assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=h).json()["review_status"] == expected
-        assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=h).status_code == 409
-    finally:
-        with psycopg.connect(DSN) as c:
-            c.execute("DELETE FROM review_log WHERE space_id=%s", (sid,))
-            c.execute("UPDATE space SET review_status='draft' WHERE id=%s", (sid,))

@@ -57,8 +57,8 @@ def test_anonymous_and_visitor_see_only_published(as_role):
             hits = client.get("/search", params={"q": "phòng khách", "k": 24}, headers=h).json()
             assert sid not in [x["id"] for x in hits]
         assert client.get(f"/spaces/{sid}", headers=as_role("architect")).status_code == 200
-        for _ in range(3):
-            client.patch(f"/spaces/{sid}", json={"advance": True}, headers=admin)
+        for _ in range(4):  # draft -> in_review -> approved -> cleared -> published
+            client.patch(f"/spaces/{sid}", json={"advance": True, "rights_confirmed": True}, headers=admin)
         assert client.get(f"/spaces/{sid}").status_code == 200  # published -> public
     finally:
         _reset(sid)
@@ -79,9 +79,10 @@ def test_write_endpoints_by_role(as_role):
         arch = as_role("architect")
         assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=arch).json()["review_status"] == "in_review"
         assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=arch).status_code == 403
-        # lead architect approves and publishes
+        # lead architect approves, clears (with the rights confirmation) and publishes
         lead = as_role("lead_architect")
         assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=lead).json()["review_status"] == "approved"
+        assert client.patch(f"/spaces/{sid}", json={"advance": True, "rights_confirmed": True}, headers=lead).json()["review_status"] == "cleared"
         assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=lead).json()["review_status"] == "published"
     finally:
         _reset(sid)
@@ -100,14 +101,18 @@ def test_audit_log_records_who_and_what(as_role):
     arch = as_role("architect")
     uid = client.get("/auth/me", headers=arch).json()["id"]
     sid = _draft_id(arch)
+    orig = client.get(f"/spaces/{sid}", headers=arch).json()["design_style"]
+    style = "Luxury" if orig == "Japandi" else "Japandi"  # an edit that changes nothing is not logged
     try:
-        client.patch(f"/spaces/{sid}", json={"advance": True, "design_style": "Japandi"}, headers=arch)
+        client.patch(f"/spaces/{sid}", json={"advance": True, "design_style": style}, headers=arch)
         with psycopg.connect(DSN) as c:
             rows = c.execute("SELECT action, detail FROM review_log WHERE space_id=%s AND user_id=%s ORDER BY id", (sid, uid)).fetchall()
         assert [r[0] for r in rows] == ["edit", "advance"]
-        assert rows[0][1]["to"]["design_style"] == "Japandi" and rows[1][1] == {"from": "draft", "to": "in_review"}
+        assert rows[0][1]["to"]["design_style"] == style and rows[1][1] == {"from": "draft", "to": "in_review"}
     finally:
         _reset(sid)
+        with psycopg.connect(DSN) as c:
+            c.execute("UPDATE space SET design_style=%s WHERE id=%s", (orig, sid))
 
 
 def test_google_sign_in_linking_and_config():
