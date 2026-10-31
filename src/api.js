@@ -130,11 +130,41 @@ export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k }
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)
 export const STYLES = [...Object.keys(PC), 'Khac']
-export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'published' }
-export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', published: 'Đã đăng' }
+// QT-01; 'cleared' = the client allowed publishing the photos
+export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
+export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng' }
+export const EDITORS = [...STAFF, 'content'] // content may only edit caption / alt text of spaces in review
 
-export const listSpaces = (params = {}) => get('/spaces', { limit: 60, ...params })
+export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })
 export const reviewSpace = (id, body) => request('PATCH', '/spaces/' + id, { body })
+export const advanceSpaces = (ids, rightsConfirmed = false) =>
+  request('POST', '/spaces/advance', { body: { space_ids: ids, rights_confirmed: rightsConfirmed } })
+export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}
+export const projectOf = relativePath => relativePath.split('/')[0]
+
+export function ingestSpace(file, project) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('project', project)
+  return request('POST', '/spaces/ingest', { form })
+}
+
+/* One request per file, in order: the server runs the pipeline on a single GPU.
+ * A failed file is reported and the rest still go up. */
+export async function uploadAll(files, project, onDone = () => {}) {
+  const failed = []
+  for (const [i, f] of [...files].entries()) {
+    try { await ingestSpace(f, project) } catch (e) { failed.push({ name: f.name, error: e.message }) }
+    onDone(i + 1)
+  }
+  return failed
+}
+
+// detector objects (anchor in 0..1) -> the {x, y, label} HotspotImage draws, in percent
+export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o => ({
+  x: o.hotspot_anchor[0] * 100, y: o.hotspot_anchor[1] * 100,
+  label: o.label_vi || o.label, kind: o.service || 'Món đồ trong ảnh', price: null
+}))
 export const listLeads = (params = {}) => get('/leads', params)
 export const sendChat = (message, history, contact) =>
   request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}) } })

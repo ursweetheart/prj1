@@ -79,3 +79,28 @@ describe('sliding session', () => {
     expect(mem.d3_token).toBeUndefined()
   })
 })
+
+describe('uploadAll', () => {
+  it('sends one file at a time in order, keeps going after a failure and reports it', async () => {
+    const { uploadAll } = await load()
+    let inFlight = 0
+    const sent = []
+    vi.stubGlobal('fetch', vi.fn(async (url, { body }) => {
+      expect(url).toContain('/spaces/ingest')
+      expect(++inFlight).toBe(1) // never two at once: single GPU
+      const name = body.get('file').name
+      sent.push([name, body.get('project')])
+      await Promise.resolve()
+      inFlight--
+      return name === 'b.jpg'
+        ? { ok: false, status: 415, json: async () => ({ detail: 'image only (jpg/png/webp)' }) }
+        : { ok: true, status: 201, json: async () => ({}) }
+    }))
+    const files = ['a.jpg', 'b.jpg', 'c.jpg'].map(n => new File(['x'], n))
+    const progress = []
+    const failed = await uploadAll(files, 'Biệt thự', n => progress.push(n))
+    expect(sent).toEqual([['a.jpg', 'Biệt thự'], ['b.jpg', 'Biệt thự'], ['c.jpg', 'Biệt thự']])
+    expect(progress).toEqual([1, 2, 3])
+    expect(failed).toEqual([{ name: 'b.jpg', error: 'image only (jpg/png/webp)' }])
+  })
+})

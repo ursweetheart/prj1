@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { APPROVERS, SALES, STAFF, hasRole, loadUser, session } from '@/api'
+import { EDITORS, SALES, hasRole, loadUser, session } from '@/api'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -20,7 +20,7 @@ const router = createRouter({
       component: () => import('@/views/SpaceView.vue')
     },
     { path: '/dang-nhap', name: 'dang-nhap', component: () => import('@/views/LoginView.vue') },
-    { path: '/quan-tri', name: 'quan-tri', meta: { roles: STAFF }, component: () => import('@/views/ReviewView.vue') },
+    { path: '/quan-tri', name: 'quan-tri', meta: { roles: EDITORS }, component: () => import('@/views/ReviewView.vue') },
     { path: '/khach-hang', name: 'khach-hang', meta: { roles: SALES }, component: () => import('@/views/LeadsView.vue') }
   ]
 })

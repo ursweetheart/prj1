@@ -6,7 +6,8 @@
     <p v-else-if="!space" class="lead" style="margin-top:24px">Đang tải…</p>
 
     <template v-else>
-      <div class="media l32 r-lg" style="margin-top:20px;max-height:70vh">
+      <HotspotImage v-if="hero.hotspots.length" :space="hero" class="r-lg" style="margin-top:20px" />
+      <div v-else class="media l32 r-lg" style="margin-top:20px;max-height:70vh">
         <img :src="imageUrl(space.relative_path)" :alt="space.alt_text">
       </div>
 
@@ -35,7 +36,8 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { LOAI_LABEL, PC_LABEL } from '@/data'
-import { getSpace, getSimilar, imageUrl, spaceLabel, toCard } from '@/api'
+import { getSpace, getSimilar, hotspotsOf, imageUrl, spaceLabel, toCard } from '@/api'
+import HotspotImage from '@/components/HotspotImage.vue'
 import PaletteRow from '@/components/PaletteRow.vue'
 import SpaceCard from '@/components/SpaceCard.vue'
 
@@ -46,6 +48,12 @@ const error = ref('')
 
 const palette = computed(() =>
   (space.value?.palette?.palette || []).map(c => ({ hex: c.hex_code, pct: Math.round(c.percentage), name: c.hex_code })))
+
+// the objects staff kept on the review page, drawn as hotspots over the photo
+const hero = computed(() => ({
+  ...toCard(space.value), ratio: 'l32', hotspots: hotspotsOf(space.value),
+  similarHref: '/cong-trinh#phong_cach=' + space.value.design_style
+}))
 
 const facetLine = computed(() => {
   const s = space.value

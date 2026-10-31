@@ -11,9 +11,9 @@
          class="hs-card" :style="cardStyle(h)">
       <span class="meta" style="font-size:11px">{{ h.kind }}</span>
       <b>{{ h.label }}</b>
-      <span class="small">Giá tham khảo: {{ h.price || '—' }}</span>
+      <span v-if="h.price" class="small">Giá tham khảo: {{ h.price }}</span>
       <router-link class="btn btn-secondary" style="min-height:38px;padding:8px 12px"
-         :to="'/cong-trinh#phongcach=' + space.phongcach">Xem không gian tương tự</router-link>
+         :to="space.similarHref">Xem không gian tương tự</router-link>
     </div>
   </div>
 </template>
