@@ -27,21 +27,6 @@
           <span class="sep">|</span>
           <button type="button" :class="{ active: currentLang === 'EN' }" @click="currentLang = 'EN'">En</button>
         </div>
-        <button class="nav-burger" type="button" :aria-expanded="String(open)"
-                aria-label="Mở menu" @click="open = !open"><span></span></button>
-      </div>
-    </div>
-    
-    <div class="nav-sheet" v-if="open">
-      <router-link v-for="l in links" :key="l.key" :to="l.to" @click="open = false"
-                   :class="{ 'is-active': current === l.key || ($route && $route.path === l.to) }">{{ l.label }}</router-link>
-      <router-link v-for="l in roleLinks" :key="l.to" :to="l.to" @click="open = false">{{ l.label }}</router-link>
-      <button v-if="session.user" type="button" @click="signOut(); open = false">Đăng xuất</button>
-      <router-link v-else to="/dang-nhap" @click="open = false">Đăng nhập</router-link>
-      <div class="nav-sheet-lang">
-        <button type="button" :class="{ active: currentLang === 'VI' }" @click="currentLang = 'VI'">Vi</button>
-        <span class="sep">|</span>
-        <button type="button" :class="{ active: currentLang === 'EN' }" @click="currentLang = 'EN'">En</button>
       </div>
     </div>
   </header>
@@ -59,7 +44,6 @@ defineProps({
 
 const route = useRoute()
 const router = useRouter()
-const open = ref(false)
 const currentLang = ref('VI')
 
 const links = [
