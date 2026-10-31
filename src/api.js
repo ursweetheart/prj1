@@ -30,7 +30,7 @@ export const session = reactive({ token: store.get(), user: null })
 // but OAuth redirects leave the SPA, so they need the real address.
 const ORIGIN = import.meta.env.VITE_API_URL || ''
 const API = ORIGIN || '/api'
-export const BACKEND = ORIGIN || 'http://localhost:8000'
+export const BACKEND = ORIGIN || 'http://localhost:8001'
 export const STAFF = ['architect', 'lead_architect', 'admin']
 export const APPROVERS = ['lead_architect', 'admin']
 export const SALES = ['sales', 'lead_architect', 'admin']

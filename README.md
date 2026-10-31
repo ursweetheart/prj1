@@ -14,12 +14,12 @@ Website portfolio thiết kế nội thất tích hợp AI (tìm không gian tư
 
 ```
 npm ci
-npm run dev       # http://localhost:5173/prj1/ ; /api và /images được proxy sang backend :8000
+npm run dev       # http://localhost:5173/prj1/ ; /api và /images được proxy sang backend :8001
 npm run build     # ra dist/, giống bước build của CI
 npm test          # vitest: kiểm tra phần phiên đăng nhập trong src/api.js
 ```
 
-Biến của frontend (tuỳ chọn): `VITE_API_URL`, địa chỉ backend đã host (vd `https://api.example.com`). Để trống khi dev: frontend gọi qua proxy `/api` của Vite, nút Google/Facebook trỏ `http://localhost:8000`.
+Biến của frontend (tuỳ chọn): `VITE_API_URL`, địa chỉ backend đã host (vd `https://api.example.com`). Để trống khi dev: frontend gọi qua proxy `/api` của Vite, nút Google/Facebook trỏ `http://localhost:8001` (cổng 8000 để trống cho việc khác trên máy).
 
 Trang chủ và `/cong-trinh` hiển thị các không gian **đã đăng** lấy từ API; nếu không gọi được API (bản tĩnh trên Pages không có backend) thì dùng dữ liệu minh hoạ trong `src/data` và ghi chú rõ. Chưa có không gian nào được đăng thì trang công trình báo trống.
 
@@ -36,7 +36,7 @@ docker compose up -d                              # Postgres + pgvector (project
 python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python ingest.py image_d3           # gán nhãn + embedding ảnh, ghi vào DB
 .venv\Scripts\python -m pipeline.assistant kb/sample.json   # nạp kho tri thức cho chatbot
-.venv\Scripts\python -m uvicorn api:app --port 8000 --env-file .env   # .env: copy từ .env.example, không commit
+.venv\Scripts\python -m uvicorn api:app --port 8001 --env-file .env   # .env: copy từ .env.example, không commit
 .venv\Scripts\python -m pytest                    # cần DB đang chạy và đã ingest
 ```
 
