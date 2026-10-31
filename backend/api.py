@@ -28,6 +28,10 @@ from ratelimit import limit
 IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
 FIELDS = "id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status"
+# taxonomy values of each space as {dimension: [value, ...]}; the portfolio filters on these
+TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
+        "FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id JOIN chieu_phan_loai d ON d.id = v.chieu_id "
+        "WHERE sg.space_id = space.id GROUP BY d.ma_dinh_danh) t) AS tags")
 # QT-01 order; an architect confirms AI tags before anything is published
 NEXT = {"draft": "in_review", "in_review": "approved", "approved": "published"}
 SPACE_TYPES = SpaceClassificationResult.model_fields["space_type"].annotation.__args__
@@ -73,7 +77,7 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
         return c.execute(
-            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature "
+            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS} "
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "ORDER BY id LIMIT %(l)s OFFSET %(o)s",

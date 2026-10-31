@@ -2,20 +2,19 @@
  * Lọc đa chiều + đếm kết quả thời gian thực + đồng bộ URL hash
  * ═══════════════════════════════════════════════════════════════════ */
 import { reactive, computed, watch } from 'vue'
-import { FACETS } from '@/data'
 
-/* spaces: a ref / reactive getter of the list to filter (API data or the demo data) */
-export function useBrowse(spaces) {
-  const all = () => (typeof spaces === 'function' ? spaces() : spaces.value) || []
-  const selected = reactive({})
-  FACETS.forEach(f => { selected[f.id] = [] })
+/* spaces, facets: getters. Facets come from /taxonomy (API) or data/index.js (demo). */
+export function useBrowse(spaces, facets) {
+  const all = () => spaces() || []
+  const dims = () => facets() || []
+  const selected = reactive({}) // facet id -> chosen option ids; filled lazily, facets may load later
 
   const readHash = () => {
     const h = location.hash.replace(/^#/, '')
     if (!h) return
     h.split('&').forEach(part => {
       const [k, v] = part.split('=')
-      if (selected[k] && v) selected[k] = v.split(',').filter(Boolean)
+      if (k && v) selected[k] = v.split(',').filter(Boolean)
     })
   }
 
@@ -31,23 +30,26 @@ export function useBrowse(spaces) {
   readHash()
   watch(selected, writeHash, { deep: true })
 
-  const matches = (s, sel) => Object.entries(sel).every(([k, vals]) => {
+  // API cards carry their taxonomy values in `tags`; demo cards carry them as plain fields
+  const valueOf = (s, k) => (s.tags ? s.tags[k] : s[k])
+
+  const matches = (s, sel) => dims().every(f => {
+    const vals = sel[f.id] || []
     if (!vals.length) return true
-    const v = s[k]
+    const v = valueOf(s, f.id)
     return Array.isArray(v) ? v.some(x => vals.includes(x)) : vals.includes(v)
   })
 
   const results = computed(() => all().filter(s => matches(s, selected)))
 
-  /* Đếm kiểu facet */
+  /* Đếm kiểu facet: số kết quả nếu thêm lựa chọn này vào điều kiện hiện tại */
   const counts = computed(() => {
     const out = {}
-    FACETS.forEach(f => {
+    dims().forEach(f => {
+      const cur = selected[f.id] || []
       out[f.id] = {}
       f.options.forEach(o => {
-        const probe = {}
-        Object.keys(selected).forEach(k => { probe[k] = selected[k] })
-        probe[f.id] = selected[f.id].includes(o.id) ? selected[f.id] : selected[f.id].concat(o.id)
+        const probe = { ...selected, [f.id]: cur.includes(o.id) ? cur : cur.concat(o.id) }
         out[f.id][o.id] = all().filter(s => matches(s, probe)).length
       })
     })
@@ -55,17 +57,14 @@ export function useBrowse(spaces) {
   })
 
   const activeChips = computed(() =>
-    Object.entries(selected).flatMap(([fid, vals]) => {
-      const f = FACETS.find(x => x.id === fid)
-      return vals.map(v => ({
-        fid, vid: v, label: (f.options.find(o => o.id === v) || {}).label || v
-      }))
-    }))
+    dims().flatMap(f => (selected[f.id] || []).map(v => ({
+      fid: f.id, vid: v, label: (f.options.find(o => o.id === v) || {}).label || v
+    }))))
 
   return {
     selected, results, counts, activeChips,
     toggle(fid, oid) {
-      const a = selected[fid], i = a.indexOf(oid)
+      const a = (selected[fid] ||= []), i = a.indexOf(oid)
       if (i === -1) a.push(oid); else a.splice(i, 1)
     },
     clear(fid) { selected[fid] = [] },

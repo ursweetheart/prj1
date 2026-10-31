@@ -113,8 +113,16 @@ export const toCard = r => ({
   ratio: 'sq',
   khonggian: KG[r.space_type],
   phongcach: PC[r.design_style],
-  tongmau: [TONE[r.brightness], TONE[r.temperature]].filter(Boolean)
+  tongmau: [TONE[r.brightness], TONE[r.temperature]].filter(Boolean),
+  tags: r.tags || {} // {dimension: [value, ...]} from the taxonomy; what the filters match on
 })
+
+// a /taxonomy dimension -> the facet shape FacetPanel and useBrowse use
+export const toFacet = d => ({
+  id: d.ma_dinh_danh, label: d.ten,
+  options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
+})
+export const getTaxonomy = () => get('/taxonomy')
 
 export const searchSpaces = (q, k = 12) => get('/search', { q, k })
 export const getSpace = id => get('/spaces/' + id)

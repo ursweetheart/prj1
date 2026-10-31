@@ -60,6 +60,7 @@ def seed(path=SEED) -> tuple[int, int]:
                 "SELECT id, %(ma)s, %(ten)s, %(syn)s FROM chieu_phan_loai WHERE ma_dinh_danh=%(chieu)s "
                 "ON CONFLICT (chieu_id, ma_dinh_danh) DO UPDATE SET ten=EXCLUDED.ten, tu_dong_nghia=EXCLUDED.tu_dong_nghia",
                 {"chieu": v["chieu"], "ma": v["ma_dinh_danh"], "ten": v["ten"], "syn": Jsonb(v.get("tu_dong_nghia", []))})
+        c.execute("UPDATE space SET materials = materials")  # fires sync_ai_tags: re-tag every space with the new values
     return len(data["chieu"]), len(data["gia_tri"])
 
 

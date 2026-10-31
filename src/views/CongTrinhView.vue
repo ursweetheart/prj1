@@ -3,7 +3,7 @@
     <p class="eyebrow">Công trình</p>
     <h1 class="h-1" style="margin-top:12px; max-width:22ch">Tìm không gian theo điều bạn hình dung</h1>
     <p class="lead" style="margin-top:16px">
-      Mỗi ảnh được gắn nhãn theo <strong>từng không gian</strong>: loại phòng, phong cách, tông màu.
+      Mỗi ảnh được gắn nhãn theo <strong>từng không gian</strong>: loại phòng, phong cách, tông màu, vật liệu.
       Kết hợp nhiều bộ lọc, hoặc mô tả bằng lời để AI tìm những không gian gần nhất.
     </p>
 
@@ -37,7 +37,7 @@
                   type="button" @click="clearAll">Bỏ hết</button>
         </div>
         <div style="display:none" class="d-desk"></div>
-        <FacetPanel class="only-desk" :selected="selected" :counts="counts" :locks="locks"
+        <FacetPanel class="only-desk" :facets="portfolio.facets" :selected="selected" :counts="counts" :locks="locks"
                      @toggle="toggle" @clear="clear" />
         <button class="btn btn-secondary facet-drawer-btn" type="button" @click="drawer = true">
           Mở bộ lọc<span v-if="activeChips.length" class="num"> · {{ activeChips.length }}</span>
@@ -82,7 +82,7 @@
       <span class="h-4">Bộ lọc</span>
       <button class="btn btn-ghost" type="button" @click="drawer = false">Đóng</button>
     </div>
-    <FacetPanel :selected="selected" :counts="counts" :locks="locks" @toggle="toggle" @clear="clear" />
+    <FacetPanel :facets="portfolio.facets" :selected="selected" :counts="counts" :locks="locks" @toggle="toggle" @clear="clear" />
     <div class="row g10" style="margin-top:auto; padding-top:18px">
       <button class="btn btn-secondary" type="button" style="flex:1" @click="clearAll">Bỏ hết</button>
       <button class="btn btn-primary" type="button" style="flex:1" @click="drawer = false">
@@ -101,10 +101,11 @@ import SpaceCard from '@/components/SpaceCard.vue'
 import { searchSpaces, toCard } from '@/api'
 
 const portfolio = usePortfolio()
-const { selected, results, counts, activeChips, toggle, clear, clearAll } = useBrowse(() => portfolio.spaces)
-// the AI labels describe each photo, not the project: no project type in the real data yet
-const locks = computed(() => portfolio.source === 'api'
-  ? { loai: 'Chưa lọc được — loại công trình chưa có trong dữ liệu.' } : {})
+const { selected, results, counts, activeChips, toggle, clear, clearAll } = useBrowse(() => portfolio.spaces, () => portfolio.facets)
+// a dimension no published space carries yet (loại công trình, mức đầu tư before staff fill them in) filters nothing
+const locks = computed(() => portfolio.source !== 'api' ? {} : Object.fromEntries(portfolio.facets
+  .filter(f => !portfolio.spaces.some(s => s.tags[f.id]?.length))
+  .map(f => [f.id, 'Chưa lọc được — chưa có không gian nào được gắn nhãn này.'])))
 const drawer = ref(false)
 const wideAt = i => i % 7 === 0
 

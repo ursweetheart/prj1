@@ -1,6 +1,6 @@
 <template>
   <div class="facets">
-    <div v-for="f in facets" :key="f.id">
+    <div v-for="f in shown" :key="f.id">
       <div class="facet-h">
         <span class="meta">{{ f.label }}</span>
         <button v-if="!f.locked && selected[f.id] && selected[f.id].length"
@@ -26,9 +26,9 @@
 
 <script setup>
 import { computed, reactive } from 'vue'
-import { FACETS } from '@/data'
 
 const props = defineProps({
+  facets: Array,
   selected: Object,
   counts: Object,
   locks: { type: Object, default: () => ({}) } // facet id -> why it cannot be filtered with the current data
@@ -36,7 +36,7 @@ const props = defineProps({
 
 defineEmits(['toggle', 'clear'])
 
-const facets = computed(() => FACETS.map(f => ({ ...f, locked: props.locks[f.id] || f.locked })))
+const shown = computed(() => props.facets.map(f => ({ ...f, locked: props.locks[f.id] || f.locked })))
 const expanded = reactive({})
 
 function visible(f) {

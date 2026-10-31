@@ -100,6 +100,28 @@ CREATE TABLE IF NOT EXISTS space_gia_tri (
   PRIMARY KEY (space_id, gia_tri_id)
 );
 
+-- The AI-labelled dimensions mirror the space's own columns, on every write path (ingest, review edit,
+-- relabel). Rows with nguon_tao='nguoi' (loai_cong_trinh, muc_dau_tu, manual extras) are never touched.
+-- vat_lieu: a synonym matches the leading words of a material ("gỗ" -> "gỗ óc chó", "da" -/-> "đá").
+CREATE OR REPLACE FUNCTION sync_ai_tags() RETURNS trigger AS $$
+BEGIN
+  DELETE FROM space_gia_tri WHERE space_id = NEW.id AND nguon_tao = 'ai';
+  INSERT INTO space_gia_tri (space_id, gia_tri_id, do_tin_cay, nguon_tao)
+  SELECT NEW.id, v.id, CASE WHEN d.ma_dinh_danh = 'phong_cach' THEN NEW.style_confidence END, 'ai'
+  FROM gia_tri_phan_loai v JOIN chieu_phan_loai d ON d.id = v.chieu_id
+  WHERE (d.ma_dinh_danh = 'khong_gian' AND v.ma_dinh_danh = NEW.space_type)
+     OR (d.ma_dinh_danh = 'phong_cach' AND v.ma_dinh_danh = NEW.design_style)
+     OR (d.ma_dinh_danh = 'tong_mau' AND v.ma_dinh_danh IN (NEW.palette->>'brightness', NEW.palette->>'temperature'))
+     OR (d.ma_dinh_danh = 'vat_lieu' AND EXISTS (
+           SELECT 1 FROM unnest(NEW.materials) m, jsonb_array_elements_text(v.tu_dong_nghia) s
+           WHERE lower(m) = s OR lower(m) LIKE s || ' %'))
+  ON CONFLICT DO NOTHING;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER space_ai_tags AFTER INSERT OR UPDATE OF space_type, design_style, palette, materials
+  ON space FOR EACH ROW EXECUTE FUNCTION sync_ai_tags();
+
 -- AI-proposed taxonomy changes awaiting human approval; never live until accepted (M9, seq-15).
 CREATE TABLE IF NOT EXISTS ung_vien_phan_loai (
   id serial PRIMARY KEY,
