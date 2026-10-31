@@ -54,7 +54,8 @@
                @change="selectProject(g, $event.target.checked)" :aria-label="'Chọn cả dự án ' + g.project"></label>
         <h2 class="h-4" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
         <template v-if="isStaff">
-          <select v-for="d in humanDims" :key="d.id" v-model="projectTags[g.project + d.id]" :aria-label="d.label + ' cho cả dự án'">
+          <select v-for="d in humanDims" :key="d.id" :value="projectTags[g.project + d.id] || ''" :aria-label="d.label + ' cho cả dự án'"
+                  @change="projectTags[g.project + d.id] = $event.target.value">
             <option value="">{{ d.label }}…</option>
             <option v-for="o in d.options" :key="o.id" :value="o.id">{{ o.label }}</option>
           </select>
@@ -102,7 +103,7 @@
               <p v-if="!hs.objects.length" class="small">Không còn điểm nóng nào.</p>
               <div v-for="(o, i) in hs.objects" :key="o.index" class="row g10">
                 <span class="num small">{{ i + 1 }}</span>
-                <input v-model="o.label_vi" style="flex:1" :aria-label="'Tên món đồ ' + (i + 1)">
+                <input v-model="o.label_vi" class="txt" style="flex:1" :aria-label="'Tên món đồ ' + (i + 1)">
                 <button class="btn btn-ghost" type="button" @click="hs.objects.splice(i, 1)">Xoá</button>
               </div>
               <div class="row g10">
@@ -246,9 +247,9 @@ getTaxonomy()
 </script>
 
 <style scoped>
-select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
+select, .txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
   padding: 10px 12px; min-height: 42px; max-width: 100%; color-scheme: dark }
-select:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
+select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
 .panel { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px }
 .thumb { padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden }
 .thumb img { width: 140px; height: 100px; object-fit: cover; display: block }
