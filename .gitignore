@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets: Google Cloud service-account keys and env files
+secret.json
+sa-key.json
+*-key.json
+prefab-segment-*.json
+.env
+.env.*
+!.env.example
