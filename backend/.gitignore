@@ -2,3 +2,5 @@
 sa-key.json
 __pycache__/
 *.pt
+.env
+image_d3/

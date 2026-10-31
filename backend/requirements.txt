@@ -17,3 +17,4 @@ pwdlib[argon2]>=0.2
 authlib>=1.3
 itsdangerous
 email-validator
+python-dotenv>=1.0

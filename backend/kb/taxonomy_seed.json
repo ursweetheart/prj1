@@ -1,0 +1,59 @@
+{
+  "_comment": "Current taxonomy captured as data (change: discover-taxonomy-dimensions). ma_dinh_danh values match the strings already stored in space.space_type / space.design_style so the later cutover maps 1:1. Synonyms are lifted from parse_request in pipeline/assistant.py. 'loai_cong_trinh' exists today only inside parse_request (PROJECT_TYPES), not as a space column. tong_mau ids equal palette brightness / temperature; vat_lieu synonyms keep their diacritics (\"da\" leather vs \"đá\" stone) and match the leading words of space.materials (trigger sync_ai_tags in schema.sql).",
+  "chieu": [
+    {"ma_dinh_danh": "khong_gian", "ten": "Không gian", "bat_buoc": true, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 1},
+    {"ma_dinh_danh": "phong_cach", "ten": "Phong cách", "bat_buoc": true, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 2},
+    {"ma_dinh_danh": "loai_cong_trinh", "ten": "Loại công trình", "bat_buoc": false, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 3},
+    {"ma_dinh_danh": "tong_mau", "ten": "Tông màu", "bat_buoc": false, "cho_phep_nhieu_gia_tri": true, "hien_thi_cho_khach": true, "thu_tu": 4},
+    {"ma_dinh_danh": "vat_lieu", "ten": "Vật liệu", "bat_buoc": false, "cho_phep_nhieu_gia_tri": true, "hien_thi_cho_khach": true, "thu_tu": 5},
+    {"ma_dinh_danh": "muc_dau_tu", "ten": "Mức đầu tư", "bat_buoc": false, "cho_phep_nhieu_gia_tri": false, "hien_thi_cho_khach": true, "thu_tu": 6}
+  ],
+  "gia_tri": [
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_khach", "ten": "Phòng khách", "tu_dong_nghia": ["phong khach"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_ngu_master", "ten": "Phòng ngủ master", "tu_dong_nghia": ["phong ngu"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_ngu_phu", "ten": "Phòng ngủ phụ", "tu_dong_nghia": []},
+    {"chieu": "khong_gian", "ma_dinh_danh": "bep_va_an", "ten": "Bếp & phòng ăn", "tu_dong_nghia": ["bep", "phong an"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_lam_viec", "ten": "Phòng làm việc", "tu_dong_nghia": ["phong lam viec"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "sanh_thong_tang", "ten": "Sảnh thông tầng", "tu_dong_nghia": []},
+    {"chieu": "khong_gian", "ma_dinh_danh": "ban_cong", "ten": "Ban công", "tu_dong_nghia": ["ban cong"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "phong_tam", "ten": "Phòng tắm", "tu_dong_nghia": ["phong tam"]},
+    {"chieu": "khong_gian", "ma_dinh_danh": "lounge_thuong_mai", "ten": "Lounge thương mại", "tu_dong_nghia": []},
+    {"chieu": "khong_gian", "ma_dinh_danh": "khac", "ten": "Khác", "tu_dong_nghia": []},
+
+    {"chieu": "phong_cach", "ma_dinh_danh": "Indochine", "ten": "Indochine", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Japandi", "ten": "Japandi", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Wabi_sabi", "ten": "Wabi-sabi", "tu_dong_nghia": ["wabi sabi"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Hien_dai", "ten": "Hiện đại", "tu_dong_nghia": ["hien dai"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Tan_co_dien", "ten": "Tân cổ điển", "tu_dong_nghia": ["tan co dien"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Luxury", "ten": "Luxury", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Toi_gian", "ten": "Tối giản", "tu_dong_nghia": ["toi gian"]},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Scandinavian", "ten": "Scandinavian", "tu_dong_nghia": []},
+    {"chieu": "phong_cach", "ma_dinh_danh": "Khac", "ten": "Khác", "tu_dong_nghia": []},
+
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "can_ho", "ten": "Căn hộ / Chung cư", "tu_dong_nghia": ["can ho", "chung cu"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "biet_thu", "ten": "Biệt thự", "tu_dong_nghia": ["biet thu"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "nha_pho", "ten": "Nhà phố", "tu_dong_nghia": ["nha pho"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "van_phong", "ten": "Văn phòng", "tu_dong_nghia": ["van phong"]},
+    {"chieu": "loai_cong_trinh", "ma_dinh_danh": "thuong_mai", "ten": "Thương mại / Showroom", "tu_dong_nghia": ["showroom", "cua hang"]},
+
+    {"chieu": "tong_mau", "ma_dinh_danh": "light", "ten": "Sáng", "tu_dong_nghia": ["sang"]},
+    {"chieu": "tong_mau", "ma_dinh_danh": "dark", "ten": "Tối", "tu_dong_nghia": ["toi"]},
+    {"chieu": "tong_mau", "ma_dinh_danh": "warm", "ten": "Ấm", "tu_dong_nghia": ["am"]},
+    {"chieu": "tong_mau", "ma_dinh_danh": "cool", "ten": "Lạnh", "tu_dong_nghia": ["lanh"]},
+    {"chieu": "tong_mau", "ma_dinh_danh": "neutral", "ten": "Trung tính", "tu_dong_nghia": ["trung tinh"]},
+
+    {"chieu": "vat_lieu", "ma_dinh_danh": "go", "ten": "Gỗ", "tu_dong_nghia": ["gỗ"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "da_tu_nhien", "ten": "Đá", "tu_dong_nghia": ["đá"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "kinh", "ten": "Kính", "tu_dong_nghia": ["kính"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "kim_loai", "ten": "Kim loại", "tu_dong_nghia": ["kim loại"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "vai", "ten": "Vải", "tu_dong_nghia": ["vải"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "may_tre", "ten": "Mây tre", "tu_dong_nghia": ["mây", "tre"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "da_thuoc", "ten": "Da", "tu_dong_nghia": ["da"]},
+    {"chieu": "vat_lieu", "ma_dinh_danh": "gom_su", "ten": "Gốm sứ", "tu_dong_nghia": ["gốm", "sứ", "gạch"]},
+
+    {"chieu": "muc_dau_tu", "ma_dinh_danh": "duoi_300tr", "ten": "Dưới 300 triệu", "tu_dong_nghia": []},
+    {"chieu": "muc_dau_tu", "ma_dinh_danh": "300tr_700tr", "ten": "300 – 700 triệu", "tu_dong_nghia": []},
+    {"chieu": "muc_dau_tu", "ma_dinh_danh": "700tr_1500tr", "ten": "700 triệu – 1,5 tỷ", "tu_dong_nghia": []},
+    {"chieu": "muc_dau_tu", "ma_dinh_danh": "tren_1500tr", "ten": "Trên 1,5 tỷ", "tu_dong_nghia": []}
+  ]
+}

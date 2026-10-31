@@ -1,5 +1,6 @@
 """Accounts, JWT bearer tokens, role checks, Google (OIDC) and Facebook (OAuth2) sign-in."""
 
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -15,9 +16,12 @@ from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr, Field
 
 from pipeline.store import DSN
+from ratelimit import limit
 
 # ponytail: random per-process secret when unset, so tokens die on restart; set D3_JWT_SECRET in production
 SECRET = os.getenv("D3_JWT_SECRET") or secrets.token_urlsafe(32)
+if not os.getenv("D3_JWT_SECRET"):
+    logging.getLogger(__name__).warning("D3_JWT_SECRET is not set: login tokens stop working whenever the server restarts")
 TOKEN_TTL = timedelta(minutes=60)
 ROLES = ("visitor", "architect", "content", "sales", "lead_architect", "admin")
 STAFF = {"architect", "lead_architect", "admin"}  # may see drafts, ingest and edit facets
@@ -68,7 +72,7 @@ class Credentials(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
-@router.post("/auth/register", status_code=201)
+@router.post("/auth/register", status_code=201, dependencies=[Depends(limit("register", 10, 60))])
 def register(body: Credentials):
     """Self-service sign-up always yields 'visitor'; staff roles are granted by an admin."""
     try:
@@ -80,7 +84,7 @@ def register(body: Credentials):
         raise HTTPException(409, "email already registered")
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=[Depends(limit("login", 10, 60))])
 def login(form: OAuth2PasswordRequestForm = Depends()):
     with _conn() as c:
         u = c.execute("SELECT id, password_hash FROM app_user WHERE email=%s", (form.username.lower(),)).fetchone()
@@ -93,6 +97,12 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 @router.get("/auth/me")
 def me(user=Depends(require(*ROLES))):
     return user
+
+
+@router.post("/auth/refresh")
+def refresh(user=Depends(require(*ROLES))):
+    """A fresh token for a still-valid one (sliding session). A deleted user already fails in optional_user."""
+    return {"access_token": make_token(user["id"]), "token_type": "bearer"}
 
 
 class RoleChange(BaseModel):

@@ -1,10 +1,4 @@
 [
-  {"q": "Thiết kế nội thất căn hộ 80m2 giá bao nhiêu?", "expect": "Bảng giá thiết kế nội thất căn hộ"},
-  {"q": "báo giá thiết kế chung cư mỗi mét vuông", "expect": "Bảng giá thiết kế nội thất căn hộ"},
-  {"q": "Làm nội thất biệt thự tính phí thế nào?", "expect": "Bảng giá thiết kế nội thất biệt thự"},
-  {"q": "giá thiết kế nhà phố bao nhiêu", "expect": "Bảng giá thiết kế nội thất biệt thự"},
-  {"q": "Thi công trọn gói hết bao nhiêu tiền một mét vuông?", "expect": "Chi phí thi công nội thất trọn gói"},
-  {"q": "chi phí làm nội thất trọn gói", "expect": "Chi phí thi công nội thất trọn gói"},
   {"q": "Quy trình làm việc của studio gồm những bước nào?", "expect": "Quy trình làm việc với D3 Studio"},
   {"q": "từ lúc tư vấn đến bàn giao trải qua các bước gì", "expect": "Quy trình làm việc với D3 Studio"},
   {"q": "Thiết kế xong căn hộ mất bao lâu?", "expect": "Thời gian thiết kế và thi công"},

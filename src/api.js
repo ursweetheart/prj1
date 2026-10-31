@@ -9,8 +9,11 @@ const SPACE_VI = {
 // DB values -> facet ids used by the prototype's labels in data/index.js
 const KG = {
   phong_khach: 'phong-khach', phong_ngu_master: 'phong-ngu', phong_ngu_phu: 'phong-ngu',
-  bep_va_an: 'bep', lounge_thuong_mai: 'quay-bar', sanh_thong_tang: 'sanh'
+  bep_va_an: 'bep', lounge_thuong_mai: 'quay-bar', sanh_thong_tang: 'sanh',
+  phong_lam_viec: 'phong-lam-viec', phong_tam: 'phong-tam', ban_cong: 'ban-cong'
 }
+// palette brightness / temperature -> the "Tông màu" facet
+const TONE = { light: 'sang', dark: 'toi', warm: 'am', cool: 'lanh' }
 const PC = {
   Indochine: 'indochine', Japandi: 'japandi', Wabi_sabi: 'wabi-sabi', Hien_dai: 'hien-dai',
   Tan_co_dien: 'tan-co-dien', Luxury: 'luxury', Toi_gian: 'toi-gian', Scandinavian: 'scandi'
@@ -23,7 +26,11 @@ const store = {
   set(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY) } catch { /* private mode */ } }
 }
 export const session = reactive({ token: store.get(), user: null })
-export const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000' // OAuth redirects leave the SPA, so no /api proxy here
+// VITE_API_URL = origin of the hosted backend. Unset (dev): fetch goes through the Vite proxy under /api,
+// but OAuth redirects leave the SPA, so they need the real address.
+const ORIGIN = import.meta.env.VITE_API_URL || ''
+const API = ORIGIN || '/api'
+export const BACKEND = ORIGIN || 'http://localhost:8001'
 export const STAFF = ['architect', 'lead_architect', 'admin']
 export const APPROVERS = ['lead_architect', 'admin']
 export const SALES = ['sales', 'lead_architect', 'admin']
@@ -33,7 +40,7 @@ async function request(method, path, { params, body, form } = {}) {
   const headers = {}
   if (session.token) headers.Authorization = 'Bearer ' + session.token
   if (body) headers['Content-Type'] = 'application/json'
-  const res = await fetch('/api' + path + qs, { method, headers, body: form || (body && JSON.stringify(body)) })
+  const res = await fetch(API + path + qs, { method, headers, body: form || (body && JSON.stringify(body)) })
   if (res.status === 401 && session.token) setToken(null) // expired or revoked
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
@@ -48,7 +55,26 @@ function setToken(t) {
   session.token = t
   store.set(t)
   if (!t) session.user = null
+  scheduleRefresh()
 }
+
+/* Sliding session: the JWT lives 60 min, so swap it for a fresh one shortly before it expires. */
+export function tokenExpiry(token) { // ms since epoch, 0 when unreadable
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000 } catch { return 0 }
+}
+const REFRESH_BEFORE = 5 * 60 * 1000
+let timer
+function scheduleRefresh() {
+  clearTimeout(timer)
+  if (!session.token) return
+  timer = setTimeout(refreshToken, Math.max(tokenExpiry(session.token) - Date.now() - REFRESH_BEFORE, 0))
+}
+async function refreshToken() {
+  try { setToken((await request('POST', '/auth/refresh')).access_token) } catch { /* a 401 already signed the user out */ }
+}
+if (typeof document !== 'undefined') // timers are throttled in background tabs: re-check when the tab comes back
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleRefresh() })
+scheduleRefresh()
 export async function loadUser() {
   if (!session.token) return null
   try { session.user = await get('/auth/me') } catch { session.user = null }
@@ -62,7 +88,7 @@ export function adoptTokenFromHash() {
   history.replaceState(null, '', location.pathname + location.search)
 }
 export async function login(email, password) {
-  const res = await fetch('/api/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
+  const res = await fetch(API + '/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
   if (!res.ok) throw new Error(res.status === 401 ? 'Sai email hoặc mật khẩu.' : 'Không đăng nhập được (' + res.status + ').')
   setToken((await res.json()).access_token)
   return loadUser()
@@ -74,7 +100,7 @@ export async function register(email, password) {
 export const logout = () => setToken(null)
 export const hasRole = roles => !!session.user && roles.includes(session.user.role)
 
-export const imageUrl = path => '/images/' + encodeURI(path)
+export const imageUrl = path => ORIGIN + '/images/' + encodeURI(path)
 export const spaceLabel = type => SPACE_VI[type] || 'Không gian'
 
 /* API row -> shape SpaceCard expects */
@@ -86,8 +112,17 @@ export const toCard = r => ({
   img: imageUrl(r.relative_path),
   ratio: 'sq',
   khonggian: KG[r.space_type],
-  phongcach: PC[r.design_style]
+  phongcach: PC[r.design_style],
+  tongmau: [TONE[r.brightness], TONE[r.temperature]].filter(Boolean),
+  tags: r.tags || {} // {dimension: [value, ...]} from the taxonomy; what the filters match on
 })
+
+// a /taxonomy dimension -> the facet shape FacetPanel and useBrowse use
+export const toFacet = d => ({
+  id: d.ma_dinh_danh, label: d.ten,
+  options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
+})
+export const getTaxonomy = () => get('/taxonomy')
 
 export const searchSpaces = (q, k = 12) => get('/search', { q, k })
 export const getSpace = id => get('/spaces/' + id)
@@ -95,11 +130,43 @@ export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k }
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)
 export const STYLES = [...Object.keys(PC), 'Khac']
-export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'published' }
-export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', published: 'Đã đăng' }
+// QT-01; 'cleared' = the client allowed publishing the photos
+export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
+export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng' }
+export const EDITORS = [...STAFF, 'content'] // content may only edit caption / alt text of spaces in review
 
-export const listSpaces = (params = {}) => get('/spaces', { limit: 60, ...params })
+export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })
 export const reviewSpace = (id, body) => request('PATCH', '/spaces/' + id, { body })
+export const advanceSpaces = (ids, rightsConfirmed = false) =>
+  request('POST', '/spaces/advance', { body: { space_ids: ids, rights_confirmed: rightsConfirmed } })
+export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}
+export const projectOf = relativePath => relativePath.split('/')[0]
+
+export function ingestSpace(file, project) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('project', project)
+  return request('POST', '/spaces/ingest', { form })
+}
+
+/* One request per file, in order: the server runs the pipeline on a single GPU.
+ * A failed file is reported and the rest still go up. */
+export async function uploadAll(files, project, onDone = () => {}) {
+  const failed = []
+  for (const [i, f] of [...files].entries()) {
+    try { await ingestSpace(f, project) } catch (e) { failed.push({ name: f.name, error: e.message }) }
+    onDone(i + 1)
+  }
+  return failed
+}
+
+// detector objects (anchor in 0..1) -> the {x, y, label} HotspotImage draws, in percent
+export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o => ({
+  x: o.hotspot_anchor[0] * 100, y: o.hotspot_anchor[1] * 100,
+  label: o.label_vi || o.label, kind: o.service || 'Món đồ trong ảnh', price: null
+}))
 export const listLeads = (params = {}) => get('/leads', params)
 export const sendChat = (message, history, contact) =>
   request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}) } })
+/* Every published space, for the portfolio grid (the API caps one page at 200) */
+export const listPublished = () => get('/spaces', { review_status: 'published', limit: 200 })
