@@ -1,7 +1,7 @@
 <template>
   <article class="pcard" :class="{ tall }">
     <div style="position:relative">
-      <router-link :to="href" :aria-label="space.projectName + ' — ' + space.space">
+      <router-link :to="link" :aria-label="space.projectName + ' — ' + space.space">
         <div class="media" :class="ratio || space.ratio">
           <img :src="imageUrl" :alt="space.projectName + ' — ' + space.space" loading="lazy">
         </div>
@@ -16,7 +16,7 @@
         </svg>
       </button>
     </div>
-    <router-link class="pcard-cap" :to="href">
+    <router-link class="pcard-cap" :to="link">
       <span class="pcard-name">{{ space.projectName }} — {{ space.space }}</span>
       <span class="pcard-facets">{{ facetLine }}</span>
     </router-link>
@@ -31,7 +31,8 @@ import { useMoodboard } from '@/composables/useMoodboard'
 const props = defineProps({
   space: Object,
   tall: Boolean,
-  ratio: { type: String, default: '' }
+  ratio: { type: String, default: '' },
+  href: { type: String, default: '' }
 })
 
 const moodboard = useMoodboard()
@@ -42,11 +43,15 @@ const facetLine = computed(() => [
   PC_LABEL[props.space.phongcach]
 ].filter(Boolean).join(' · '))
 
-const href = computed(() =>
-  '/cong-trinh-chi-tiet#' + props.space.projectSlug + '/' + props.space.id)
+const link = computed(() => props.href ||
+  (props.space.apiId ? '/khong-gian/' + props.space.apiId
+                     : '/cong-trinh-chi-tiet#' + props.space.projectSlug + '/' + props.space.id))
 
+// API images are already absolute URLs; only local demo paths get the base prefix.
 const imageUrl = computed(() => {
-  const imgPath = props.space.img.startsWith('/') ? props.space.img.slice(1) : props.space.img
+  const img = props.space.img || ''
+  if (/^(https?:)?\/\//.test(img) || img.startsWith('data:')) return img
+  const imgPath = img.startsWith('/') ? img.slice(1) : img
   return import.meta.env.BASE_URL + imgPath
 })
 </script>

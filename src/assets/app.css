@@ -524,3 +524,12 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   .nav, .foot, .lb, .drawer, .drawer-back, .pcard-save { display: none !important }
   body { background: #fff; color: #000 }
 }
+
+/* Tài khoản trên thanh điều hướng */
+.nav-account { display: flex; align-items: center; gap: 20px }
+.nav-account a, .nav-account button, .nav-sheet > button {
+  font: inherit; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.8);
+  background: none; border: 0; padding: 6px 0; cursor: pointer; text-align: left; transition: color 0.2s ease }
+.nav-account a:hover, .nav-account button:hover, .nav-sheet > button:hover { color: #ffffff }
+.nav-sheet > button { padding: 12px 4px; font-size: 16px }
+.chip.is-on { background: var(--accent); color: var(--accent-on); border-color: var(--accent) }

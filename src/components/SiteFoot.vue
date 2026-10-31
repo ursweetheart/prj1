@@ -5,8 +5,7 @@
         <div>
           <router-link class="brand" to="/"><BrandMark /><span class="brand-word">D3 Studio</span></router-link>
           <p class="small" style="margin-top:14px; max-width:38ch">
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod
-            tempor incididunt ut labore et dolore magna aliqua veniam.
+            Tư vấn thiết kế kiến trúc, nội thất cao cấp và diễn họa 3D tại Hà Nội.
           </p>
         </div>
         <div>
@@ -22,14 +21,11 @@
           <router-link to="/lien-he">Gửi yêu cầu tư vấn</router-link>
           <router-link to="/lien-he#zalo">Nhắn Zalo</router-link>
           <router-link to="/lien-he#ban-do">Địa chỉ và bản đồ</router-link>
-          <p class="small" style="margin-top:10px">
-            Lorem ipsum dolor sit amet — consectetur adipiscing elit tempor.
-          </p>
         </div>
       </div>
       <div class="foot-base">
         <span>© {{ new Date().getFullYear() }} D3 Studio</span>
-        <span>Lorem ipsum dolor sit amet D3 Studio</span>
+        <span>Kiến trúc · Nội thất · Diễn họa 3D</span>
       </div>
     </div>
   </footer>
