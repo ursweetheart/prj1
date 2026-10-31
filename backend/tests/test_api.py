@@ -62,6 +62,13 @@ def test_review_flow_and_validation(as_role):
             c.execute("UPDATE space SET review_status='draft', design_style=%s WHERE id=%s", (orig, sid))
 
 
+def test_project_folder_is_path_safe():
+    from api import project_folder
+    assert project_folder("Biệt thự Thảo Điền") == "biet_thu_thao_dien"
+    assert project_folder("../../etc") == "etc"  # no way out of image_d3
+    assert project_folder("  ") == ""             # -> uploads/
+
+
 def test_ingest_rejects_non_image(as_role):
     r = client.post("/spaces/ingest", files={"file": ("notes.txt", b"hello", "text/plain")}, headers=as_role("architect"))
     assert r.status_code == 415

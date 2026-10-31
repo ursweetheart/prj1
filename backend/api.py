@@ -1,13 +1,14 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
 import os
+import re
 import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 import psycopg
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 
 import auth
 from pipeline import taxonomy
-from pipeline.assistant import respond, with_services
+from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_text, similar_to
@@ -111,12 +112,18 @@ def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(op
     return [_hit(r) for r in by_text(q, space_type, min(k, 24), published_only=not _is_staff(user))]
 
 
+def project_folder(name: str) -> str:
+    """'Biệt thự Thảo Điền' -> 'biet_thu_thao_dien': the folder doubles as the project name, keep it URL- and path-safe."""
+    return re.sub(r"[^a-z0-9]+", "_", _fold(name)).strip("_")[:60]
+
+
 @app.post("/spaces/ingest", status_code=201)
-def ingest(file: UploadFile = File(...), user=Depends(require(*STAFF))):
+def ingest(file: UploadFile = File(...), project: str = Form(""), user=Depends(require(*STAFF))):
     if Path(file.filename or "").suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise HTTPException(415, "image only (jpg/png/webp)")
-    UPLOAD_DIR.mkdir(exist_ok=True)
-    dest = UPLOAD_DIR / Path(file.filename).name  # .name strips any path component
+    folder = IMG_DIR / (project_folder(project) or UPLOAD_DIR.name)
+    folder.mkdir(exist_ok=True)
+    dest = folder / Path(file.filename).name  # .name strips any path component; same name in a project = re-upload
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
     rec = _processor().process_image(dest, base_dir=IMG_DIR)  # sync on purpose: GPU is a single resource
