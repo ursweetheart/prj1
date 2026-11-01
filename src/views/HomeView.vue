@@ -1,8 +1,6 @@
 <template>
   <!-- Hero -->
-  <section class="hero">
-    <div class="media"><img :src="base + 'img/indochine-apartment-hero.jpg'" alt="D3 Studio - Indochine Apartment"></div>
-  </section>
+  <HeroSlideshow />
 
   <!-- Nổi bật (ẩn khi chưa có không gian nào được đăng) -->
   <section v-if="featured.length" class="sec wrap wrap-wide">
@@ -96,6 +94,7 @@
 <script setup>
 import { computed } from 'vue'
 import SpaceCard from '@/components/SpaceCard.vue'
+import HeroSlideshow from '@/components/HeroSlideshow.vue'
 import { usePortfolio } from '@/composables/usePortfolio'
 
 const base = import.meta.env.BASE_URL
