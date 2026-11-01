@@ -1,5 +1,5 @@
 <template>
-  <section class="sec projects wrap">
+  <section id="du-an" class="sec projects wrap">
     <header class="projects-head">
       <div>
         <h2 class="projects-title">Dự án</h2>
@@ -16,13 +16,13 @@
     </header>
 
     <div class="projects-grid">
-      <article v-for="p in shown" :key="p.slug" class="project">
+      <router-link v-for="p in shown" :key="p.slug" class="project" :to="'/du-an/' + p.slug">
         <div class="project-img">
-          <img :src="p.cover" :alt="p.name" loading="lazy" decoding="async">
+          <img :src="p.cover" alt="" loading="lazy" decoding="async">
         </div>
         <h3 class="project-name">{{ p.name }}</h3>
         <p class="project-meta">{{ LOAI_NAME[p.loai] }} · {{ p.year }}</p>
-      </article>
+      </router-link>
     </div>
 
     <div v-if="matching.length > limit" class="projects-more">
@@ -36,7 +36,7 @@
  * masonry giữ tỉ lệ ảnh gốc, 9 dự án đầu rồi "Xem thêm". Bộ lọc lưu ở #loai=… */
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { HOME_FILTERS, HOME_PROJECTS, LOAI_NAME } from '@/data/homeProjects'
+import { PROJECT_FILTERS, PROJECTS_LIST, LOAI_NAME } from '@/data/projects'
 
 const PAGE = 9
 
@@ -46,7 +46,7 @@ const router = useRouter()
 const inGroup = (p, f) => !f.loai || f.loai.includes(p.loai)
 
 // Chỉ hiện tab có ít nhất một dự án ("Tất cả" luôn hiện)
-const tabs = computed(() => HOME_FILTERS.filter(f => !f.loai || HOME_PROJECTS.some(p => inGroup(p, f))))
+const tabs = computed(() => PROJECT_FILTERS.filter(f => !f.loai || PROJECTS_LIST.some(p => inGroup(p, f))))
 
 const fromHash = hash => {
   const id = new URLSearchParams((hash || '').replace(/^#/, '')).get('loai')
@@ -66,7 +66,7 @@ function select(id) {
 
 const matching = computed(() => {
   const f = tabs.value.find(t => t.id === current.value) || tabs.value[0]
-  return HOME_PROJECTS.filter(p => inGroup(p, f))
+  return PROJECTS_LIST.filter(p => inGroup(p, f))
 })
 const shown = computed(() => matching.value.slice(0, limit.value))
 </script>

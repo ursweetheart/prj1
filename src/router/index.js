@@ -15,6 +15,11 @@ const router = createRouter({
       component: () => import('@/views/CongTrinhView.vue')
     },
     {
+      path: '/du-an/:slug',
+      name: 'du-an',
+      component: () => import('@/views/ProjectView.vue')
+    },
+    {
       path: '/khong-gian/:id(\\d+)',
       name: 'khong-gian',
       component: () => import('@/views/SpaceView.vue')
@@ -22,7 +27,15 @@ const router = createRouter({
     { path: '/dang-nhap', name: 'dang-nhap', component: () => import('@/views/LoginView.vue') },
     { path: '/quan-tri', name: 'quan-tri', meta: { roles: EDITORS }, component: () => import('@/views/ReviewView.vue') },
     { path: '/khach-hang', name: 'khach-hang', meta: { roles: SALES }, component: () => import('@/views/LeadsView.vue') }
-  ]
+  ],
+  // Trang mới: lên đầu trang; chỉ đổi hash bộ lọc (#loai=…) trên cùng trang: giữ nguyên;
+  // hash là id phần tử (#du-an): cuộn tới đó, chừa chỗ cho header cố định.
+  scrollBehavior(to, from, saved) {
+    if (saved) return saved
+    if (to.path === from.path) return false
+    if (/^#[\w-]+$/.test(to.hash)) return { el: to.hash, top: 110 }
+    return { top: 0 }
+  }
 })
 
 // Pages with meta.roles need a signed-in user with one of those roles (the API enforces it again)
