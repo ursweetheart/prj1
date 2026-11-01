@@ -462,6 +462,41 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .projects-more { display: flex; justify-content: center; margin-top: 8px }
 @media (prefers-reduced-motion: reduce) { .project-img img { transition: none } }
 
+/* ─── Hover giống topbar: nhích lên, sáng trắng, phát sáng nhẹ ─────── */
+.glow-hover {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              text-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.glow-hover:hover, .glow-hover:focus-visible {
+  transform: translateY(-3px);
+  color: #ffffff;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-hover:hover, .glow-hover:focus-visible { transform: none }
+}
+
+/* ─── CTA trang chủ: khối mở, thẳng mép với lưới dự án ────────────── */
+.cta { max-width: 1120px; padding-bottom: clamp(56px, 8vw, 112px) }
+.cta-in { border-top: 1px solid var(--line-soft); padding-top: clamp(40px, 6vw, 72px);
+          display: grid; gap: 32px }
+@media (min-width: 900px) {
+  .cta-in { grid-template-columns: 1fr auto; align-items: end; column-gap: 64px }
+}
+.cta-eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint) }
+.cta-title { margin: 14px 0 0; max-width: 24ch; text-wrap: balance; font-family: var(--font-display); font-weight: 300;
+             font-size: clamp(28px, 3.4vw, 46px); line-height: 1.15; letter-spacing: -0.015em; color: var(--ink) }
+.cta-text { margin: 16px 0 0; max-width: 52ch; font-size: 15px; line-height: 1.6; color: var(--faint) }
+.cta-links { display: flex; flex-direction: column; align-items: flex-start; gap: 14px }
+.cta-link { display: inline-flex; align-items: center; gap: 12px; padding: 4px 0;
+            font-size: clamp(17px, 1.3vw, 19px); color: var(--ink-2); text-decoration: none }
+.cta-link .arrow { display: inline-block; transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1) }
+.cta-link:hover .arrow, .cta-link:focus-visible .arrow { transform: translateX(4px) }
+.cta-link:focus-visible { outline: none }
+
 /* ─── Thẻ công trình ──────────────────────────────────────────────── */
 .pcard { display: flex; flex-direction: column; min-width: 0 }
 .pcard .media { transition: opacity var(--motion-base) var(--ease-standard) }
@@ -623,6 +658,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
            color: var(--faint); font-weight: 500; margin-bottom: 12px }
 .foot a { display: block; padding: 5px 0; font-size: 15px; color: var(--dim) }
 .foot a:hover { color: var(--ink) }
+.foot a.brand { display: inline-flex; padding: 0 } /* logo + chữ cùng một hàng như header */
 .foot-base { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line-soft);
              display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between;
              font-size: 13px; color: var(--faint) }

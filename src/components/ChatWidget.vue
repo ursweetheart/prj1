@@ -32,8 +32,11 @@
       </form>
     </section>
 
-    <button class="btn btn-primary chat-fab" type="button" :aria-expanded="String(open)" @click="open = !open">
-      {{ open ? 'Thu gọn' : 'Hỏi trợ lý' }}
+    <button class="chat-fab glow-hover" type="button" :aria-expanded="String(open)" @click="open = !open">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 18.5V6.8A1.8 1.8 0 0 1 6.8 5h10.4A1.8 1.8 0 0 1 19 6.8v7.4a1.8 1.8 0 0 1-1.8 1.8H8.6L5 18.5z"/>
+      </svg>
+      <span>{{ open ? 'Thu gọn' : 'Hỏi trợ lý' }}</span>
     </button>
   </div>
 </template>
@@ -78,5 +81,15 @@ async function send() {
 .chat-form input { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; min-height: 42px; min-width: 0 }
 .chat-form input::placeholder { color: var(--faint) }
 .chat-form input:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
-.chat-fab { box-shadow: var(--elev-raised) }
+/* Nút mở trợ lý: viên tối trong mờ, viền mảnh; hover giống topbar (.glow-hover) */
+.chat-fab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; cursor: pointer;
+  font: inherit; font-size: 14px; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.88);
+  background: rgba(20, 20, 19, 0.45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: var(--radius-pill);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45) }
+.chat-fab svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linejoin: round; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.4)) }
+.chat-fab:hover, .chat-fab:focus-visible { border-color: rgba(255, 255, 255, 0.6); color: #fff;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.18); outline: none }
 </style>
