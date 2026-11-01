@@ -429,6 +429,39 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .m-tall { grid-row: span 2 }
 @media (min-width: 600px) { .m-wide { grid-column: span 2 } }
 
+/* ─── Lưới dự án trang chủ (bố cục tối giản kiểu Elemental) ──────────
+ * Masonry bằng CSS columns: ảnh giữ tỉ lệ gốc, 1 / 2 / 3 cột. */
+.projects { max-width: 1120px }
+.projects-head { display: flex; flex-direction: column; gap: 18px; margin-bottom: clamp(28px, 4vw, 48px) }
+@media (min-width: 900px) {
+  .projects-head { flex-direction: row; justify-content: space-between; align-items: flex-end; gap: 40px }
+}
+.projects-title { font-family: var(--font-display); font-weight: 400; color: var(--ink);
+                  font-size: clamp(26px, 2.4vw, 34px); letter-spacing: -0.01em; margin: 0 }
+.projects-intro { margin: 10px 0 0; max-width: 48ch; font-size: 14px; line-height: 1.6; color: var(--faint) }
+.projects-tabs { display: flex; flex-wrap: wrap; gap: 4px 22px }
+.projects-tab { padding: 6px 0; border: 0; background: none; cursor: pointer;
+                font: inherit; font-size: 14px; color: var(--faint); letter-spacing: 0.02em;
+                border-bottom: 1px solid transparent;
+                transition: color var(--motion-base) var(--ease-standard), border-color var(--motion-base) var(--ease-standard) }
+.projects-tab:hover { color: var(--ink) }
+.projects-tab[aria-pressed="true"] { color: var(--ink); border-bottom-color: currentColor }
+.projects-tab:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 3px }
+
+.projects-grid { column-count: 1; column-gap: clamp(16px, 2vw, 28px) }
+@media (min-width: 600px)  { .projects-grid { column-count: 2 } }
+@media (min-width: 1024px) { .projects-grid { column-count: 3 } }
+.project { break-inside: avoid; margin: 0 0 clamp(28px, 3vw, 40px) }
+.project-img { overflow: hidden; background: var(--panel) }
+.project-img img { display: block; width: 100%; height: auto;
+                   transition: transform .7s cubic-bezier(0.22, 1, 0.36, 1), opacity .4s var(--ease-standard) }
+.project:hover .project-img img { transform: scale(1.02); opacity: .9 }
+.project-name { margin: 14px 0 0; font-family: var(--font-display); font-weight: 400;
+                font-size: clamp(16px, 1.15vw, 18px); color: var(--ink); letter-spacing: 0 }
+.project-meta { margin: 4px 0 0; font-size: 12px; color: var(--faint); letter-spacing: 0.03em }
+.projects-more { display: flex; justify-content: center; margin-top: 8px }
+@media (prefers-reduced-motion: reduce) { .project-img img { transition: none } }
+
 /* ─── Thẻ công trình ──────────────────────────────────────────────── */
 .pcard { display: flex; flex-direction: column; min-width: 0 }
 .pcard .media { transition: opacity var(--motion-base) var(--ease-standard) }
