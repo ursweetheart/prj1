@@ -34,4 +34,4 @@
 ## 6. Verification
 
 - [x] 6.1 Full backend suite and `npx vitest run` pass; `npm run build` succeeds
-- [ ] 6.2 Walk one real project through upload → edit → tags → approve → cleared → published in the browser and see it filtered on `/cong-trinh` by `loai_cong_trinh`
+- [x] 6.2 Walk one real project through upload → edit → tags → approve → cleared → published in the browser and see it filtered on `/cong-trinh` by `loai_cong_trinh`
