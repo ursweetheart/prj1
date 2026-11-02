@@ -15,8 +15,8 @@
         <router-link class="cta-link glow-hover" to="/lien-he">
           Gửi yêu cầu <span class="arrow" aria-hidden="true">→</span>
         </router-link>
-        <router-link class="cta-link glow-hover" to="/cong-trinh">
-          Xem các không gian <span class="arrow" aria-hidden="true">→</span>
+        <router-link class="cta-link glow-hover" to="/du-an">
+          Xem tất cả dự án <span class="arrow" aria-hidden="true">→</span>
         </router-link>
       </div>
     </div>

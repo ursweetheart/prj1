@@ -1,6 +1,6 @@
 <template>
   <main class="wrap wrap-wide" style="padding-block:clamp(28px,4vw,56px)">
-    <router-link to="/cong-trinh" class="small">← Công trình</router-link>
+    <router-link to="/du-an" class="small">← Dự án</router-link>
 
     <p v-if="error" class="lead" style="margin-top:24px" role="alert">{{ error }}</p>
     <p v-else-if="!space" class="lead" style="margin-top:24px">Đang tải…</p>
@@ -52,7 +52,7 @@ const palette = computed(() =>
 // the objects staff kept on the review page, drawn as hotspots over the photo
 const hero = computed(() => ({
   ...toCard(space.value), ratio: 'l32', hotspots: hotspotsOf(space.value),
-  similarHref: '/cong-trinh#phong_cach=' + space.value.design_style
+  similarHref: '/du-an#phong_cach=' + space.value.design_style
 }))
 
 const facetLine = computed(() => {

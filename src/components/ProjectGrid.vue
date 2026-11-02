@@ -21,7 +21,7 @@
           <img :src="p.cover" alt="" loading="lazy" decoding="async">
         </div>
         <h3 class="project-name">{{ p.name }}</h3>
-        <p class="project-meta">{{ LOAI_NAME[p.loai] }} · {{ p.year }}</p>
+        <p class="project-meta">{{ LOAI_NAME[p.loai] }}<template v-if="p.year"> · {{ p.year }}</template></p>
       </router-link>
     </div>
 

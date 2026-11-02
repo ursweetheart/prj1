@@ -10,10 +10,12 @@ const router = createRouter({
       component: () => import('@/views/HomeView.vue')
     },
     {
-      path: '/cong-trinh',
-      name: 'cong-trinh',
-      component: () => import('@/views/CongTrinhView.vue')
+      path: '/du-an',
+      name: 'du-an-list',
+      component: () => import('@/views/ProjectsView.vue')
     },
+    // Trang lọc theo không gian cần backend; tạm thời chuyển về danh sách dự án
+    { path: '/cong-trinh', redirect: '/du-an' },
     {
       path: '/du-an/:slug',
       name: 'du-an',

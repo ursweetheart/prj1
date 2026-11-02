@@ -432,6 +432,10 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 /* ─── Lưới dự án trang chủ (bố cục tối giản kiểu Elemental) ──────────
  * Masonry bằng CSS columns: ảnh giữ tỉ lệ gốc, 1 / 2 / 3 cột. */
 .projects { max-width: 1120px }
+/* Trang /du-an: không có hero, chừa chỗ cho header cố định như trang dự án (.pv) */
+.projects.projects-page { padding-top: 196px }
+@media (min-width: 600px)  { .projects.projects-page { padding-top: 232px } }
+@media (min-width: 1024px) { .projects.projects-page { padding-top: 128px } }
 .projects-head { display: flex; flex-direction: column; gap: 18px; margin-bottom: clamp(28px, 4vw, 48px) }
 @media (min-width: 900px) {
   .projects-head { flex-direction: row; justify-content: space-between; align-items: flex-end; gap: 40px }

@@ -47,7 +47,7 @@ const router = useRouter()
 const currentLang = ref('VI')
 
 const links = [
-  { to: '/cong-trinh',  label: 'Dự án',   key: 'cong-trinh' },
+  { to: '/du-an',       label: 'Dự án',   key: 'du-an' },
   { to: '/ve-chung-toi', label: 'Về chúng tôi', key: 've-chung-toi' },
   { to: '/lien-he',     label: 'Liên hệ',    key: 'lien-he' }
 ]
