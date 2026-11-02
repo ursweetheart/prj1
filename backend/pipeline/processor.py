@@ -5,6 +5,7 @@ and Stage 2 (Multimodal Classification & SEO generation).
 Maintains sequential memory cleanup to respect 4GB GPU boundary.
 """
 
+import os
 from pathlib import Path
 import time
 from typing import List, Optional
@@ -18,7 +19,7 @@ from pipeline.vision_embedder import VisionEmbedder
 class SpaceImageProcessor:
     def __init__(
         self,
-        model_yolo: str = "yolov8s.pt",
+        model_yolo: str = os.getenv("D3_YOLO_MODEL", "yolov8s.pt"),  # docker: weights live in the mounted /models
         clip_model: str = "hf-hub:timm/ViT-B-16-SigLIP2",
         device: Optional[str] = None,
     ):

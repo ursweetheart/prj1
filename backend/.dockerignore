@@ -1,0 +1,10 @@
+.venv
+__pycache__
+.pytest_cache
+.env
+sa-key.json
+*.pt
+image_d3
+models
+openspec
+docker-compose.yml

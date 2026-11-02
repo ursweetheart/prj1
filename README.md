@@ -10,6 +10,18 @@ Website portfolio thiết kế nội thất tích hợp AI (tìm không gian tư
 └── .github/     workflow deploy Pages (chạy khi push vào main)
 ```
 
+## Chạy bằng Docker (cả frontend, backend, DB)
+
+```
+docker compose up -d --build                      # ở thư mục gốc repo → http://localhost:8080/prj1/
+docker compose exec backend python ingest.py image_d3              # các lệnh backend chạy trong container
+docker compose exec backend python -m pipeline.assistant kb/sample.json
+```
+
+Mang sang máy khác: repo + `backend/.env` + `backend/sa-key.json` (thiếu file này Docker tạo thư mục trùng tên, xoá đi rồi chép key vào) + `backend/image_d3/`. Trọng số model **không nằm trong image** mà ở `backend/models/` (gắn vào `/models`). Thiếu thì lần dùng đầu tự tải: YOLO 22 MB, SigLIP2 1.5 GB. Chép sẵn thư mục này sang thì khỏi tải. Muốn dùng cache SigLIP2 có sẵn trên máy: `cp -r ~/.cache/huggingface/hub/models--timm--ViT-B-16-SigLIP2 backend/models/hf/hub/`.
+
+Image backend dùng torch bản CPU, ingest chậm hơn GPU nhưng đủ cho demo. Cổng 8001 vẫn mở vì callback đăng nhập Google/Facebook đã đăng ký ở `localhost:8001`.
+
 ## Frontend
 
 ```
@@ -29,10 +41,10 @@ Bản deploy: https://ursweetheart.github.io/prj1/ (trang tĩnh nên tìm kiếm
 
 ## Backend
 
-Chạy mọi lệnh trong `backend/`.
+Chạy mọi lệnh trong `backend/` (riêng `docker compose` chạy ở thư mục gốc).
 
 ```
-docker compose up -d                              # Postgres + pgvector (project "prj1", volume prj1_pgdata)
+docker compose up -d db                           # ở thư mục gốc: Postgres + pgvector (project "prj1", volume prj1_pgdata)
 python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python ingest.py image_d3           # gán nhãn + embedding ảnh, ghi vào DB
 .venv\Scripts\python -m pipeline.assistant kb/sample.json   # nạp kho tri thức cho chatbot

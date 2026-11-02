@@ -1,0 +1,43 @@
+# Whole stack: docker compose up -d --build  ->  http://localhost:8080/prj1/
+# Only the database (dev with npm run dev + uvicorn): docker compose up -d db
+name: prj1  # keeps the existing volume prj1_pgdata
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: d3
+      POSTGRES_PASSWORD: d3
+      POSTGRES_DB: d3
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "d3"]
+      interval: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      D3_DSN: postgresql://d3:d3@db:5432/d3
+      D3_FRONTEND_URL: http://localhost:8080/prj1/
+      # weights stay outside the image: YOLO and SigLIP2 download here on first use, then are reused
+      D3_YOLO_MODEL: /models/yolov8s.pt
+      HF_HOME: /models/hf
+    volumes:
+      - ./backend/models:/models
+      - ./backend/image_d3:/app/image_d3
+      - ./backend/sa-key.json:/app/sa-key.json:ro
+    ports: ["8001:8001"]  # the Google/Facebook sign-in callback is registered on localhost:8001
+    depends_on:
+      db: { condition: service_healthy }
+
+  web:
+    build: .
+    ports: ["8080:80"]
+    depends_on: [backend]
+
+volumes:
+  pgdata:
