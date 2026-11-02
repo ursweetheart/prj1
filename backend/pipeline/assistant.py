@@ -159,6 +159,28 @@ def answer_from_photos(question: str, history: list | None, hits) -> dict | None
     return {"answer": answer, "hits": [h for h in hits if h[0] in used]}
 
 
+# Everyday words that never name a design concept; what is left after these and the taxonomy vocabulary is a gap term.
+STOPWORDS = set("""toi minh ban em anh chi cho co khong la va cua nhung cac mot nhu the nao gi voi o tai can muon duoc
+thi de lam ve hay bao nhieu nha phong khi nay do day kia roi chua da se dang rat qua lam them nua vay sao the hoi xin
+giup biet ai dau nen phai kieu loai""".split())
+
+
+def unmapped_terms(message: str) -> list[str]:
+    """Folded words of the question that no taxonomy value or synonym covers (act-4 b8)."""
+    known = {w for dim in taxonomy.dimensions() for phrase in taxonomy.synonym_map(dim) for w in phrase.split()}
+    known |= {w for dim in taxonomy.dimensions() for v in taxonomy.values(dim) for w in _fold(v).split("_")}
+    known |= {w for dim in taxonomy.dimensions() for w in dim.split("_")}  # "phong cach", "vat lieu", ...
+    known |= {w for p in PRICE_WORDS + APPOINTMENT_WORDS for w in p.split()}
+    words = re.findall(r"[a-z0-9]+", _fold(message))
+    return list(dict.fromkeys(w for w in words if len(w) >= 3 and w not in STOPWORDS and w not in known))
+
+
+def _log_gap(question: str, best: float | None):
+    with psycopg.connect(DSN) as conn:
+        conn.execute("INSERT INTO khoang_trong_tri_thuc (cau_hoi, tu_chua_khop, diem_cao_nhat) VALUES (%s,%s,%s)",
+                     (question, unmapped_terms(question), best))
+
+
 def _create_lead(intent, request, conversation, contact):
     with psycopg.connect(DSN) as conn:
         return conn.execute(
@@ -173,9 +195,13 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
     conversation = (history or []) + [{"role": "user", "content": message}]
 
     photos = None  # the knowledge base has no answer: try the descriptions of the published photos
+    best = float(hits[0][4]) if hits else None  # best cosine seen, for the knowledge-gap log
     if not known and vertex.available():
         try:
-            photos = answer_from_photos(message, history, retrieve_photos(message))
+            photo_hits = retrieve_photos(message)
+            if photo_hits:
+                best = max(best or 0.0, float(photo_hits[0][5]))
+            photos = answer_from_photos(message, history, photo_hits)
         except Exception:
             logging.getLogger(__name__).exception("photo RAG failed; answering from the knowledge base only")
     answered = known or photos is not None
@@ -200,6 +226,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
         out["images"] = [{"id": r[4], "relative_path": r[0], "space_type": r[1], "design_style": r[2]}
                          for r in by_text(q, req["space_type"], 3, published_only=True)]
 
+    if not answered:
+        _log_gap(message, best)  # a discovery signal, kept besides the handoff lead
     intent = "handoff" if not answered else "appointment" if req["appointment_intent"] else "price" if req["price_intent"] else None
     if intent:
         out["lead_id"] = _create_lead(intent, req, conversation, contact)

@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS space_gia_tri (
   space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
   gia_tri_id int NOT NULL REFERENCES gia_tri_phan_loai(id) ON DELETE CASCADE,
   do_tin_cay real,              -- tagging confidence; low ones flagged for review (QT01)
-  nguon_tao text,               -- 'ai' | 'nguoi'
+  nguon_tao text,               -- 'ai' (trigger-managed) | 'ai_bo_sung' (back-tag of an accepted new dimension) | 'nguoi'
   PRIMARY KEY (space_id, gia_tri_id)
 );
 
@@ -131,3 +131,42 @@ CREATE TABLE IF NOT EXISTS ung_vien_phan_loai (
   trang_thai text NOT NULL DEFAULT 'cho_duyet' CHECK (trang_thai IN ('cho_duyet','chap_nhan','tu_choi')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ── Discovery signals and staging (change: discover-taxonomy-dimensions, tasks 1.2-2.2) ──
+-- Chat questions the assistant could not answer (act-4 b8): question, folded words no taxonomy synonym covers,
+-- best cosine against the knowledge base / photo descriptions. Recurring gaps feed pipeline/discovery.py.
+CREATE TABLE IF NOT EXISTS khoang_trong_tri_thuc (
+  id serial PRIMARY KEY,
+  cau_hoi text NOT NULL,
+  tu_chua_khop text[] NOT NULL DEFAULT '{}',
+  diem_cao_nhat real,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Behaviour (act-7, NFR-09, NĐ13/2023): a session row exists only once the visitor consented; its id is a random
+-- browser token, no account or IP. Without consent only the daily count in su_kien_an_danh moves.
+CREATE TABLE IF NOT EXISTS phien_truy_cap (
+  id text PRIMARY KEY,
+  da_dong_y_thu_thap boolean NOT NULL CHECK (da_dong_y_thu_thap),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS su_kien (
+  id serial PRIMARY KEY,
+  phien_id text NOT NULL REFERENCES phien_truy_cap(id) ON DELETE CASCADE,
+  loai text NOT NULL CHECK (loai IN ('xem_khong_gian')),
+  space_id int REFERENCES space(id) ON DELETE SET NULL,
+  gia_tri text[] NOT NULL DEFAULT '{}',  -- 'dimension:value' of the viewed space at that moment (facet co-occurrence)
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS su_kien_an_danh (
+  ngay date NOT NULL,
+  loai text NOT NULL,
+  so_luong int NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, loai)
+);
+
+-- 'cho_bang_chung': scored below the promotion threshold, kept until more evidence arrives (never shown for review)
+ALTER TABLE ung_vien_phan_loai DROP CONSTRAINT IF EXISTS ung_vien_phan_loai_trang_thai_check;
+ALTER TABLE ung_vien_phan_loai ADD CONSTRAINT ung_vien_phan_loai_trang_thai_check
+  CHECK (trang_thai IN ('cho_bang_chung', 'cho_duyet', 'chap_nhan', 'tu_choi'));
+ALTER TABLE ung_vien_phan_loai ADD COLUMN IF NOT EXISTS updated_at timestamptz;

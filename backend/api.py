@@ -6,7 +6,7 @@ import re
 import shutil
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -20,7 +20,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field
 
 import auth
-from pipeline import taxonomy
+from pipeline import discovery, taxonomy, vertex
 from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -270,13 +270,39 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
         if not ids:
             raise HTTPException(404, "no space matches")
         c.execute("DELETE FROM space_gia_tri sg USING gia_tri_phan_loai v WHERE sg.gia_tri_id = v.id AND v.chieu_id = %s "
-                  "AND sg.nguon_tao = 'nguoi' AND sg.space_id = ANY(%s)", (dim["id"], ids))
+                  "AND sg.space_id = ANY(%s)", (dim["id"], ids))  # incl. AI back-tags of a new dimension
         for v in vals:
             c.execute("INSERT INTO space_gia_tri (space_id, gia_tri_id, nguon_tao) SELECT unnest(%s::int[]), %s, 'nguoi' "
                       "ON CONFLICT DO NOTHING", (ids, v["id"]))
         for sid in ids:
             _log(c, sid, user, "tags", {body.dimension: [v["ma_dinh_danh"] for v in vals]})
     return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
+
+
+class Event(BaseModel):
+    loai: Literal["xem_khong_gian"]
+    dong_y: bool                                     # the visitor's answer on the consent banner
+    phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
+    space_id: Optional[int] = None
+
+
+@app.post("/events", status_code=204, dependencies=[Depends(limit("events", 120, 60))])
+def track(body: Event):
+    """Behaviour signal for taxonomy discovery (act-7, UC21). Only a consented session is stored, enriched with the
+    viewed space's facet values; otherwise nothing per visitor is kept, just the day's anonymous count (NFR-09)."""
+    with _db() as c:
+        if not (body.dong_y and body.phien_id):
+            c.execute("INSERT INTO su_kien_an_danh (ngay, loai, so_luong) VALUES (current_date, %s, 1) "
+                      "ON CONFLICT (ngay, loai) DO UPDATE SET so_luong = su_kien_an_danh.so_luong + 1", (body.loai,))
+            return
+        c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true) ON CONFLICT DO NOTHING",
+                  (body.phien_id,))
+        c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri) "
+                  "SELECT %(p)s, %(l)s, s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
+                  "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
+                  "  JOIN chieu_phan_loai d ON d.id = v.chieu_id WHERE sg.space_id = s.id), '{}') "
+                  "FROM space s WHERE s.id = %(s)s AND s.review_status = 'published'",
+                  {"p": body.phien_id, "l": body.loai, "s": body.space_id})
 
 
 class Chat(BaseModel):
@@ -377,3 +403,76 @@ def merge_value(value_id: int, body: MergeValue, user=Depends(require(*APPROVERS
         c.execute("DELETE FROM gia_tri_phan_loai WHERE id=%s", (value_id,))
     taxonomy.reload()  # ponytail: vector-index label refresh (seq-15 b20-22) is a future queue job
     return {"merged_into": body.target_id, "affected": affected}
+
+
+# ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────
+@app.get("/taxonomy/candidates")
+def list_candidates(user=Depends(require(*APPROVERS))):
+    """Proposals promoted for review, with example spaces; plus how many still wait for more evidence."""
+    with _db() as c:
+        rows = c.execute("SELECT id, ten_de_xuat, bang_chung, created_at, updated_at FROM ung_vien_phan_loai "
+                         "WHERE loai = 'chieu' AND trang_thai = 'cho_duyet' ORDER BY (bang_chung->>'score')::float DESC NULLS LAST").fetchall()
+        for r in rows:
+            ids = (r["bang_chung"] or {}).get("vi_du_space_ids", [])[:8]
+            r["vi_du"] = c.execute("SELECT id, relative_path, space_type, design_style FROM space WHERE id = ANY(%s) ORDER BY id",
+                                   (ids,)).fetchall()
+        waiting = c.execute("SELECT count(*) AS n FROM ung_vien_phan_loai WHERE trang_thai = 'cho_bang_chung'").fetchone()["n"]
+    return {"candidates": rows, "cho_bang_chung": waiting}
+
+
+class AcceptCandidate(BaseModel):
+    ten: str = Field(min_length=2, max_length=80)
+    gia_tri: list[str] = Field(min_length=2, max_length=8)
+
+
+def _pending(c, cid):
+    row = c.execute("SELECT id, trang_thai, bang_chung FROM ung_vien_phan_loai WHERE id=%s AND loai='chieu'", (cid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "candidate not found")
+    if row["trang_thai"] != "cho_duyet":
+        raise HTTPException(409, f"candidate is {row['trang_thai']}, only cho_duyet can be decided")
+    return row
+
+
+@app.post("/taxonomy/candidates/{cid}/accept", status_code=201)
+def accept_candidate(cid: int, body: AcceptCandidate, user=Depends(require(*APPROVERS))):
+    """The human gate: only here does a proposed dimension become live. Gemini back-tags the whole library first,
+    then dimension, values, tags and the decision are written in one transaction (no half-made dimension)."""
+    ma = project_folder(body.ten)
+    values = {project_folder(v): v.strip() for v in body.gia_tri if v.strip()}
+    if not ma or len(values) != len(body.gia_tri) or "" in values:
+        raise HTTPException(422, "name and every value need letters or digits, and values must differ")
+    with _db() as c:
+        cand = _pending(c, cid)
+        if c.execute("SELECT 1 FROM chieu_phan_loai WHERE ma_dinh_danh=%s", (ma,)).fetchone():
+            raise HTTPException(409, f"dimension {ma} already exists")
+    if not vertex.available():
+        raise HTTPException(503, "Chưa cấu hình Vertex nên không gắn nhãn thư viện được.")
+    tags = discovery.backtag(body.ten, (cand["bang_chung"] or {}).get("mo_ta", ""), values)  # slow: one call per 50 spaces
+    with _db() as c:
+        _pending(c, cid)  # still undecided after the Gemini calls
+        dim = c.execute("INSERT INTO chieu_phan_loai (ma_dinh_danh, ten, thu_tu) "
+                        "VALUES (%s, %s, (SELECT COALESCE(max(thu_tu), 0) + 1 FROM chieu_phan_loai)) RETURNING id",
+                        (ma, body.ten.strip())).fetchone()["id"]
+        val_id = {m: c.execute("INSERT INTO gia_tri_phan_loai (chieu_id, ma_dinh_danh, ten) VALUES (%s,%s,%s) RETURNING id",
+                               (dim, m, t)).fetchone()["id"] for m, t in values.items()}
+        for sid, (m, conf) in tags.items():
+            c.execute("INSERT INTO space_gia_tri (space_id, gia_tri_id, do_tin_cay, nguon_tao) VALUES (%s,%s,%s,'ai_bo_sung') "
+                      "ON CONFLICT DO NOTHING", (sid, val_id[m], conf))
+        all_ids = [r["id"] for r in c.execute("SELECT id FROM space ORDER BY id").fetchall()]
+        review = [i for i in all_ids if i not in tags or tags[i][1] < discovery.LOW_CONFIDENCE]
+        c.execute("UPDATE ung_vien_phan_loai SET trang_thai='chap_nhan', ten_de_xuat=%s, updated_at=now(), "
+                  "bang_chung = bang_chung || %s WHERE id=%s",
+                  (body.ten.strip(), Jsonb({"chieu_id": dim, "nguoi_duyet": user["id"], "gia_tri_chot": list(values.values()),
+                                            "gan_nhan": len(tags), "can_xem_lai": review}), cid))
+    taxonomy.reload()
+    return {"chieu": ma, "gia_tri": list(values), "gan_nhan": len(tags), "can_xem_lai": review}
+
+
+@app.post("/taxonomy/candidates/{cid}/reject")
+def reject_candidate(cid: int, user=Depends(require(*APPROVERS))):
+    with _db() as c:
+        _pending(c, cid)
+        c.execute("UPDATE ung_vien_phan_loai SET trang_thai='tu_choi', updated_at=now(), bang_chung = "
+                  "COALESCE(bang_chung, '{}') || %s WHERE id=%s", (Jsonb({"nguoi_duyet": user["id"]}), cid))
+    return {"id": cid, "trang_thai": "tu_choi"}

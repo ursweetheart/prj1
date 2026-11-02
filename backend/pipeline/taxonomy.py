@@ -59,6 +59,11 @@ def reload():
     _tax.cache_clear()
 
 
+def labelled() -> dict:
+    """{dim: {"ten": label, "values": {ma: {"ten", "syn"}}}}: display names for prompts and pages."""
+    return _tax()
+
+
 def dimensions() -> list[str]:
     return list(_tax())
 

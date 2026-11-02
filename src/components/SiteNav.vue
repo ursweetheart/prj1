@@ -49,7 +49,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { EDITORS, SALES, hasRole, logout, session } from '@/api'
+import { APPROVERS, EDITORS, SALES, hasRole, logout, session } from '@/api'
 import BrandMark from './BrandMark.vue'
 
 defineProps({
@@ -70,6 +70,7 @@ const links = [
 
 const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },
+  hasRole(APPROVERS) && { to: '/quan-tri/phan-loai', label: 'Phân loại' },
   hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' }
 ].filter(Boolean))
 

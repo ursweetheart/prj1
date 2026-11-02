@@ -3,6 +3,7 @@
   <router-view />
   <SiteFoot />
   <ChatWidget />
+  <ConsentBanner />
 </template>
 
 <script setup>
@@ -11,6 +12,7 @@ import { useRoute } from 'vue-router'
 import SiteNav from '@/components/SiteNav.vue'
 import SiteFoot from '@/components/SiteFoot.vue'
 import ChatWidget from '@/components/ChatWidget.vue'
+import ConsentBanner from '@/components/ConsentBanner.vue'
 
 const route = useRoute()
 const currentNav = computed(() => {

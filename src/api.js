@@ -123,6 +123,10 @@ export const toFacet = d => ({
   options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
 })
 export const getTaxonomy = () => get('/taxonomy')
+// AI-proposed dimensions awaiting the lead architect (seq-15); accepting back-tags the library, so it takes a while
+export const listCandidates = () => get('/taxonomy/candidates')
+export const acceptCandidate = (id, ten, gia_tri) => request('POST', `/taxonomy/candidates/${id}/accept`, { body: { ten, gia_tri } })
+export const rejectCandidate = id => request('POST', `/taxonomy/candidates/${id}/reject`)
 
 export const searchSpaces = (q, k = 12) => get('/search', { q, k })
 export function searchByImage(file, k = 12) {
@@ -131,6 +135,26 @@ export function searchByImage(file, k = 12) {
   return request('POST', '/search/image', { params: { k }, form })
 }
 export const getSpace = id => get('/spaces/' + id)
+
+/* Behaviour signal for taxonomy discovery (UC21). The visitor's answer on the consent banner lives in localStorage;
+ * without a 'yes' the server only counts the view for the day. Fire-and-forget: tracking never breaks a page. */
+const CONSENT_KEY = 'd3_dong_y_thu_thap'
+export const consent = {
+  get() { try { return localStorage.getItem(CONSENT_KEY) } catch { return null } },
+  set(v) { try { localStorage.setItem(CONSENT_KEY, v) } catch { /* private mode: ask again next visit */ } }
+}
+function visitId() { // random per browser tab session, never tied to an account
+  try {
+    let id = sessionStorage.getItem('d3_phien')
+    if (!id) sessionStorage.setItem('d3_phien', id = crypto.randomUUID().replaceAll('-', ''))
+    return id
+  } catch { return null }
+}
+export function trackView(spaceId) {
+  const yes = consent.get() === 'yes' && visitId()
+  request('POST', '/events', { body: { loai: 'xem_khong_gian', dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
+    .catch(() => {}) // 204 has no JSON body; errors are not the visitor's problem
+}
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)

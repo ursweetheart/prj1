@@ -36,7 +36,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { LOAI_LABEL, PC_LABEL } from '@/data'
-import { getSpace, getSimilar, hotspotsOf, imageUrl, spaceLabel, toCard } from '@/api'
+import { STAFF, getSpace, getSimilar, hasRole, hotspotsOf, imageUrl, spaceLabel, toCard, trackView } from '@/api'
 import HotspotImage from '@/components/HotspotImage.vue'
 import PaletteRow from '@/components/PaletteRow.vue'
 import SpaceCard from '@/components/SpaceCard.vue'
@@ -67,6 +67,7 @@ watch(() => route.params.id, async id => {
     const [s, sim] = await Promise.all([getSpace(id), getSimilar(id)])
     space.value = s
     similar.value = sim.map(toCard)
+    if (s.review_status === 'published' && !hasRole(STAFF)) trackView(s.id) // staff browsing is not demand
   } catch (e) { error.value = e.message }
 }, { immediate: true })
 </script>

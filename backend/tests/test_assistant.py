@@ -4,7 +4,7 @@ import json
 import psycopg
 
 from conftest import client
-from pipeline.assistant import load_kb, parse_request
+from pipeline.assistant import load_kb, parse_request, unmapped_terms
 from pipeline.store import DSN
 
 
@@ -50,22 +50,22 @@ def test_off_topic_is_refused_and_handed_off():
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE contact = '0911111111'")
+            c.execute("DELETE FROM khoang_trong_tri_thuc WHERE cau_hoi = 'Cách nấu phở bò ngon'")
 
 
-def test_chat_images_only_published(as_role):
-    admin = as_role("admin")
+def test_chat_images_only_published(drafts):
+    """Chat shows published spaces only. Publishes three drafts for the test; the fixture puts them back."""
     q = {"message": "Bên bạn thiết kế phòng khách gồm những gì?"}
-    assert client.post("/chat", json=q).json()["images"] == []  # nothing published yet
-    ids = [x["id"] for x in client.get("/spaces", params={"space_type": "phong_khach", "limit": 3}, headers=admin).json()]
+    ids = drafts(3, "space_type='phong_khach'")
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE space SET review_status='published' WHERE id = ANY(%s)", (ids,))
+        published = {r[0] for r in c.execute("SELECT id FROM space WHERE review_status='published'")}
     try:
-        with psycopg.connect(DSN) as c:
-            c.execute("UPDATE space SET review_status='published' WHERE id = ANY(%s)", (ids,))
         imgs = client.post("/chat", json=q).json()["images"]
-        assert imgs and {i["id"] for i in imgs} <= set(ids)
+        assert imgs and {i["id"] for i in imgs} <= published
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE conversation @> '[{\"content\": \"%s\"}]'::jsonb" % q["message"])
-            c.execute("UPDATE space SET review_status='draft' WHERE id = ANY(%s)", (ids,))
 
 
 def test_chat_validates_input():
@@ -90,6 +90,7 @@ def test_leads_visible_to_sales_only(as_role):
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE contact = '0922222222'")
+            c.execute("DELETE FROM khoang_trong_tri_thuc WHERE cau_hoi = 'Cách nấu phở bò ngon'")
 
 
 def test_validate_kb():
@@ -98,3 +99,31 @@ def test_validate_kb():
     assert validate_kb([ok]) == []
     errs = validate_kb([ok, ok, {"kind": "x", "title": "B", "match": "", "content": "c"}])
     assert any("duplicate" in e for e in errs) and any("'match'" in e for e in errs) and any("kind must" in e for e in errs)
+
+
+# ── knowledge gaps (discover-taxonomy-dimensions 1.2) ──────────────────────────
+def test_unmapped_terms_skip_taxonomy_words_and_stopwords():
+    assert unmapped_terms("Phòng khách phong cách Indochine giá bao nhiêu?") == []
+    assert unmapped_terms("Nhà mình muốn phòng khách nhiều cây xanh có giếng trời") == ["cay", "xanh", "gieng", "troi"]
+
+
+def test_unanswered_question_is_logged_as_a_gap():
+    q = "Thiết kế phòng khách kiểu biophilic có giếng trời"
+    try:
+        r = client.post("/chat", json={"message": q}).json()
+        assert not r["answered"] and r["lead_id"]
+        with psycopg.connect(DSN) as c:
+            terms, best = c.execute("SELECT tu_chua_khop, diem_cao_nhat FROM khoang_trong_tri_thuc WHERE cau_hoi=%s", (q,)).fetchone()
+        assert "biophilic" in terms and "gieng" in terms and best is not None
+    finally:
+        with psycopg.connect(DSN) as c:
+            c.execute("DELETE FROM lead WHERE conversation @> %s::jsonb", (json.dumps([{"content": q}]),))
+            c.execute("DELETE FROM khoang_trong_tri_thuc WHERE cau_hoi = %s", (q,))
+
+
+def test_answered_question_logs_no_gap():
+    with psycopg.connect(DSN) as c:
+        before = c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0]
+    r = client.post("/chat", json={"message": "D3 Studio có thiết kế phòng khách không?"}).json()
+    with psycopg.connect(DSN) as c:
+        assert r["answered"] and c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0] == before
