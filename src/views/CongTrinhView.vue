@@ -13,17 +13,20 @@
         <input id="q" v-model="q" type="search" placeholder="Tìm bằng mô tả, ví dụ: phòng ngủ ấm áp tông gỗ">
       </div>
       <button class="btn btn-primary" type="submit" :disabled="loading">{{ loading ? 'Đang tìm…' : 'Tìm' }}</button>
-      <button v-if="hits" class="btn btn-ghost" type="button" @click="resetSearch">Xóa</button>
+      <button class="btn btn-secondary" type="button" :disabled="loading" @click="photoInput.click()">Tìm bằng ảnh</button>
+      <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="runPhotoSearch">
+      <button v-if="hits || searchError || photoUrl" class="btn btn-ghost" type="button" :disabled="loading" @click="resetSearch">Xóa</button>
     </form>
 
-    <div v-if="hits || searchError" style="margin-top:clamp(28px,3.4vw,48px)" aria-live="polite">
+    <div v-if="hits || searchError || photoUrl" style="margin-top:clamp(28px,3.4vw,48px)" aria-live="polite">
+      <img v-if="photoUrl && !searchError" :src="photoUrl" alt="Ảnh bạn dùng để tìm" class="photo-query">
       <p v-if="searchError" class="lead" role="alert">{{ searchError }}</p>
-      <template v-else>
-        <p class="small num">{{ hits.length }} không gian gần với "{{ lastQuery }}"</p>
+      <template v-else-if="hits">
+        <p class="small num">{{ hits.length }} không gian {{ photoUrl ? 'giống ảnh của bạn' : `gần với "${lastQuery}"` }}</p>
         <div v-if="hits.length" class="mosaic" style="margin-top:16px">
           <SpaceCard v-for="s in hits" :key="s.id" :space="s" :href="'/khong-gian/' + s.apiId" />
         </div>
-        <p v-else class="lead">Không tìm thấy không gian phù hợp.</p>
+        <p v-else class="lead">{{ photoUrl ? 'Không tìm thấy công trình giống ảnh này.' : 'Không tìm thấy không gian phù hợp.' }}</p>
       </template>
     </div>
 
@@ -93,12 +96,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useBrowse } from '@/composables/useBrowse'
 import { usePortfolio } from '@/composables/usePortfolio'
 import FacetPanel from '@/components/FacetPanel.vue'
 import SpaceCard from '@/components/SpaceCard.vue'
-import { searchSpaces, toCard } from '@/api'
+import { searchByImage, searchSpaces, toCard } from '@/api'
 
 const portfolio = usePortfolio()
 const { selected, results, counts, activeChips, toggle, clear, clearAll } = useBrowse(() => portfolio.spaces, () => portfolio.facets)
@@ -119,6 +122,7 @@ const searchError = ref('')
 async function runSearch() {
   const text = q.value.trim()
   if (!text) return resetSearch()
+  dropPhoto()
   loading.value = true; searchError.value = ''
   try {
     hits.value = (await searchSpaces(text)).map(toCard)
@@ -127,11 +131,34 @@ async function runSearch() {
   finally { loading.value = false }
 }
 
-function resetSearch() { q.value = ''; hits.value = null; searchError.value = '' }
+function resetSearch() { q.value = ''; hits.value = null; searchError.value = ''; dropPhoto() }
+
+/* Tìm bằng ảnh: the photo is only sent for this search, the thumbnail is a local object URL */
+const photoInput = ref(null)
+const photoUrl = ref('')
+
+function dropPhoto() {
+  if (photoUrl.value) URL.revokeObjectURL(photoUrl.value)
+  photoUrl.value = ''
+}
+
+async function runPhotoSearch(e) {
+  const file = e.target.files[0]
+  e.target.value = '' // picking the same file again searches again
+  if (!file) return
+  dropPhoto(); q.value = ''
+  photoUrl.value = URL.createObjectURL(file)
+  loading.value = true; searchError.value = ''; hits.value = null
+  try { hits.value = (await searchByImage(file)).map(toCard) }
+  catch (err) { searchError.value = err.message }
+  finally { loading.value = false }
+}
+onBeforeUnmount(dropPhoto)
 </script>
 
 <style scoped>
 .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap }
 .only-desk { display:none }
+.photo-query { width:160px; aspect-ratio:4/3; object-fit:cover; border-radius:var(--radius-md); margin-bottom:12px }
 @media (min-width: 1024px) { .only-desk { display:flex } }
 </style>

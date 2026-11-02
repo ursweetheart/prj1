@@ -125,6 +125,11 @@ export const toFacet = d => ({
 export const getTaxonomy = () => get('/taxonomy')
 
 export const searchSpaces = (q, k = 12) => get('/search', { q, k })
+export function searchByImage(file, k = 12) {
+  const form = new FormData()
+  form.append('file', file)
+  return request('POST', '/search/image', { params: { k }, form })
+}
 export const getSpace = id => get('/spaces/' + id)
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 

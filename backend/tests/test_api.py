@@ -73,3 +73,59 @@ def test_ingest_rejects_non_image(as_role):
     r = client.post("/spaces/ingest", files={"file": ("notes.txt", b"hello", "text/plain")}, headers=as_role("architect"))
     assert r.status_code == 415
 
+
+
+# ── photo search (search-by-image) ───────────────────────────────────────────
+from pathlib import Path
+
+import api
+
+HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id"}
+
+
+def _first(where="TRUE"):
+    with psycopg.connect(DSN) as c:
+        return c.execute(f"SELECT id, relative_path FROM space WHERE {where} ORDER BY id LIMIT 1").fetchone()
+
+
+def _upload(data, name="photo.jpg", headers=None, **form):
+    return client.post("/search/image", files={"file": (name, data)}, data=form, headers=headers)
+
+
+def test_photo_search_staff_gets_hits_and_nothing_is_stored(as_role):
+    h = as_role("architect")
+    _, path = _first("space_type='phong_khach'")
+    files = lambda: sum(1 for _ in Path("image_d3").rglob("*"))
+    with psycopg.connect(DSN) as c:
+        before = files(), c.execute("SELECT count(*) FROM space").fetchone()[0]
+    r = _upload(Path("image_d3", path).read_bytes(), headers=h)
+    assert r.status_code == 200 and r.json() and all(set(x) == HIT_KEYS for x in r.json())
+    assert r.json()[0]["score"] >= 0.99  # the photo itself, or a stored duplicate tied with it
+    with psycopg.connect(DSN) as c:
+        assert (files(), c.execute("SELECT count(*) FROM space").fetchone()[0]) == before
+
+
+def test_photo_search_visitor_sees_only_published(drafts):
+    [sid] = drafts(1)
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE space SET review_status='published' WHERE id=%s", (sid,))
+        path = c.execute("SELECT relative_path FROM space WHERE id=%s", (sid,)).fetchone()[0]
+    hits = _upload(Path("image_d3", path).read_bytes()).json()
+    assert sid in [x["id"] for x in hits]
+    with psycopg.connect(DSN) as c:
+        status = c.execute("SELECT DISTINCT review_status FROM space WHERE id = ANY(%s)", ([x["id"] for x in hits],)).fetchall()
+    assert status == [("published",)]
+
+
+def test_photo_search_rejects_bad_uploads():
+    assert _upload(b"%PDF-1.4", "a.pdf").status_code == 415
+    assert _upload(b"not an image at all").status_code == 415
+    assert _upload(b"0" * (api.MAX_UPLOAD + 1)).status_code == 413
+    _, path = _first()
+    assert _upload(Path("image_d3", path).read_bytes(), space_type="phong_tam_khong_co").status_code == 422
+
+
+def test_photo_search_is_rate_limited():
+    codes = [_upload(b"x", "a.pdf").status_code for _ in range(11)]  # the limit counts before validation, so cheap requests do
+    assert codes[:10] == [415] * 10 and codes[10] == 429
+    assert _upload(b"x", "a.pdf").headers["Retry-After"]

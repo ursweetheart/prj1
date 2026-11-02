@@ -1,5 +1,6 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
+import io
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
@@ -22,12 +24,14 @@ from pipeline import taxonomy
 from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
-from pipeline.search import by_text, similar_to
+from pipeline.search import by_image, by_text, similar_to
 from pipeline.store import DSN, save_records
 from ratelimit import limit
 
 IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
+IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_UPLOAD = 8 * 1024 * 1024  # photo search; nginx allows 50 MB, so this is the limit users hit
 FIELDS = "id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status"
 # taxonomy values of each space as {dimension: [value, ...]}; the portfolio filters on these
 TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
@@ -112,6 +116,24 @@ def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(op
     return [_hit(r) for r in by_text(q, space_type, min(k, 24), published_only=not _is_staff(user))]
 
 
+@app.post("/search/image", dependencies=[Depends(limit("search_image", 10, 60))])
+def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(None), k: int = 6,
+                 user=Depends(optional_user)):
+    """Spaces that look like the uploaded photo; the photo is embedded in memory and never stored."""
+    if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
+        raise HTTPException(415, "Chỉ nhận ảnh JPG, PNG hoặc WEBP.")
+    if space_type and space_type not in SPACE_TYPES:
+        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
+    data = file.file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, "Ảnh quá lớn, tối đa 8 MB.")
+    try:
+        hits = by_image(io.BytesIO(data), space_type, k, published_only=not _is_staff(user))
+    except (OSError, Image.DecompressionBombError):  # not an image, truncated, or a decompression bomb
+        raise HTTPException(415, "Không đọc được ảnh này, hãy thử một ảnh JPG, PNG hoặc WEBP khác.")
+    return [_hit(r) for r in hits]
+
+
 def project_folder(name: str) -> str:
     """'Biệt thự Thảo Điền' -> 'biet_thu_thao_dien': the folder doubles as the project name, keep it URL- and path-safe."""
     return re.sub(r"[^a-z0-9]+", "_", _fold(name)).strip("_")[:60]
@@ -119,7 +141,7 @@ def project_folder(name: str) -> str:
 
 @app.post("/spaces/ingest", status_code=201)
 def ingest(file: UploadFile = File(...), project: str = Form(""), user=Depends(require(*STAFF))):
-    if Path(file.filename or "").suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+    if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
         raise HTTPException(415, "image only (jpg/png/webp)")
     folder = IMG_DIR / (project_folder(project) or UPLOAD_DIR.name)
     folder.mkdir(exist_ok=True)

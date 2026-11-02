@@ -19,7 +19,7 @@ def limit(name: str, count: int, seconds: int):
         while q and now - q[0] > seconds:
             q.popleft()
         if len(q) >= count:
-            raise HTTPException(429, "too many requests, try again later",
+            raise HTTPException(429, "Bạn thao tác quá nhanh, vui lòng thử lại sau.",
                                 headers={"Retry-After": str(math.ceil(seconds - (now - q[0])))})
         q.append(now)
     return dep

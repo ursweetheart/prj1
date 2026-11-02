@@ -2,6 +2,7 @@ import uuid
 
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 from fastapi.testclient import TestClient
 
 import ratelimit
@@ -34,3 +35,27 @@ def as_role():
     with psycopg.connect(DSN) as c:
         c.execute("DELETE FROM review_log WHERE user_id = ANY(%s)", (made,))
         c.execute("DELETE FROM app_user WHERE id = ANY(%s)", (made,))
+
+
+COLS = "review_status, space_type, design_style, caption, alt_text, materials, hotspots"
+
+
+@pytest.fixture
+def drafts():
+    """drafts(n) -> ids of n draft spaces, restored (columns, human tags, log) after the test."""
+    taken = []
+
+    def take(n, where="TRUE"):
+        with psycopg.connect(DSN) as c:
+            rows = c.execute(f"SELECT id, {COLS} FROM space WHERE review_status='draft' AND {where} ORDER BY id LIMIT %s",
+                             (n,)).fetchall()
+        taken.extend(rows)
+        return [r[0] for r in rows]
+
+    yield take
+    with psycopg.connect(DSN) as c:
+        for sid, *vals in taken:
+            vals[-1] = Jsonb(vals[-1])  # hotspots
+            c.execute(f"UPDATE space SET ({COLS}) = (%s,%s,%s,%s,%s,%s,%s) WHERE id=%s", (*vals, sid))
+            c.execute("DELETE FROM space_gia_tri WHERE space_id=%s AND nguon_tao='nguoi'", (sid,))
+            c.execute("DELETE FROM review_log WHERE space_id=%s", (sid,))
