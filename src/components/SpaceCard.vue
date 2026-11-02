@@ -3,7 +3,7 @@
     <div style="position:relative">
       <router-link :to="link" :aria-label="space.projectName + ' — ' + space.space">
         <div class="media" :class="ratio || space.ratio">
-          <img :src="space.img" :alt="space.projectName + ' — ' + space.space" loading="lazy">
+          <img :src="imageUrl" :alt="space.projectName + ' — ' + space.space" loading="lazy">
         </div>
       </router-link>
       <button class="pcard-save" type="button"
@@ -46,4 +46,12 @@ const facetLine = computed(() => [
 const link = computed(() => props.href ||
   (props.space.apiId ? '/khong-gian/' + props.space.apiId
                      : '/cong-trinh-chi-tiet#' + props.space.projectSlug + '/' + props.space.id))
+
+// API images are already absolute URLs; only local demo paths get the base prefix.
+const imageUrl = computed(() => {
+  const img = props.space.img || ''
+  if (/^(https?:)?\/\//.test(img) || img.startsWith('data:')) return img
+  const imgPath = img.startsWith('/') ? img.slice(1) : img
+  return import.meta.env.BASE_URL + imgPath
+})
 </script>

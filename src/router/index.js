@@ -10,9 +10,16 @@ const router = createRouter({
       component: () => import('@/views/HomeView.vue')
     },
     {
-      path: '/cong-trinh',
-      name: 'cong-trinh',
-      component: () => import('@/views/CongTrinhView.vue')
+      path: '/du-an',
+      name: 'du-an-list',
+      component: () => import('@/views/ProjectsView.vue')
+    },
+    // Trang lọc theo không gian cần backend; tạm thời chuyển về danh sách dự án
+    { path: '/cong-trinh', redirect: '/du-an' },
+    {
+      path: '/du-an/:slug',
+      name: 'du-an',
+      component: () => import('@/views/ProjectView.vue')
     },
     {
       path: '/khong-gian/:id(\\d+)',
@@ -23,7 +30,15 @@ const router = createRouter({
     { path: '/quan-tri', name: 'quan-tri', meta: { roles: EDITORS }, component: () => import('@/views/ReviewView.vue') },
     { path: '/quan-tri/phan-loai', name: 'phan-loai', meta: { roles: APPROVERS }, component: () => import('@/views/TaxonomyView.vue') },
     { path: '/khach-hang', name: 'khach-hang', meta: { roles: SALES }, component: () => import('@/views/LeadsView.vue') }
-  ]
+  ],
+  // Trang mới: lên đầu trang; chỉ đổi hash bộ lọc (#loai=…) trên cùng trang: giữ nguyên;
+  // hash là id phần tử (#du-an): cuộn tới đó, chừa chỗ cho header cố định.
+  scrollBehavior(to, from, saved) {
+    if (saved) return saved
+    if (to.path === from.path) return false
+    if (/^#[\w-]+$/.test(to.hash)) return { el: to.hash, top: 110 }
+    return { top: 0 }
+  }
 })
 
 // Pages with meta.roles need a signed-in user with one of those roles (the API enforces it again)

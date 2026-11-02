@@ -7,6 +7,7 @@
 - [x] 2.1 Update `src/components/SiteNav.vue` layout to place logo on the left and right-align navigation links ("Dự án", "D3er", "Tin tức", "Liên hệ") alongside bilingual toggle ("VI | EN").
 - [x] 2.2 Add CSS styles for the clean light architectural theme, bold red active route indicator (`#C01919`), and frosted glass scroll backdrop blur.
 - [x] 2.3 Adapt responsive mobile drawer navigation to match the minimalist light architectural design system.
+  - Superseded by `responsive-stacked-navbar`: the burger and drawer were removed; below 1024px all items are stacked under the brand.
 
 ## 3. Verification
 

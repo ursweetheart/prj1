@@ -11,6 +11,8 @@
  *   câu 31 · bộ lọc ở cột dọc bên trái
  * ═══════════════════════════════════════════════════════════════════ */
 
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Inter:wght@300;400;500;600;700&display=swap');
+
 /* ─── Khối token của design system, dán nguyên văn ─────────────────── */
 :root {
   --bg: #f5f4ed;
@@ -34,9 +36,9 @@
   --warn: #eab308;
   --danger: #b53333;
 
-  --font-display: "Anthropic Serif", Georgia, "Times New Roman", serif;
-  --font-body: "Anthropic Sans", "Arial", system-ui, -apple-system, sans-serif;
-  --font-mono: "Anthropic Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --font-display: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
 
   --text-xs: 10px;
   --text-sm: 14px;
@@ -233,30 +235,47 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 
 /* ─── Thanh điều hướng (AHL Architectural Transparent Header) ────── */
 .nav {
-  position: sticky; top: 0; z-index: 100;
-  background: rgba(18, 18, 18, 0.45);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  transition: background 0.3s ease, border-color 0.3s ease;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: transparent;
+  border-bottom: none;
+  transition: background 0.3s ease;
 }
-.nav-in { display: flex; align-items: center; justify-content: space-between; min-height: 72px }
+.nav::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; bottom: -40px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.45) 55%, rgba(0,0,0,0) 100%);
+  pointer-events: none;
+  z-index: -1;
+}
+/* Small screens: no burger. A large centered brand, then the links, then
+   account + language, stacked. From 1024px: one three-column bar. */
+.nav-in { display: flex; flex-direction: column; align-items: center; gap: 10px;
+          padding-block: 18px 14px; }
 
-.brand { display: inline-flex; align-items: center; gap: 12px; flex: none; text-decoration: none }
-.brand-mark { width: 32px; height: 32px; color: #ffffff }
-.brand-word { font-size: 14px; letter-spacing: 0.3em; text-transform: uppercase;
-              font-weight: 700; color: #ffffff }
+.brand { display: inline-flex; align-items: center; gap: clamp(10px, 3vw, 18px); min-width: 0; text-decoration: none }
+.brand-mark {
+  height: clamp(36px, 11.5vw, 62px);
+  width: auto;
+  flex: none;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+.brand-word { font-family: var(--font-display); font-size: clamp(28px, 9vw, 48px); line-height: 1;
+              font-variant-numeric: lining-nums; letter-spacing: 0.08em; text-transform: uppercase;
+              font-weight: 600; color: #ffffff; white-space: nowrap }
 
-.nav-right { display: none; align-items: center; gap: 32px; margin-left: auto }
-.nav-links { display: flex; align-items: center; gap: 28px }
+.nav-left { display: flex; align-items: center; justify-content: center; min-width: 0 }
+.nav-center { display: flex; align-items: center; justify-content: center; }
+.nav-in { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45) }
+.nav-right { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 24px }
+.nav-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 24px }
 .nav-links a {
   font-size: 15px;
+  white-space: nowrap;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.85);
   padding-block: 6px;
-  transition: color 0.2s ease;
 }
-.nav-links a:hover { color: #ffffff }
 .nav-links a.is-active,
 .nav-links a[aria-current="page"] {
   color: #C01919 !important;
@@ -267,63 +286,132 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: 15px;
   color: rgba(255, 255, 255, 0.6);
-  margin-left: 4px;
 }
 .lang-switch button {
   background: none;
   border: none;
-  padding: 0;
+  padding: 4px 0;
   font: inherit;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
   font-weight: 500;
-  transition: color 0.2s ease;
 }
-.lang-switch button:hover { color: #ffffff }
 .lang-switch button.active {
   color: #ffffff;
   font-weight: 700;
 }
-.lang-switch .sep { color: rgba(255, 255, 255, 0.3); font-weight: 300; font-size: 12px }
+.lang-switch .sep { color: rgba(255, 255, 255, 0.4); font-weight: 300; font-size: 13px }
 
-.nav-burger { margin-left: auto; display: inline-flex; width: 44px; height: 44px;
-              align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.2);
-              border-radius: var(--radius-sm); background: transparent; cursor: pointer }
-.nav-burger span { display: block; width: 17px; height: 1.5px; background: #ffffff;
-                   box-shadow: 0 -5px 0 #ffffff, 0 5px 0 #ffffff }
+/* Hover / keyboard focus: lift a few px and brighten, on one smooth curve. */
+.brand, .nav-links a, .nav-account a, .nav-account button, .lang-switch button {
+  display: inline-block;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              text-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              filter 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.brand { display: inline-flex; filter: drop-shadow(0 1px 8px rgba(0, 0, 0, 0.35)) }
+.nav-links a:hover, .nav-links a:focus-visible,
+.nav-account a:hover, .nav-account a:focus-visible,
+.nav-account button:hover, .nav-account button:focus-visible,
+.lang-switch button:hover, .lang-switch button:focus-visible {
+  transform: translateY(-3px);
+  color: #ffffff;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
+}
+.nav-links a.is-active:hover, .nav-links a.is-active:focus-visible {
+  text-shadow: 0 0 14px rgba(192, 25, 25, 0.6), 0 1px 10px rgba(0, 0, 0, 0.45);
+}
+.brand:hover, .brand:focus-visible {
+  transform: translateY(-4px);
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.5));
+}
 
-.nav-sheet { background: rgba(18, 18, 18, 0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-             border-top: 1px solid rgba(255, 255, 255, 0.1); padding: 16px var(--gutter) 24px;
-             display: flex; flex-direction: column; gap: 4px }
-.nav-sheet a { padding: 12px 4px; font-size: 16px; color: rgba(255, 255, 255, 0.8); font-weight: 500;
-               border-bottom: 1px solid rgba(255, 255, 255, 0.08); min-height: 44px }
-.nav-sheet a.is-active { color: #C01919; font-weight: 700 }
-.nav-sheet a:last-of-type { border-bottom: 0 }
-.nav-sheet-lang { display: flex; align-items: center; gap: 8px; padding-top: 12px }
-.nav-sheet-lang button { background: none; border: none; font-size: 15px; color: rgba(255, 255, 255, 0.6); cursor: pointer }
-.nav-sheet-lang button.active { color: #ffffff; font-weight: 700 }
+@media (min-width: 600px) {
+  .nav-in { gap: 12px; padding-block: 24px 16px }
+  .nav-links { column-gap: 32px }
+  .nav-links a { font-size: 16px }
+}
 
-@media (min-width: 900px) {
-  .nav-right { display: flex }
-  .nav-burger, .nav-sheet { display: none }
+/* Desktop: three-column bar; side columns never shrink below their content. */
+@media (min-width: 1024px) {
+  .nav-in { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+            gap: 16px; padding-block: 0; min-height: 80px }
+  .nav-left { justify-content: flex-start }
+  .nav-right { flex-wrap: nowrap; justify-content: flex-end; gap: 24px }
+  .nav-links { flex-wrap: nowrap; column-gap: 28px }
+  .brand-mark { height: 34px }
+  .brand-word { font-size: 26px }
+}
+
+@media (min-width: 1280px) {
+  .nav-in { min-height: 96px }
+  .brand { gap: 16px }
+  .brand-mark { height: 46px }
+  .brand-word { font-size: 36px }
+  .nav-right { gap: 32px }
+  .nav-links { column-gap: 40px }
+  .nav-links a { font-size: 17px }
 }
 
 /* ─── Hero ────────────────────────────────────────────────────────── */
 .hero {
   position: relative;
-  min-height: clamp(540px, 80vh, 880px);
+  min-height: 100vh;
   display: grid;
-  margin-top: -72px; /* Phủ ảnh nền lên kín khu vực navbar ở trên cùng */
 }
 .hero > .media { position: absolute; inset: 0; border-radius: 0 }
-.hero-scrim {
-  position: absolute; inset: 0;
-  background: linear-gradient(74deg,
-    color-mix(in oklab, var(--fg) 90%, transparent) 0%,
-    color-mix(in oklab, var(--fg) 66%, transparent) 46%,
-    color-mix(in oklab, var(--fg) 22%, transparent) 100%);
+
+/* Trình chiếu hero: các ảnh xếp chồng; ảnh đang hiện ở trên và mờ dần vào,
+ * ảnh vừa rời nằm ngay dưới cho tới khi mờ xong để không lộ nền tối. */
+.hero-show { user-select: none; -webkit-user-select: none }
+.hero-show .hero-slide { opacity: 0; z-index: 0; pointer-events: none; -webkit-user-drag: none }
+.hero-show .hero-slide.is-under  { opacity: 1; z-index: 1 }
+.hero-show .hero-slide.is-active { opacity: 1; z-index: 2;
+                                   transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1) }
+
+/* Hai vùng bấm phủ nửa trái / nửa phải; mũi tên mờ hiện ở mép khi rê chuột */
+.hero-side { position: absolute; z-index: 2; top: 0; bottom: 0; width: 50%;
+             padding: 0 clamp(14px, 3vw, 40px); border: 0; background: none; color: #fff;
+             display: flex; align-items: center; -webkit-tap-highlight-color: transparent }
+.hero-side.is-prev { left: 0;  justify-content: flex-start }
+.hero-side.is-next { right: 0; justify-content: flex-end }
+.hero-side svg { width: clamp(30px, 3vw, 44px); height: clamp(30px, 3vw, 44px);
+                 fill: none; stroke: currentColor; stroke-width: 1.4;
+                 stroke-linecap: round; stroke-linejoin: round;
+                 filter: drop-shadow(0 1px 6px rgba(0, 0, 0, .55));
+                 opacity: 0; transform: translateX(0);
+                 transition: opacity .45s var(--ease-standard), transform .45s cubic-bezier(0.22, 1, 0.36, 1) }
+.hero-side.is-prev:hover svg { opacity: .85; transform: translateX(-4px) }
+.hero-side.is-next:hover svg { opacity: .85; transform: translateX(4px) }
+.hero-side:focus-visible { outline: none }
+.hero-side:focus-visible svg { opacity: 1 }
+@media (hover: none) { .hero-side svg { opacity: .55 } }
+
+.hero-dots { position: absolute; z-index: 3; left: 50%; transform: translateX(-50%);
+             bottom: clamp(18px, 4vh, 40px); display: flex; align-items: center; gap: 6px }
+.hero-dot { width: 26px; height: 28px; padding: 0 4px; border: 0; background: none;
+            cursor: pointer; display: flex; align-items: center;
+            transition: width .4s cubic-bezier(0.22, 1, 0.36, 1) }
+.hero-dot.is-active { width: 60px }
+.hero-dot-track { flex: 1; height: 3px; border-radius: var(--radius-pill); overflow: hidden;
+                  background: rgba(255, 255, 255, .42); box-shadow: 0 0 6px rgba(0, 0, 0, .35);
+                  transition: background var(--motion-base) var(--ease-standard) }
+.hero-dot:hover .hero-dot-track,
+.hero-dot:focus-visible .hero-dot-track { background: rgba(255, 255, 255, .75) }
+.hero-dot:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px }
+.hero-dot-fill { display: block; height: 100%; background: #fff;
+                 transform-origin: left center; transform: scaleX(0);
+                 animation: hero-progress var(--hero-interval, 13s) linear forwards }
+@keyframes hero-progress { to { transform: scaleX(1) } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-show .hero-slide.is-active { transition: none }
+  .hero-dot, .hero-dot-track, .hero-side svg { transition: none }
+  .hero-dot-fill { animation: none; transform: scaleX(1) }
 }
 .hero-in {
   position: relative;
@@ -340,6 +428,134 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 @media (min-width: 1024px) { .mosaic { grid-template-columns: repeat(4, minmax(0, 1fr)) } }
 .m-tall { grid-row: span 2 }
 @media (min-width: 600px) { .m-wide { grid-column: span 2 } }
+
+/* ─── Lưới dự án trang chủ (bố cục tối giản kiểu Elemental) ──────────
+ * Masonry bằng CSS columns: ảnh giữ tỉ lệ gốc, 1 / 2 / 3 cột. */
+.projects { max-width: 1120px }
+/* Trang /du-an: không có hero, chừa chỗ cho header cố định như trang dự án (.pv) */
+.projects.projects-page { padding-top: 196px }
+@media (min-width: 600px)  { .projects.projects-page { padding-top: 232px } }
+@media (min-width: 1024px) { .projects.projects-page { padding-top: 128px } }
+.projects-head { display: flex; flex-direction: column; gap: 18px; margin-bottom: clamp(28px, 4vw, 48px) }
+@media (min-width: 900px) {
+  .projects-head { flex-direction: row; justify-content: space-between; align-items: flex-end; gap: 40px }
+}
+.projects-title { font-family: var(--font-display); font-weight: 400; color: var(--ink);
+                  font-size: clamp(26px, 2.4vw, 34px); letter-spacing: -0.01em; margin: 0 }
+.projects-intro { margin: 10px 0 0; max-width: 48ch; font-size: 14px; line-height: 1.6; color: var(--faint) }
+.projects-tabs { display: flex; flex-wrap: wrap; gap: 4px 22px }
+.projects-tab { padding: 6px 0; border: 0; background: none; cursor: pointer;
+                font: inherit; font-size: 14px; color: var(--faint); letter-spacing: 0.02em;
+                border-bottom: 1px solid transparent;
+                transition: color var(--motion-base) var(--ease-standard), border-color var(--motion-base) var(--ease-standard) }
+.projects-tab:hover { color: var(--ink) }
+.projects-tab[aria-pressed="true"] { color: var(--ink); border-bottom-color: currentColor }
+.projects-tab:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 3px }
+
+.projects-grid { column-count: 1; column-gap: clamp(16px, 2vw, 28px) }
+@media (min-width: 600px)  { .projects-grid { column-count: 2 } }
+@media (min-width: 1024px) { .projects-grid { column-count: 3 } }
+/* Mỗi thẻ là một link; hover / focus: ảnh sáng lên, tên nhích lên và phát sáng như topbar */
+.project { display: block; break-inside: avoid; margin: 0 0 clamp(28px, 3vw, 40px);
+           color: inherit; text-decoration: none; outline: none }
+.project-img { overflow: hidden; background: var(--panel) }
+.project-img img { display: block; width: 100%; height: auto;
+                   transition: transform .7s cubic-bezier(0.22, 1, 0.36, 1), filter .45s cubic-bezier(0.22, 1, 0.36, 1) }
+.project-name { margin: 14px 0 0; font-family: var(--font-display); font-weight: 400;
+                font-size: clamp(16px, 1.15vw, 18px); color: var(--ink); letter-spacing: 0 }
+.project-meta { margin: 4px 0 0; font-size: 12px; color: var(--faint); letter-spacing: 0.03em }
+.project-name, .project-meta {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              text-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1) }
+.project:hover .project-img img, .project:focus-visible .project-img img { transform: scale(1.02); filter: brightness(1.08) }
+.project:hover .project-name, .project:focus-visible .project-name {
+  transform: translateY(-3px); color: #ffffff;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45) }
+.project:hover .project-meta, .project:focus-visible .project-meta { transform: translateY(-3px); color: var(--ink-2) }
+.project:focus-visible .project-img { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 3px }
+.projects-more { display: flex; justify-content: center; margin-top: 8px }
+@media (prefers-reduced-motion: reduce) {
+  .project-img img { transition: none }
+  .project:hover .project-img img, .project:focus-visible .project-img img { transform: none }
+  .project:hover .project-name, .project:focus-visible .project-name,
+  .project:hover .project-meta, .project:focus-visible .project-meta { transform: none }
+}
+
+/* ─── Trang dự án /du-an/<slug> (bố cục kiểu elemental.com.vn) ─────────
+ * Hàng tiêu đề, rồi toàn bộ ảnh theo tỉ lệ gốc: ảnh ngang trọn hàng, ảnh dọc / vuông
+ * ghép đôi cao bằng nhau (flex-grow tỉ lệ với rộng/cao, flex-basis 0), ảnh lẻ đặt giữa.
+ * padding-top chừa chỗ cho header cố định (xếp chồng ở màn hẹp). */
+.pv { max-width: 1280px; padding-top: 196px; padding-bottom: clamp(48px, 7vw, 96px) }
+@media (min-width: 600px)  { .pv { padding-top: 232px } }
+@media (min-width: 1024px) { .pv { padding-top: 128px } }
+.pv-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+           gap: 16px 48px; margin-bottom: clamp(24px, 3vw, 40px) }
+.pv-eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint) }
+.pv-title { margin: 10px 0 0; font-family: var(--font-display); font-weight: 300; color: var(--ink);
+            font-size: clamp(28px, 3vw, 40px); line-height: 1.15; letter-spacing: -0.015em }
+.pv-brief { margin: 0; max-width: 56ch; font-size: 14px; line-height: 1.7; color: var(--ink-2) }
+
+.pv-gallery { --gap: clamp(8px, 1vw, 14px); display: flex; flex-direction: column; gap: var(--gap) }
+.pv-row { display: flex; gap: var(--gap) }
+.pv-photo { flex: var(--r) 1 0%; min-width: 0; display: block; padding: 0; border: 0;
+            background: var(--panel); cursor: zoom-in; overflow: hidden }
+.pv-photo img { display: block; width: 100%; height: auto;
+                transition: filter .45s cubic-bezier(0.22, 1, 0.36, 1) }
+.pv-photo:hover img, .pv-photo:focus-visible img { filter: brightness(1.08) }
+.pv-photo:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 3px }
+.pv-row.is-lone { justify-content: center }
+.pv-row.is-lone .pv-photo { flex: none; width: 100%; max-width: min(66%, calc(72vh * var(--r))) }
+@media (max-width: 599px) {
+  .pv-row { flex-direction: column }
+  .pv-photo, .pv-row.is-lone .pv-photo { flex: none; width: 100%; max-width: none }
+}
+
+.pv-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px;
+          margin-top: clamp(40px, 6vw, 72px); padding-top: 22px; border-top: 1px solid var(--line-soft) }
+.pv-nav-link { display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+               font-size: 14px; color: var(--ink-2); text-decoration: none; outline: none }
+.pv-nav-link.is-next { justify-self: end; text-align: right; justify-content: flex-end }
+.pv-nav-link.is-all { justify-self: center }
+.pv-nav-label { color: var(--faint); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase }
+.pv-nav-link:hover .pv-nav-label, .pv-nav-link:focus-visible .pv-nav-label { color: inherit }
+@media (max-width: 599px) { .pv-nav-name { display: none } }
+.pv-missing { display: grid; gap: 18px; justify-items: start }
+@media (prefers-reduced-motion: reduce) { .pv-photo img { transition: none } }
+
+/* ─── Hover giống topbar: nhích lên, sáng trắng, phát sáng nhẹ ─────── */
+.glow-hover {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              text-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.glow-hover:hover, .glow-hover:focus-visible {
+  transform: translateY(-3px);
+  color: #ffffff;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-hover:hover, .glow-hover:focus-visible { transform: none }
+}
+
+/* ─── CTA trang chủ: khối mở, thẳng mép với lưới dự án ────────────── */
+.cta { max-width: 1120px; padding-bottom: clamp(56px, 8vw, 112px) }
+.cta-in { border-top: 1px solid var(--line-soft); padding-top: clamp(40px, 6vw, 72px);
+          display: grid; gap: 32px }
+@media (min-width: 900px) {
+  .cta-in { grid-template-columns: 1fr auto; align-items: end; column-gap: 64px }
+}
+.cta-eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint) }
+.cta-title { margin: 14px 0 0; max-width: 24ch; text-wrap: balance; font-family: var(--font-display); font-weight: 300;
+             font-size: clamp(28px, 3.4vw, 46px); line-height: 1.15; letter-spacing: -0.015em; color: var(--ink) }
+.cta-text { margin: 16px 0 0; max-width: 52ch; font-size: 15px; line-height: 1.6; color: var(--faint) }
+.cta-links { display: flex; flex-direction: column; align-items: flex-start; gap: 14px }
+.cta-link { display: inline-flex; align-items: center; gap: 12px; padding: 4px 0;
+            font-size: clamp(17px, 1.3vw, 19px); color: var(--ink-2); text-decoration: none }
+.cta-link .arrow { display: inline-block; transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1) }
+.cta-link:hover .arrow, .cta-link:focus-visible .arrow { transform: translateX(4px) }
+.cta-link:focus-visible { outline: none }
 
 /* ─── Thẻ công trình ──────────────────────────────────────────────── */
 .pcard { display: flex; flex-direction: column; min-width: 0 }
@@ -436,7 +652,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .hs-card .small { color: var(--dim) }
 
 /* ─── Lightbox (câu 29: bấm để phóng to) ──────────────────────────── */
-.lb { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+.lb { position: fixed; inset: 0; z-index: 120; /* trên header cố định (100) */ display: grid; place-items: center;
       background: color-mix(in oklab, var(--fg) 94%, transparent); padding: clamp(12px, 3vw, 48px) }
 .lb img { max-width: 100%; max-height: 84vh; width: auto; height: auto;
           object-fit: contain; border-radius: var(--radius-md) }
@@ -502,6 +718,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
            color: var(--faint); font-weight: 500; margin-bottom: 12px }
 .foot a { display: block; padding: 5px 0; font-size: 15px; color: var(--dim) }
 .foot a:hover { color: var(--ink) }
+.foot a.brand { display: inline-flex; padding: 0 } /* logo + chữ cùng một hàng như header */
 .foot-base { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line-soft);
              display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between;
              font-size: 13px; color: var(--faint) }
@@ -520,9 +737,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 
 /* Tài khoản trên thanh điều hướng */
 .nav-account { display: flex; align-items: center; gap: 20px }
-.nav-account a, .nav-account button, .nav-sheet > button {
+.nav-account a, .nav-account button {
   font: inherit; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.8);
-  background: none; border: 0; padding: 6px 0; cursor: pointer; text-align: left; transition: color 0.2s ease }
-.nav-account a:hover, .nav-account button:hover, .nav-sheet > button:hover { color: #ffffff }
-.nav-sheet > button { padding: 12px 4px; font-size: 16px }
+  background: none; border: 0; padding: 6px 0; cursor: pointer; text-align: left }
 .chip.is-on { background: var(--accent); color: var(--accent-on); border-color: var(--accent) }

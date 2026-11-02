@@ -10,9 +10,9 @@
         </div>
         <div>
           <h5>Khám phá</h5>
-          <router-link to="/cong-trinh">Công trình</router-link>
-          <router-link to="/cong-trinh?loai=chung-cu">Nhà ở</router-link>
-          <router-link to="/cong-trinh?loai=lounge">Thương mại</router-link>
+          <router-link to="/du-an">Dự án</router-link>
+          <router-link to="/du-an#loai=nha-o">Nhà ở</router-link>
+          <router-link to="/du-an#loai=thuong-mai">Thương mại</router-link>
           <router-link to="/dich-vu">Dịch vụ và quy trình</router-link>
           <router-link to="/ve-chung-toi">Về chúng tôi</router-link>
         </div>
