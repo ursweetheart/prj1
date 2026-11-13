@@ -10,6 +10,7 @@ from email.message import EmailMessage
 
 import psycopg
 
+from pipeline import estimate
 from pipeline.leads import get_lead, profile_summary
 from pipeline.store import DSN
 
@@ -81,6 +82,8 @@ def notify_new_lead(lead_id: int):
         summary = profile_summary(lead["ho_so_hanh_vi"])
         if lead["nguon"] == "brief":  # the photos the visitor chose say more than their browsing
             summary = ((lead["request"] or {}).get("tom_tat") or {}).get("line") or summary
+        elif lead["nguon"] == "estimate" and lead["request"]:
+            summary = estimate.vnd_range(lead["request"]["ket_qua"]["tong"])
         source = SOURCE_VI.get(lead["nguon"], lead["nguon"])
         sales = os.getenv("D3_SALES_EMAIL")
         if not (_smtp_ready() and sales):
@@ -96,6 +99,8 @@ def notify_new_lead(lead_id: int):
             lines.append(f"Liên hệ để lại trong chat: {lead['contact']}")
         if lead["nguon"] == "brief":
             lines += [""] + _brief_lines(lead)
+        elif lead["nguon"] == "estimate" and lead["request"]:
+            lines += ["", "Ước tính khách đã xem:"] + estimate.text_lines(lead["request"]["dau_vao"], lead["request"]["ket_qua"])
         else:
             lines.append(f"Từ: {_context_line(lead['ngu_canh'])}")
         if lead["loi_nhan"]:
@@ -123,6 +128,13 @@ def confirm_to_visitor(lead_id: int):
                 f"qua số {lead['so_dien_thoai'] or 'anh/chị đã để lại'} trong thời gian sớm nhất.\n\n"
                 + (f"Xem lại bộ sưu tập anh/chị đã gửi: {share_url(lead)}\n\n" if lead["nguon"] == "brief" else "")
                 + "Cảm ơn anh/chị đã quan tâm.\nD3 Studio")
-        _send(lead["email"], "D3 Studio đã nhận yêu cầu tư vấn của anh/chị", body)
+        subject = "D3 Studio đã nhận yêu cầu tư vấn của anh/chị"
+        if lead["nguon"] == "estimate" and lead["request"]:  # the detailed estimate is what they asked for
+            subject = "Bản ước tính chi phí từ D3 Studio"
+            body = (f"Chào {lead['ho_ten'] or 'anh/chị'},\n\nĐây là bản ước tính chi tiết anh/chị đã yêu cầu:\n\n"
+                    + "\n".join(estimate.text_lines(lead["request"]["dau_vao"], lead["request"]["ket_qua"]))
+                    + "\n\nTư vấn viên sẽ liên hệ qua số " + (lead["so_dien_thoai"] or "anh/chị đã để lại")
+                    + " để báo giá chính xác sau khi khảo sát.\n\nD3 Studio")
+        _send(lead["email"], subject, body)
     except Exception:
         log.exception("lead %s: could not send the visitor confirmation", lead_id)

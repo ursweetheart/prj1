@@ -64,6 +64,7 @@ const savedCount = computed(() => collection.items.length)
 const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },
   hasRole(APPROVERS) && { to: '/quan-tri/phan-loai', label: 'Phân loại' },
+  hasRole(APPROVERS) && { to: '/quan-tri/don-gia', label: 'Đơn giá' },
   hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' }
 ].filter(Boolean))
 

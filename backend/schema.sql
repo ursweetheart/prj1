@@ -211,3 +211,33 @@ CREATE TABLE IF NOT EXISTS bo_suu_tap_anh (
   PRIMARY KEY (bo_suu_tap_id, space_id)
 );
 ALTER TABLE lead ADD COLUMN IF NOT EXISTS bo_suu_tap_id int REFERENCES bo_suu_tap(id) ON DELETE SET NULL;
+
+-- ── Price table D8 for the cost estimate (change: cost-estimate; seq-9, act-6) ─────────────────────────────────
+-- One VND/m² range per building type x cost item x package. D3 has no price list yet: the seed below is SAMPLE data
+-- (nguon='mau', shown as "Đơn giá mẫu" everywhere). Staff replace it at /quan-tri/don-gia, which sets nguon='d3';
+-- ON CONFLICT DO NOTHING means re-applying this file never overwrites an edited row.
+CREATE TABLE IF NOT EXISTS don_gia (
+  id serial PRIMARY KEY,
+  loai_nha text NOT NULL CHECK (loai_nha IN ('can_ho', 'nha_pho', 'biet_thu', 'van_phong', 'thuong_mai')),
+  hang_muc text NOT NULL CHECK (hang_muc IN ('thiet_ke', 'phan_tho', 'hoan_thien', 'noi_that')),
+  goi text NOT NULL CHECK (goi IN ('co_ban', 'tieu_chuan', 'cao_cap')),
+  gia_min bigint NOT NULL,
+  gia_max bigint NOT NULL,
+  nguon text NOT NULL DEFAULT 'mau' CHECK (nguon IN ('mau', 'd3')),
+  ghi_chu text,
+  cap_nhat_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  cap_nhat_luc timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (loai_nha, hang_muc, goi),
+  CHECK (0 <= gia_min AND gia_min <= gia_max)
+);
+INSERT INTO don_gia (loai_nha, hang_muc, goi, gia_min, gia_max, nguon)
+SELECT t.loai_nha, b.hang_muc, b.goi, round(b.lo * t.k * 1000000), round(b.hi * t.k * 1000000), 'mau'
+FROM (VALUES  -- apartment base, million VND / m²
+  ('thiet_ke',   'co_ban', 0.15, 0.2), ('thiet_ke',   'tieu_chuan', 0.2, 0.3), ('thiet_ke',   'cao_cap', 0.3, 0.45),
+  ('phan_tho',   'co_ban', 0.8,  1.2), ('phan_tho',   'tieu_chuan', 1.2, 1.8), ('phan_tho',   'cao_cap', 1.8, 2.5),
+  ('hoan_thien', 'co_ban', 1.5,  2.2), ('hoan_thien', 'tieu_chuan', 2.2, 3.5), ('hoan_thien', 'cao_cap', 3.5, 5.5),
+  ('noi_that',   'co_ban', 2.0,  3.0), ('noi_that',   'tieu_chuan', 3.0, 5.0), ('noi_that',   'cao_cap', 5.0, 9.0)
+) AS b(hang_muc, goi, lo, hi)
+CROSS JOIN (VALUES ('can_ho', 1.0), ('nha_pho', 1.1), ('biet_thu', 1.3), ('van_phong', 0.9), ('thuong_mai', 1.15))
+  AS t(loai_nha, k)
+ON CONFLICT (loai_nha, hang_muc, goi) DO NOTHING;

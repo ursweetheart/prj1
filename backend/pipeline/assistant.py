@@ -212,6 +212,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
         out["answer"] = FALLBACK
     if answered and (req["price_intent"] or req["appointment_intent"]):
         out["answer"] += "\n\nĐể kiến trúc sư báo giá/xác nhận lịch chính xác, bạn vui lòng để lại số điện thoại hoặc email."
+    if req["price_intent"]:  # cost-estimate: a quick range from the price table, without waiting for a call
+        out["answer"] += "\n\nƯớc tính nhanh theo diện tích và gói vật liệu: /uoc-tinh"
 
     # Three published projects matching the request (never drafts: this endpoint is public)
     if known and (req["space_type"] or req["design_style"] or req["project_type"]):

@@ -258,7 +258,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-6-duyet-va-xuat-ban` | UC14 | Có |
 | `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Có (change `saved-collection-brief`) |
 | `seq-8-tim-bang-anh-tai-len` | UC04 | Có |
-| `seq-9-uoc-tinh-chi-phi` | UC10 | Chưa |
+| `seq-9-uoc-tinh-chi-phi` | UC10 | Có (change `cost-estimate`), với đơn giá mẫu |
 | `seq-10-loc-portfolio-va-xem-chi-tiet` | UC01, UC02 | Có (đang bị ẩn, xem mục 9) |
 | `seq-11-tim-bang-mo-ta-tu-nhien` | UC05 | Có |
 | `seq-12-trac-nghiem-phong-cach` | UC06 | Chưa |
@@ -320,7 +320,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC07 | Lưu ảnh vào bộ sưu tập | **Có** | tim trên thẻ `/khong-gian` và trang không gian (`SaveHeart.vue`), `lib/collection.js`: chưa đăng nhập giữ trong trình duyệt, đăng nhập thì lưu ở bảng `bo_suu_tap` và gộp bản trình duyệt; trang `/bo-suu-tap` có ghi chú từng ảnh, tối đa 60 ảnh. **Tùng lưu ý:** tim nằm trên `SpaceTile.vue` (bọc thêm một `div`, link giữ nguyên) và hàng tiêu đề `SpaceView.vue` | Chưa có tim trong Lightbox trang dự án (chờ ảnh dự án được nạp thành không gian). `useMoodboard.js` + `SpaceCard.vue` là code cũ không còn trang nào dùng |
 | UC08 | Gửi bộ sưu tập làm brief | **Có** | `BriefForm.vue` → `POST /briefs` (không cần tài khoản): bản sao cố định + link chỉ xem `/bo-suu-tap/xem/<mã>`, lead nguồn `brief` kèm loại nhà, diện tích, ngân sách, tóm tắt "Wabi-sabi 60% · tông Ấm · phòng khách"; email cho sales và khách kèm link | Chưa có chia sẻ bộ sưu tập đang lưu (chỉ bản đã gửi) |
 | UC09 | Hỏi trợ lý ảo | **Xong** | `POST /chat`, `ChatWidget.vue`. Trả lời từ kho tri thức, sau đó từ mô tả ảnh đã đăng; kèm ảnh nguồn; dưới ngưỡng thì chuyển KTS; chặn câu trả lời có số tiền hay cam kết | Kho tri thức đang là **dữ liệu mẫu** (`kb/sample.json`), cần bảng giá và FAQ thật. Chưa lưu lịch sử hội thoại riêng |
-| UC10 | Ước tính chi phí sơ bộ | **Chưa** | | `seq-9`, `act-6`. Cần bảng đơn giá thật từ công ty |
+| UC10 | Ước tính chi phí sơ bộ | **Có (đơn giá mẫu)** | `/uoc-tinh`: loại nhà, diện tích, số phòng ngủ, gói vật liệu → khoảng giá + bóc tách 4 hạng mục, công thức cố định trên bảng `don_gia` (`pipeline/estimate.py`); dự án cùng loại; "Nhận bản chi tiết qua email" → lead nguồn `estimate` + email bóc tách. KTS trưởng sửa giá ở `/quan-tri/don-gia` | **D3 chưa có bảng giá: 60 ô đang là giá MẪU tự đặt (`nguon='mau'`, trang ghi rõ "Đơn giá mẫu"). Phải thay bằng giá thật ở `/quan-tri/don-gia` trước khi dùng thật.** Chưa gợi ý dự án theo ngân sách (dự án chưa có khoảng đầu tư) |
 | UC11 | Gửi yêu cầu tư vấn | **Một phần** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án; chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Trang `/lien-he` chưa có (0.3): chỉ cần nhúng `<ContactForm />`. Chưa gửi SMS |
 
 ### 5.3 Quản trị nội dung
@@ -431,7 +431,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 2.1 | ✓ **Bộ sưu tập** (change `saved-collection-brief`): trình duyệt → tài khoản khi đăng nhập, trang `/bo-suu-tap`, ghi chú. Link chia sẻ chỉ cho bản đã gửi | seq-13, act-8, class-3 | đổi máy vẫn thấy |
 | 2.2 | ✓ **Gửi bộ sưu tập làm brief** (change `saved-collection-brief`): lead nguồn `brief` kèm ảnh, ghi chú, tóm tắt gu, link chỉ xem | seq-7, act-8 | sales thấy brief kèm ảnh ở `/khach-hang` |
 | 2.3 | **Form liên hệ:** đã có `ContactForm.vue` + `POST /leads` (change `lead-intake`), đặt ở trang dự án. Còn lại: nhúng `<ContactForm />` vào trang `/lien-he` của 0.3 | seq-5 | lead loại "form" xuất hiện |
-| 2.4 | **Ước tính chi phí sơ bộ**: chọn loại công trình, diện tích, phong cách, mức hoàn thiện → khoảng giá (cần bảng đơn giá thật) | seq-9, act-6 | ra khoảng giá kèm lưu ý "chỉ tham khảo"; có thể chuyển thành lead |
+| 2.4 | ✓ **Ước tính chi phí sơ bộ** (change `cost-estimate`): công thức trên bảng đơn giá, giá mẫu ghi rõ, nhân viên sửa giá không cần sửa code | seq-9, act-6 | còn lại: nhập giá thật của D3 |
 | 2.5 | **Trắc nghiệm phong cách**: chọn ảnh thích → gợi ý phong cách và không gian phù hợp (dùng embedding SigLIP2) | seq-12 | |
 | 2.6 | Trang chi tiết dự án đầy đủ: bảng thông số, thuyết minh, dải màu, vật liệu chính, before/after Concept ↔ Thực tế, "dự án tương tự" | seq-10, class-1 | đủ các mục của M2 |
 | 2.7 | Sắp xếp kết quả lọc (mới nhất, phổ biến) | BFD 1.2 | |
@@ -529,6 +529,9 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/collections/me/merge` | đã đăng nhập | gộp bộ sưu tập trong trình duyệt vào tài khoản khi đăng nhập |
 | GET | `/collections/shared/{mã}` | công khai | bản đã gửi, chỉ xem: ảnh, ghi chú, tóm tắt, không có thông tin liên hệ |
 | POST | `/briefs` | công khai, chung giới hạn 5/10 phút với `/leads` | gửi bộ sưu tập cho kiến trúc sư → lead nguồn `brief` |
+| POST | `/estimates` | công khai, 30/phút | ước tính từ bảng đơn giá, không lưu gì |
+| POST | `/estimates/send` | công khai, chung giới hạn với `/leads` | nhận bản chi tiết qua email → lead nguồn `estimate` (máy chủ tự tính lại) |
+| GET / PUT | `/prices`, `/prices/{id}` | approver | bảng đơn giá D8; lưu một ô thì ô đó thành `d3` (không còn là giá mẫu) |
 | GET | `/taxonomy` | công khai | các chiều và giá trị (cho bộ lọc) |
 | POST | `/taxonomy/{dim_id}/values` | lead_architect | thêm giá trị |
 | PATCH | `/taxonomy/values/{id}` | lead_architect | đổi tên giá trị |
@@ -552,6 +555,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `kb_chunk` | đoạn tri thức trợ lý + embedding |
 | `lead` | khách tiềm năng mọi nguồn (`nguon`: form, chat, brief, estimate): họ tên, SĐT, email, lời nhắn, ngữ cảnh trang/dự án, hồ sơ hành vi (bản chụp), và với chat thì ý định, yêu cầu, hội thoại |
 | `bo_suu_tap`, `bo_suu_tap_anh` | bộ sưu tập: `dang_luu` (một cái mỗi tài khoản) và `da_gui` (bản cố định của mỗi brief, có `ma_chia_se`); ảnh + ghi chú (≤ 300 ký tự) |
+| `don_gia` | bảng đơn giá D8: 5 loại nhà × 4 hạng mục × 3 gói, khoảng VND/m², `nguon` `mau` (giá mẫu) / `d3` (nhân viên đặt) |
 | `chieu_phan_loai`, `gia_tri_phan_loai`, `space_gia_tri` | phân loại và nhãn của từng không gian |
 | `ung_vien_phan_loai` | đề xuất chiều mới chờ duyệt |
 | `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được |

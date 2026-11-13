@@ -212,6 +212,11 @@ export const mergeCollection = items => request('POST', '/collections/me/merge',
 export const getSharedCollection = code => get('/collections/shared/' + encodeURIComponent(code))
 export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join(','), limit: ids.length }) : Promise.resolve([])
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+/* Cost estimate (UC10) and its price table D8 */
+export const estimate = body => request('POST', '/estimates', { body })
+export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+export const getPrices = () => get('/prices')
+export const savePrice = (id, body) => request('PUT', '/prices/' + id, { body })
 export const createLead = body => request('POST', '/leads', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 function viewsConsent(ticked) { // the session id goes out only with both consents; the server checks again
   const id = ticked && consent.get() === 'yes' && visitId()

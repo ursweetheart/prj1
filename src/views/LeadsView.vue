@@ -32,8 +32,15 @@
         <p v-if="contextLink(l)" class="small">
           Từ: <router-link :to="contextLink(l).to">{{ contextLink(l).label }}</router-link>
         </p>
-        <p v-else-if="l.ngu_canh?.trang && l.nguon !== 'brief'" class="small">Từ trang {{ l.ngu_canh.trang }}</p>
+        <p v-else-if="l.ngu_canh?.trang && !['brief', 'estimate'].includes(l.nguon)" class="small">Từ trang {{ l.ngu_canh.trang }}</p>
         <p v-if="l.nguon === 'chat' && l.request" class="small">{{ summary(l.request) }}</p>
+
+        <!-- estimate: what the visitor entered and the range the server computed -->
+        <template v-if="l.nguon === 'estimate' && l.request?.ket_qua">
+          <p class="small">{{ estimateFacts(l.request.dau_vao) }}</p>
+          <p class="lead-brief-line num">{{ formatRange(l.request.ket_qua.tong) }}
+            <span v-if="l.request.ket_qua.mau" class="small lead-sample">· đơn giá mẫu</span></p>
+        </template>
 
         <!-- brief: the project facts, what the chosen photos share, the photos with the visitor's notes -->
         <template v-if="l.nguon === 'brief'">
@@ -77,11 +84,13 @@
 import { ref, watch } from 'vue'
 import { imageUrl, listLeads, spaceLabel } from '@/api'
 import { projectBySlug } from '@/data/projects'
+import { formatRange } from '@/lib/money'
 
 const SOURCE_VI = { form: 'Form liên hệ', chat: 'Trợ lý chat', brief: 'Bộ sưu tập', estimate: 'Ước tính chi phí' }
 const INTENT_VI = { price: 'Hỏi giá', appointment: 'Xin hẹn', handoff: 'Chuyển kiến trúc sư' }
 const PROJECT_VI = { can_ho: 'Căn hộ', biet_thu: 'Biệt thự', nha_pho: 'Nhà phố', van_phong: 'Văn phòng', thuong_mai: 'Thương mại' }
 const FILTERS = [{ value: null, label: 'Tất cả' }, { value: 'form', label: 'Form liên hệ' }, { value: 'brief', label: 'Bộ sưu tập' },
+                 { value: 'estimate', label: 'Ước tính' },
                  { value: 'chat', label: 'Trợ lý chat' }]
 const leads = ref([])
 const loading = ref(true)
@@ -101,6 +110,11 @@ const BUDGET_VI = { duoi_300tr: 'Dưới 300 triệu', '300tr_700tr': '300 – 7
 function briefFacts(r = {}) {
   return [HOUSE_VI[r.loai_nha], r.dien_tich_m2 && r.dien_tich_m2 + ' m²', BUDGET_VI[r.ngan_sach],
           r.tom_tat?.n && r.tom_tat.n + ' ảnh'].filter(Boolean).join(' · ')
+}
+
+const PACKAGE_VI = { co_ban: 'Cơ bản', tieu_chuan: 'Tiêu chuẩn', cao_cap: 'Cao cấp' }
+function estimateFacts(d = {}) {
+  return [HOUSE_VI[d.loai_nha], d.dien_tich_m2 + ' m²', d.so_phong_ngu + ' phòng ngủ', PACKAGE_VI[d.goi]].filter(Boolean).join(' · ')
 }
 
 function contextLink(l) {
@@ -126,6 +140,7 @@ watch(nguon, load, { immediate: true })
 .lead-msg { margin: 8px 0 0; white-space: pre-line }
 .lead-profile { margin-top: 10px }
 .lead-brief-line { margin: 8px 0 0; color: var(--ink) }
+.lead-sample { color: var(--accent) }
 .lead-brief-photos { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 12px }
 .lead-brief-photos li { display: grid; gap: 4px; max-width: 140px }
 .lead-thumb { width: 84px; height: 64px; object-fit: cover; border-radius: var(--radius-sm); display: block }

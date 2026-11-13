@@ -18,10 +18,10 @@ from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
 from psycopg.errors import UniqueViolation
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, leads, notify, taxonomy, vertex
+from pipeline import bo_suu_tap, discovery, estimate, leads, notify, taxonomy, vertex
 from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -516,6 +516,88 @@ def post_brief(body: BriefIn, tasks: BackgroundTasks, user=Depends(optional_user
     tasks.add_task(notify.notify_new_lead, lead_id)
     tasks.add_task(notify.confirm_to_visitor, lead_id)
     return {"lead_id": lead_id, "ma_chia_se": code, **ok}
+
+
+# ── Cost estimate (UC10, seq-9, act-6) and its price table D8 ─────────────────────
+class EstimateIn(BaseModel):
+    loai_nha: Literal[tuple(estimate.HOUSE_VI)]
+    dien_tich_m2: float = Field(ge=10, le=5000)
+    so_phong_ngu: int = Field(default=2, ge=0, le=10)
+    goi: Literal[tuple(estimate.PACKAGE_VI)] = "tieu_chuan"
+
+
+@app.post("/estimates", dependencies=[Depends(limit("estimates", 30, 60))])
+def post_estimate(body: EstimateIn):
+    """Public. Arithmetic on the price table; nothing is stored."""
+    with _db() as c:
+        return estimate.estimate(c, body.loai_nha, body.dien_tich_m2, body.so_phong_ngu, body.goi)
+
+
+class EstimateLeadIn(LeadIn, EstimateIn):
+    email: str = Field(max_length=200)  # required here: the details go by email
+
+    @field_validator("email")
+    @classmethod
+    def _email_required(cls, v):
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("email_trong")
+        if not EMAIL.match(v):
+            raise ValueError("email_sai")
+        return v
+
+
+@app.post("/estimates/send", status_code=201, dependencies=[Depends(limit("leads", 5, 600))])  # one bucket with /leads
+def send_estimate(body: EstimateLeadIn, tasks: BackgroundTasks):
+    """'Nhận bản chi tiết qua email': the server recomputes (a client total is never trusted) and stores a lead."""
+    ok = {"message": "Đã gửi bản ước tính chi tiết tới " + body.email}
+    if body.website or (body.t_ms is not None and body.t_ms < MIN_FILL_MS):
+        return {"lead_id": None, **ok}
+    dau_vao = {"loai_nha": body.loai_nha, "dien_tich_m2": body.dien_tich_m2, "so_phong_ngu": body.so_phong_ngu,
+               "goi": body.goi}
+    with _db() as c:
+        ket_qua = estimate.estimate(c, body.loai_nha, body.dien_tich_m2, body.so_phong_ngu, body.goi)
+        context = {k: v for k, v in {"trang": body.trang, "du_an": body.du_an, "space_id": body.space_id}.items() if v}
+        lead_id = leads.create_lead("estimate", ho_ten=body.ho_ten, so_dien_thoai=body.so_dien_thoai, email=body.email,
+                                    loi_nhan=body.loi_nhan, ngu_canh=context or None, phien_id=body.phien_id,
+                                    gui_ho_so=body.gui_ho_so, request={"dau_vao": dau_vao, "ket_qua": ket_qua}, conn=c)
+    tasks.add_task(notify.notify_new_lead, lead_id)
+    tasks.add_task(notify.confirm_to_visitor, lead_id)
+    return {"lead_id": lead_id, **ok}
+
+
+class PriceIn(BaseModel):
+    gia_min: int = Field(ge=0, le=1_000_000_000)
+    gia_max: int = Field(ge=0, le=1_000_000_000)
+    ghi_chu: Optional[str] = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.gia_min > self.gia_max:
+            raise ValueError("gia_min_lon_hon_gia_max")
+        return self
+
+
+@app.get("/prices")
+def list_prices(user=Depends(require(*APPROVERS))):
+    """The whole price table D8 for the staff page; nguon 'mau' = sample price, 'd3' = set by staff."""
+    with _db() as c:
+        return c.execute("SELECT g.id, loai_nha, hang_muc, goi, gia_min, gia_max, nguon, ghi_chu, cap_nhat_luc, "
+                         "u.email AS cap_nhat_boi FROM don_gia g LEFT JOIN app_user u ON u.id = g.cap_nhat_boi "
+                         "ORDER BY loai_nha, array_position(ARRAY['thiet_ke','phan_tho','hoan_thien','noi_that'], hang_muc), "
+                         "array_position(ARRAY['co_ban','tieu_chuan','cao_cap'], goi)").fetchall()
+
+
+@app.put("/prices/{price_id}")
+def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
+    """act-6: staff change prices without touching code. A saved row is no longer a sample."""
+    with _db() as c:
+        row = c.execute("UPDATE don_gia SET gia_min=%s, gia_max=%s, ghi_chu=%s, nguon='d3', cap_nhat_boi=%s, "
+                        "cap_nhat_luc=now() WHERE id=%s RETURNING id, loai_nha, hang_muc, goi, gia_min, gia_max, nguon, "
+                        "ghi_chu, cap_nhat_luc", (body.gia_min, body.gia_max, body.ghi_chu, user["id"], price_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such price")
+    return row
 
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────

@@ -14,6 +14,7 @@
           <router-link to="/du-an#loai=nha-o">Nhà ở</router-link>
           <router-link to="/du-an#loai=thuong-mai">Thương mại</router-link>
           <router-link to="/dich-vu">Dịch vụ và quy trình</router-link>
+          <router-link to="/uoc-tinh">Ước tính chi phí</router-link>
           <router-link to="/ve-chung-toi">Về chúng tôi</router-link>
         </div>
         <div>
