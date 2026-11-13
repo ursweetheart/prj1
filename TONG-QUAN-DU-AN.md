@@ -256,13 +256,13 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần (1 loại sự kiện) |
 | `seq-5-gui-form-lien-he` | UC11 | Một phần (qua chat) |
 | `seq-6-duyet-va-xuat-ban` | UC14 | Có |
-| `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Chưa |
+| `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Có (change `saved-collection-brief`) |
 | `seq-8-tim-bang-anh-tai-len` | UC04 | Có |
 | `seq-9-uoc-tinh-chi-phi` | UC10 | Chưa |
 | `seq-10-loc-portfolio-va-xem-chi-tiet` | UC01, UC02 | Có (đang bị ẩn, xem mục 9) |
 | `seq-11-tim-bang-mo-ta-tu-nhien` | UC05 | Có |
 | `seq-12-trac-nghiem-phong-cach` | UC06 | Chưa |
-| `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Một phần (lưu trên trình duyệt) |
+| `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Có: trình duyệt khi chưa đăng nhập, gộp vào tài khoản khi đăng ký/đăng nhập |
 | `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
 | `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Một phần (API, chưa có UI) |
 | `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Một phần (CLI, chưa có UI) |
@@ -317,8 +317,8 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 
 | UC | Tên | Trạng thái | Đang ở đâu | Còn thiếu |
 | :-- | :-- | :-- | :-- | :-- |
-| UC07 | Lưu ảnh vào bộ sưu tập | **Một phần** | nút tim trên thẻ không gian, lưu ở `localStorage` (`useMoodboard.js`) | Chưa lưu lên server, chưa gắn tài khoản, chưa có trang xem bộ sưu tập, chưa chia sẻ (BFD 2.3) |
-| UC08 | Gửi bộ sưu tập làm brief | **Chưa** | | `seq-7`, `act-8`: gửi bộ sưu tập + thông tin → tạo lead kèm ảnh |
+| UC07 | Lưu ảnh vào bộ sưu tập | **Có** | tim trên thẻ `/khong-gian` và trang không gian (`SaveHeart.vue`), `lib/collection.js`: chưa đăng nhập giữ trong trình duyệt, đăng nhập thì lưu ở bảng `bo_suu_tap` và gộp bản trình duyệt; trang `/bo-suu-tap` có ghi chú từng ảnh, tối đa 60 ảnh. **Tùng lưu ý:** tim nằm trên `SpaceTile.vue` (bọc thêm một `div`, link giữ nguyên) và hàng tiêu đề `SpaceView.vue` | Chưa có tim trong Lightbox trang dự án (chờ ảnh dự án được nạp thành không gian). `useMoodboard.js` + `SpaceCard.vue` là code cũ không còn trang nào dùng |
+| UC08 | Gửi bộ sưu tập làm brief | **Có** | `BriefForm.vue` → `POST /briefs` (không cần tài khoản): bản sao cố định + link chỉ xem `/bo-suu-tap/xem/<mã>`, lead nguồn `brief` kèm loại nhà, diện tích, ngân sách, tóm tắt "Wabi-sabi 60% · tông Ấm · phòng khách"; email cho sales và khách kèm link | Chưa có chia sẻ bộ sưu tập đang lưu (chỉ bản đã gửi) |
 | UC09 | Hỏi trợ lý ảo | **Xong** | `POST /chat`, `ChatWidget.vue`. Trả lời từ kho tri thức, sau đó từ mô tả ảnh đã đăng; kèm ảnh nguồn; dưới ngưỡng thì chuyển KTS; chặn câu trả lời có số tiền hay cam kết | Kho tri thức đang là **dữ liệu mẫu** (`kb/sample.json`), cần bảng giá và FAQ thật. Chưa lưu lịch sử hội thoại riêng |
 | UC10 | Ước tính chi phí sơ bộ | **Chưa** | | `seq-9`, `act-6`. Cần bảng đơn giá thật từ công ty |
 | UC11 | Gửi yêu cầu tư vấn | **Một phần** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án; chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Trang `/lien-he` chưa có (0.3): chỉ cần nhúng `<ContactForm />`. Chưa gửi SMS |
@@ -428,8 +428,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
-| 2.1 | **Bộ sưu tập lưu trên server**: bảng `bo_suu_tap`, giữ khi đăng nhập, trang xem bộ sưu tập, chia sẻ link | seq-13, act-8, class-3 | đổi máy vẫn thấy bộ sưu tập |
-| 2.2 | **Gửi bộ sưu tập làm brief**: form ngắn (diện tích, ngân sách, liên hệ) → tạo lead kèm ảnh đã lưu | seq-7, act-8 | sales thấy brief kèm ảnh ở `/khach-hang` |
+| 2.1 | ✓ **Bộ sưu tập** (change `saved-collection-brief`): trình duyệt → tài khoản khi đăng nhập, trang `/bo-suu-tap`, ghi chú. Link chia sẻ chỉ cho bản đã gửi | seq-13, act-8, class-3 | đổi máy vẫn thấy |
+| 2.2 | ✓ **Gửi bộ sưu tập làm brief** (change `saved-collection-brief`): lead nguồn `brief` kèm ảnh, ghi chú, tóm tắt gu, link chỉ xem | seq-7, act-8 | sales thấy brief kèm ảnh ở `/khach-hang` |
 | 2.3 | **Form liên hệ:** đã có `ContactForm.vue` + `POST /leads` (change `lead-intake`), đặt ở trang dự án. Còn lại: nhúng `<ContactForm />` vào trang `/lien-he` của 0.3 | seq-5 | lead loại "form" xuất hiện |
 | 2.4 | **Ước tính chi phí sơ bộ**: chọn loại công trình, diện tích, phong cách, mức hoàn thiện → khoảng giá (cần bảng đơn giá thật) | seq-9, act-6 | ra khoảng giá kèm lưu ý "chỉ tham khảo"; có thể chuyển thành lead |
 | 2.5 | **Trắc nghiệm phong cách**: chọn ảnh thích → gợi ý phong cách và không gian phù hợp (dùng embedding SigLIP2) | seq-12 | |
@@ -523,7 +523,12 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
 | POST | `/chat` | công khai, 20/phút | trợ lý |
 | POST | `/leads` | công khai, 5/10 phút | form liên hệ tạo lead (nguồn `form`), kèm hồ sơ hành vi nếu khách đồng ý |
-| GET | `/leads` | sales, approver | lead mọi nguồn, lọc `?nguon=form\|chat` |
+| GET | `/leads` | sales, approver | lead mọi nguồn, lọc `?nguon=form\|brief\|chat`; lead brief kèm ảnh, ghi chú, mã chia sẻ |
+| GET | `/spaces?ids=1,2,3` | công khai | các không gian theo id (≤ 60), cho bộ sưu tập trong trình duyệt |
+| GET / PUT / DELETE | `/collections/me`, `/collections/me/items/{space_id}` | đã đăng nhập, 120/phút | bộ sưu tập của tài khoản: xem, lưu/sửa ghi chú, bỏ |
+| POST | `/collections/me/merge` | đã đăng nhập | gộp bộ sưu tập trong trình duyệt vào tài khoản khi đăng nhập |
+| GET | `/collections/shared/{mã}` | công khai | bản đã gửi, chỉ xem: ảnh, ghi chú, tóm tắt, không có thông tin liên hệ |
+| POST | `/briefs` | công khai, chung giới hạn 5/10 phút với `/leads` | gửi bộ sưu tập cho kiến trúc sư → lead nguồn `brief` |
 | GET | `/taxonomy` | công khai | các chiều và giá trị (cho bộ lọc) |
 | POST | `/taxonomy/{dim_id}/values` | lead_architect | thêm giá trị |
 | PATCH | `/taxonomy/values/{id}` | lead_architect | đổi tên giá trị |
@@ -546,6 +551,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `review_log` | nhật ký duyệt, sửa, gán nhãn lại |
 | `kb_chunk` | đoạn tri thức trợ lý + embedding |
 | `lead` | khách tiềm năng mọi nguồn (`nguon`: form, chat, brief, estimate): họ tên, SĐT, email, lời nhắn, ngữ cảnh trang/dự án, hồ sơ hành vi (bản chụp), và với chat thì ý định, yêu cầu, hội thoại |
+| `bo_suu_tap`, `bo_suu_tap_anh` | bộ sưu tập: `dang_luu` (một cái mỗi tài khoản) và `da_gui` (bản cố định của mỗi brief, có `ma_chia_se`); ảnh + ghi chú (≤ 300 ký tự) |
 | `chieu_phan_loai`, `gia_tri_phan_loai`, `space_gia_tri` | phân loại và nhãn của từng không gian |
 | `ung_vien_phan_loai` | đề xuất chiều mới chờ duyệt |
 | `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được |

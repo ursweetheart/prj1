@@ -17,6 +17,8 @@
 
       <div class="nav-right">
         <div class="nav-account">
+          <router-link v-if="ai.state === 'on'" to="/bo-suu-tap" class="nav-saved"
+                       :aria-label="'Bộ sưu tập, ' + savedCount + ' ảnh'">Bộ sưu tập<span v-if="savedCount" class="num"> ({{ savedCount }})</span></router-link>
           <router-link v-for="l in roleLinks" :key="l.to" :to="l.to">{{ l.label }}</router-link>
           <button v-if="session.user" type="button" @click="signOut">Đăng xuất</button>
           <router-link v-else to="/dang-nhap">Đăng nhập</router-link>
@@ -37,6 +39,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { APPROVERS, EDITORS, SALES, hasRole, logout, session } from '@/api'
 import { ai, aiAvailable } from '@/lib/projectSpaces'
+import { collection } from '@/lib/collection'
 import BrandMark from './BrandMark.vue'
 
 defineProps({
@@ -55,6 +58,8 @@ const links = computed(() => [
   { to: '/ve-chung-toi', label: 'Về chúng tôi', key: 've-chung-toi' },
   { to: '/lien-he',     label: 'Liên hệ',    key: 'lien-he' }
 ].filter(Boolean))
+
+const savedCount = computed(() => collection.items.length)
 
 const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },

@@ -255,3 +255,9 @@ def test_summary_keeps_room_type_when_ties_fill_the_top(cleanup):
     p = leads.behaviour_profile(pid)
     assert len(p["top"]) == 6  # 5 tied values + the leading room type
     assert leads.profile_summary(p) == "Indochine 100% · phòng ngủ master · 3 không gian"
+
+
+def test_summary_never_names_khac_in_any_case(cleanup):
+    ids = [r[0] for r in _q("SELECT id FROM space WHERE review_status='published' ORDER BY id LIMIT 2")]
+    pid = _session(cleanup, [(i, ["phong_cach:Khac", "khong_gian:khac"]) for i in ids])
+    assert leads.profile_summary(leads.behaviour_profile(pid)) == "2 không gian"

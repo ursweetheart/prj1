@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,9 +21,9 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator
 
 import auth
-from pipeline import discovery, leads, notify, taxonomy, vertex
+from pipeline import bo_suu_tap, discovery, leads, notify, taxonomy, vertex
 from pipeline.assistant import _fold, respond, with_services
-from auth import APPROVERS, STAFF, optional_user, require
+from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_image, by_text, similar_to
 from pipeline.store import DSN, save_records
@@ -78,7 +78,12 @@ def _processor():  # loads YOLO + SigLIP2 on first ingest only
 
 @app.get("/spaces")
 def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = None,
-                review_status: Optional[str] = None, limit: int = 50, offset: int = 0, user=Depends(optional_user)):
+                review_status: Optional[str] = None, limit: int = 50, offset: int = 0,
+                ids: Optional[str] = Query(default=None, pattern=r"^\d+(,\d+)*$", description="comma list, ≤ 60"),
+                user=Depends(optional_user)):
+    id_list = [int(i) for i in ids.split(",")] if ids else None  # the browser collection shows its photos in one call
+    if id_list and len(id_list) > bo_suu_tap.MAX_ITEMS:
+        raise HTTPException(422, f"at most {bo_suu_tap.MAX_ITEMS} ids")
     if not _is_staff(user):
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
@@ -86,8 +91,9 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
             f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS} "
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
-            "ORDER BY id LIMIT %(l)s OFFSET %(o)s",
-            {"t": space_type, "s": design_style, "r": review_status, "l": min(limit, 200), "o": offset}).fetchall()
+            "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
+            {"t": space_type, "s": design_style, "r": review_status, "i": id_list,
+             "l": max(min(limit, 200), len(id_list or [])), "o": offset}).fetchall()
 
 
 @app.get("/spaces/{space_id}")
@@ -407,14 +413,109 @@ def list_leads(status: Optional[str] = None, nguon: Optional[Literal[leads.SOURC
     """Leads from every source (form, chat, later brief / estimate), newest first."""
     with _db() as c:
         rows = c.execute(
-            "SELECT id, nguon, intent, ho_ten, so_dien_thoai, email, loi_nhan, ngu_canh, ho_so_hanh_vi, request, "
-            "conversation, contact, status, created_at FROM lead "
+            "SELECT l.id, nguon, intent, ho_ten, so_dien_thoai, email, loi_nhan, ngu_canh, ho_so_hanh_vi, request, "
+            "conversation, contact, status, l.created_at, bo_suu_tap_id, b.ma_chia_se "
+            "FROM lead l LEFT JOIN bo_suu_tap b ON b.id = l.bo_suu_tap_id "
             "WHERE (%(s)s::text IS NULL OR status=%(s)s) AND (%(n)s::text IS NULL OR nguon=%(n)s) "
             "ORDER BY id DESC LIMIT %(l)s OFFSET %(o)s",
             {"s": status, "n": nguon, "l": limit, "o": offset}).fetchall()
-    for r in rows:
-        r["tom_tat"] = leads.profile_summary(r["ho_so_hanh_vi"])
+        for r in rows:
+            r["tom_tat"] = leads.profile_summary(r["ho_so_hanh_vi"])
+            r["bo_suu_tap"] = bo_suu_tap.sent_items(c, r["bo_suu_tap_id"]) if r["bo_suu_tap_id"] else None
     return rows
+
+
+# ── Saved collection (UC07, seq-13) and design brief (UC08, seq-7) ─────────────
+class CollectionItem(BaseModel):
+    space_id: int
+    ghi_chu: Optional[str] = Field(default=None, max_length=bo_suu_tap.MAX_NOTE)
+
+
+class Note(BaseModel):
+    ghi_chu: Optional[str] = Field(default=None, max_length=bo_suu_tap.MAX_NOTE)
+
+
+class Merge(BaseModel):
+    items: list[CollectionItem] = Field(default_factory=list, max_length=bo_suu_tap.MAX_ITEMS)
+
+
+SIGNED_IN = [Depends(limit("collections", 120, 60))]
+
+
+@app.get("/collections/me", dependencies=SIGNED_IN)
+def my_collection(user=Depends(require(*ROLES))):
+    with _db() as c:
+        return bo_suu_tap.items(c, bo_suu_tap.working_id(c, user["id"]))
+
+
+@app.put("/collections/me/items/{space_id}", dependencies=SIGNED_IN)
+def save_to_collection(space_id: int, body: Note = Note(), user=Depends(require(*ROLES))):
+    with _db() as c:
+        try:
+            if not bo_suu_tap.put_item(c, user["id"], space_id, body.ghi_chu):
+                raise HTTPException(404, "space not published")
+        except bo_suu_tap.Full:
+            raise HTTPException(409, "bo_suu_tap_day")
+        return bo_suu_tap.items(c, bo_suu_tap.working_id(c, user["id"]))
+
+
+@app.delete("/collections/me/items/{space_id}", status_code=204, dependencies=SIGNED_IN)
+def remove_from_collection(space_id: int, user=Depends(require(*ROLES))):
+    with _db() as c:
+        bo_suu_tap.remove_item(c, user["id"], space_id)
+
+
+@app.post("/collections/me/merge", dependencies=SIGNED_IN)
+def merge_collection(body: Merge, user=Depends(require(*ROLES))):
+    """The browser collection joins the account at sign-in (seq-13 #13)."""
+    with _db() as c:
+        return bo_suu_tap.merge(c, user["id"], [i.model_dump() for i in body.items])
+
+
+@app.get("/collections/shared/{code}")
+def shared_collection(code: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,64}$")):
+    """Read-only view of a sent brief: photos, notes, summary; never the sender's name or contact."""
+    with _db() as c:
+        out = bo_suu_tap.shared(c, code)
+    if not out:
+        raise HTTPException(404, "Không tìm thấy bộ sưu tập")
+    return out
+
+
+HOUSE_TYPES = ("can_ho", "nha_pho", "biet_thu", "van_phong", "thuong_mai", "khac")
+BUDGETS = ("duoi_300tr", "300tr_700tr", "700tr_1500tr", "tren_1500tr", "chua_ro")
+
+
+class BriefIn(LeadIn):
+    loai_nha: Literal[HOUSE_TYPES]
+    dien_tich_m2: Optional[float] = Field(default=None, ge=10, le=5000)
+    ngan_sach: Literal[BUDGETS] = "chua_ro"
+    items: list[CollectionItem] = Field(min_length=1, max_length=bo_suu_tap.MAX_ITEMS)
+
+
+@app.post("/briefs", status_code=201, dependencies=[Depends(limit("leads", 5, 600))])  # one bucket with /leads
+def post_brief(body: BriefIn, tasks: BackgroundTasks, user=Depends(optional_user)):
+    """Send a collection to an architect. Signed in or not; the photos are copied so the brief never changes."""
+    ok = {"message": "Đã gửi bộ sưu tập cho kiến trúc sư, tư vấn viên sẽ gọi lại số " + body.so_dien_thoai}
+    if body.website or (body.t_ms is not None and body.t_ms < MIN_FILL_MS):
+        return {"lead_id": None, "ma_chia_se": None, **ok}
+    with _db() as c:
+        ids = bo_suu_tap.published(c, [i.space_id for i in body.items])
+        if not ids:
+            raise HTTPException(422, [{"loc": ["body", "items"], "msg": "bo_suu_tap_trong", "type": "value_error"}])
+        notes = {i.space_id: i.ghi_chu for i in body.items}
+        chosen = [{"space_id": i, "ghi_chu": notes[i]} for i in ids]
+        summary = leads.brief_summary(ids, c)
+        coll_id, code = bo_suu_tap.send_copy(c, user["id"] if user else None, chosen, summary)
+        context = {k: v for k, v in {"trang": body.trang, "du_an": body.du_an, "space_id": body.space_id}.items() if v}
+        lead_id = leads.create_lead(
+            "brief", ho_ten=body.ho_ten, so_dien_thoai=body.so_dien_thoai, email=body.email, loi_nhan=body.loi_nhan,
+            ngu_canh=context or None, phien_id=body.phien_id, gui_ho_so=body.gui_ho_so, bo_suu_tap_id=coll_id,
+            request={"loai_nha": body.loai_nha, "dien_tich_m2": body.dien_tich_m2, "ngan_sach": body.ngan_sach,
+                     "tom_tat": summary}, conn=c)
+    tasks.add_task(notify.notify_new_lead, lead_id)
+    tasks.add_task(notify.confirm_to_visitor, lead_id)
+    return {"lead_id": lead_id, "ma_chia_se": code, **ok}
 
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────

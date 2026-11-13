@@ -8,7 +8,10 @@ import os
 import smtplib
 from email.message import EmailMessage
 
+import psycopg
+
 from pipeline.leads import get_lead, profile_summary
+from pipeline.store import DSN
 
 log = logging.getLogger("d3.leads")
 log.setLevel(logging.INFO)
@@ -18,6 +21,10 @@ if not log.handlers:  # uvicorn configures only its own loggers; without this th
     log.addHandler(_h)
 
 SOURCE_VI = {"form": "Form liên hệ", "chat": "Trợ lý chat", "brief": "Bộ sưu tập (brief)", "estimate": "Ước tính chi phí"}
+HOUSE_VI = {"can_ho": "Căn hộ / Chung cư", "nha_pho": "Nhà phố", "biet_thu": "Biệt thự", "van_phong": "Văn phòng",
+            "thuong_mai": "Thương mại / Showroom", "khac": "Khác"}
+BUDGET_VI = {"duoi_300tr": "Dưới 300 triệu", "300tr_700tr": "300 – 700 triệu", "700tr_1500tr": "700 triệu – 1,5 tỷ",
+             "tren_1500tr": "Trên 1,5 tỷ", "chua_ro": "Chưa rõ"}
 INTENT_VI = {"price": "hỏi giá", "appointment": "xin hẹn", "handoff": "trợ lý chưa trả lời được"}
 
 
@@ -37,6 +44,25 @@ def _send(to: str, subject: str, body: str):
         s.send_message(msg)
 
 
+def share_url(lead) -> str | None:
+    """Link to the read-only copy a brief sent (/bo-suu-tap/xem/<code>), or None for other leads."""
+    if not lead.get("bo_suu_tap_id"):
+        return None
+    with psycopg.connect(DSN) as c:
+        row = c.execute("SELECT ma_chia_se FROM bo_suu_tap WHERE id = %s", (lead["bo_suu_tap_id"],)).fetchone()
+    return row and f"{os.getenv('D3_FRONTEND_URL', '').rstrip('/')}/bo-suu-tap/xem/{row[0]}"
+
+
+def _brief_lines(lead) -> list[str]:
+    r = lead["request"] or {}
+    area = r.get("dien_tich_m2")
+    return [f"Loại nhà: {HOUSE_VI.get(r.get('loai_nha'), r.get('loai_nha') or '—')}",
+            f"Diện tích: {f'{area:g} m²' if area else '—'}",
+            f"Ngân sách: {BUDGET_VI.get(r.get('ngan_sach'), r.get('ngan_sach') or '—')}",
+            f"Bộ sưu tập ({(r.get('tom_tat') or {}).get('n', 0)} ảnh): {(r.get('tom_tat') or {}).get('line') or '—'}",
+            f"Xem bộ sưu tập: {share_url(lead)}"]
+
+
 def _context_line(ngu_canh: dict | None) -> str:
     c = ngu_canh or {}
     if c.get("du_an"):
@@ -53,6 +79,8 @@ def notify_new_lead(lead_id: int):
         if not lead:
             return
         summary = profile_summary(lead["ho_so_hanh_vi"])
+        if lead["nguon"] == "brief":  # the photos the visitor chose say more than their browsing
+            summary = ((lead["request"] or {}).get("tom_tat") or {}).get("line") or summary
         source = SOURCE_VI.get(lead["nguon"], lead["nguon"])
         sales = os.getenv("D3_SALES_EMAIL")
         if not (_smtp_ready() and sales):
@@ -66,11 +94,14 @@ def notify_new_lead(lead_id: int):
                  f"Email: {lead['email'] or '—'}"]
         if lead["contact"]:
             lines.append(f"Liên hệ để lại trong chat: {lead['contact']}")
-        lines.append(f"Từ: {_context_line(lead['ngu_canh'])}")
+        if lead["nguon"] == "brief":
+            lines += [""] + _brief_lines(lead)
+        else:
+            lines.append(f"Từ: {_context_line(lead['ngu_canh'])}")
         if lead["loi_nhan"]:
             lines += ["", "Lời nhắn:", lead["loi_nhan"]]
-        if summary:
-            lines += ["", f"Sở thích (khách đồng ý gửi): {summary}"]
+        if lead["ho_so_hanh_vi"]:
+            lines += ["", f"Sở thích (khách đồng ý gửi): {profile_summary(lead['ho_so_hanh_vi'])}"]
             lines += [f"  - #{s['id']} {s['relative_path']}" for s in lead["ho_so_hanh_vi"].get("spaces", [])]
         if lead["conversation"]:
             lines += ["", "Hội thoại:"] + [f"  {'Khách' if m.get('role') == 'user' else 'Trợ lý'}: {m.get('content')}"
@@ -90,7 +121,8 @@ def confirm_to_visitor(lead_id: int):
         body = (f"Chào {lead['ho_ten'] or 'anh/chị'},\n\n"
                 "D3 Studio đã nhận yêu cầu tư vấn của anh/chị. Tư vấn viên sẽ liên hệ "
                 f"qua số {lead['so_dien_thoai'] or 'anh/chị đã để lại'} trong thời gian sớm nhất.\n\n"
-                "Cảm ơn anh/chị đã quan tâm.\nD3 Studio")
+                + (f"Xem lại bộ sưu tập anh/chị đã gửi: {share_url(lead)}\n\n" if lead["nguon"] == "brief" else "")
+                + "Cảm ơn anh/chị đã quan tâm.\nD3 Studio")
         _send(lead["email"], "D3 Studio đã nhận yêu cầu tư vấn của anh/chị", body)
     except Exception:
         log.exception("lead %s: could not send the visitor confirmation", lead_id)

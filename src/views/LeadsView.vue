@@ -32,8 +32,25 @@
         <p v-if="contextLink(l)" class="small">
           Từ: <router-link :to="contextLink(l).to">{{ contextLink(l).label }}</router-link>
         </p>
-        <p v-else-if="l.ngu_canh?.trang" class="small">Từ trang {{ l.ngu_canh.trang }}</p>
+        <p v-else-if="l.ngu_canh?.trang && l.nguon !== 'brief'" class="small">Từ trang {{ l.ngu_canh.trang }}</p>
         <p v-if="l.nguon === 'chat' && l.request" class="small">{{ summary(l.request) }}</p>
+
+        <!-- brief: the project facts, what the chosen photos share, the photos with the visitor's notes -->
+        <template v-if="l.nguon === 'brief'">
+          <p class="small">{{ briefFacts(l.request) }}</p>
+          <p v-if="l.request?.tom_tat?.line" class="lead-brief-line">{{ l.request.tom_tat.line }}</p>
+          <ul v-if="l.bo_suu_tap?.length" class="lead-brief-photos">
+            <li v-for="s in l.bo_suu_tap" :key="s.id">
+              <router-link :to="'/khong-gian/' + s.id" :aria-label="'Không gian ' + s.id + ' — ' + spaceLabel(s.space_type)">
+                <img :src="imageUrl(s.relative_path)" alt="" loading="lazy" class="lead-thumb">
+              </router-link>
+              <span v-if="s.ghi_chu" class="small">“{{ s.ghi_chu }}”</span>
+            </li>
+          </ul>
+          <p v-if="l.ma_chia_se" class="small">
+            <router-link :to="'/bo-suu-tap/xem/' + l.ma_chia_se">Xem bộ sưu tập đã gửi</router-link>
+          </p>
+        </template>
 
         <details v-if="l.ho_so_hanh_vi" class="lead-profile">
           <summary class="small">Sở thích (khách đồng ý gửi): {{ l.tom_tat }}</summary>
@@ -64,7 +81,8 @@ import { projectBySlug } from '@/data/projects'
 const SOURCE_VI = { form: 'Form liên hệ', chat: 'Trợ lý chat', brief: 'Bộ sưu tập', estimate: 'Ước tính chi phí' }
 const INTENT_VI = { price: 'Hỏi giá', appointment: 'Xin hẹn', handoff: 'Chuyển kiến trúc sư' }
 const PROJECT_VI = { can_ho: 'Căn hộ', biet_thu: 'Biệt thự', nha_pho: 'Nhà phố', van_phong: 'Văn phòng', thuong_mai: 'Thương mại' }
-const FILTERS = [{ value: null, label: 'Tất cả' }, { value: 'form', label: 'Form liên hệ' }, { value: 'chat', label: 'Trợ lý chat' }]
+const FILTERS = [{ value: null, label: 'Tất cả' }, { value: 'form', label: 'Form liên hệ' }, { value: 'brief', label: 'Bộ sưu tập' },
+                 { value: 'chat', label: 'Trợ lý chat' }]
 const leads = ref([])
 const loading = ref(true)
 const error = ref('')
@@ -74,6 +92,15 @@ const nguon = ref(null)
 function summary(req = {}) {
   return [PROJECT_VI[req.project_type], req.space_type && spaceLabel(req.space_type), req.design_style,
           req.area_m2 && req.area_m2 + ' m²'].filter(Boolean).join(' · ') || 'Chưa nhận diện được yêu cầu cụ thể'
+}
+
+const HOUSE_VI = { can_ho: 'Căn hộ / Chung cư', nha_pho: 'Nhà phố', biet_thu: 'Biệt thự', van_phong: 'Văn phòng',
+                   thuong_mai: 'Thương mại / Showroom', khac: 'Khác' }
+const BUDGET_VI = { duoi_300tr: 'Dưới 300 triệu', '300tr_700tr': '300 – 700 triệu', '700tr_1500tr': '700 triệu – 1,5 tỷ',
+                    tren_1500tr: 'Trên 1,5 tỷ', chua_ro: 'Ngân sách chưa rõ' }
+function briefFacts(r = {}) {
+  return [HOUSE_VI[r.loai_nha], r.dien_tich_m2 && r.dien_tich_m2 + ' m²', BUDGET_VI[r.ngan_sach],
+          r.tom_tat?.n && r.tom_tat.n + ' ảnh'].filter(Boolean).join(' · ')
 }
 
 function contextLink(l) {
@@ -98,5 +125,8 @@ watch(nguon, load, { immediate: true })
 .lead-contact { display: flex; gap: 16px; flex-wrap: wrap }
 .lead-msg { margin: 8px 0 0; white-space: pre-line }
 .lead-profile { margin-top: 10px }
+.lead-brief-line { margin: 8px 0 0; color: var(--ink) }
+.lead-brief-photos { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 12px }
+.lead-brief-photos li { display: grid; gap: 4px; max-width: 140px }
 .lead-thumb { width: 84px; height: 64px; object-fit: cover; border-radius: var(--radius-sm); display: block }
 </style>

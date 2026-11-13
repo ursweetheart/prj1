@@ -9,10 +9,13 @@
           <span aria-hidden="true">←</span> {{ project.name }}<span v-if="photoNo" class="sv-dim"> · ảnh {{ photoNo }}</span>
         </router-link>
         <router-link v-else class="pv-nav-link glow-hover" to="/khong-gian"><span aria-hidden="true">←</span> Không gian</router-link>
+        <div class="sv-actions">
+          <SaveHeart :space-id="space.id" labelled />
         <div v-if="siblings.length > 1" class="sv-step">
           <router-link class="pv-nav-link glow-hover" :to="'/khong-gian/' + step(-1).id" aria-label="Không gian trước">‹</router-link>
           <span class="sv-dim num">{{ pos + 1 }} / {{ siblings.length }}</span>
           <router-link class="pv-nav-link glow-hover" :to="'/khong-gian/' + step(1).id" aria-label="Không gian tiếp">›</router-link>
+        </div>
         </div>
       </nav>
 
@@ -71,6 +74,7 @@ import { projectBySlug } from '@/data/projects'
 import { STAFF, getSimilar, getSpace, hasRole, hotspotsOf, imageUrl, spaceLabel, toCard, trackView } from '@/api'
 import { fileOf, loadProjectSpaces, projectPhotoHref, slugOf } from '@/lib/projectSpaces'
 import HotspotImage from '@/components/HotspotImage.vue'
+import SaveHeart from '@/components/SaveHeart.vue'
 import PaletteRow from '@/components/PaletteRow.vue'
 import SpaceTile from '@/components/SpaceTile.vue'
 
@@ -117,6 +121,7 @@ watch(() => route.params.id, async id => {
 </script>
 
 <style scoped>
+.sv-actions { display: flex; align-items: center; gap: clamp(12px, 2vw, 24px) }
 .sv-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: clamp(20px, 3vw, 36px) }
 .sv-step { display: inline-flex; align-items: center; gap: 14px }
 .sv-step .pv-nav-link { font-size: 22px; line-height: 1; padding: 2px 6px }

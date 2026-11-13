@@ -188,3 +188,26 @@ ALTER TABLE lead ALTER COLUMN nguon SET DEFAULT 'form';
 ALTER TABLE lead ALTER COLUMN nguon SET NOT NULL;
 ALTER TABLE lead DROP CONSTRAINT IF EXISTS lead_nguon_check;
 ALTER TABLE lead ADD CONSTRAINT lead_nguon_check CHECK (nguon IN ('form', 'chat', 'brief', 'estimate'));
+
+-- ── Saved collections and design briefs (change: saved-collection-brief; class-6 BoSuuTap, seq-13, seq-7) ─────
+-- 'dang_luu': the account's working collection (one per user). 'da_gui': the frozen copy a brief sent, with a share
+-- code; nguoi_dung_id is NULL when an anonymous visitor sent it. Anonymous working collections live in the browser.
+CREATE TABLE IF NOT EXISTS bo_suu_tap (
+  id serial PRIMARY KEY,
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE CASCADE,
+  loai text NOT NULL DEFAULT 'dang_luu' CHECK (loai IN ('dang_luu', 'da_gui')),
+  ma_chia_se text UNIQUE,
+  tom_tat jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((loai = 'da_gui') = (ma_chia_se IS NOT NULL)),
+  CHECK (loai = 'da_gui' OR nguoi_dung_id IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS bo_suu_tap_mot_dang_luu ON bo_suu_tap (nguoi_dung_id) WHERE loai = 'dang_luu';
+CREATE TABLE IF NOT EXISTS bo_suu_tap_anh (
+  bo_suu_tap_id int NOT NULL REFERENCES bo_suu_tap(id) ON DELETE CASCADE,
+  space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  ghi_chu text CHECK (length(ghi_chu) <= 300),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (bo_suu_tap_id, space_id)
+);
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS bo_suu_tap_id int REFERENCES bo_suu_tap(id) ON DELETE SET NULL;

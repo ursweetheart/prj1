@@ -16,6 +16,8 @@ const router = createRouter({
     },
     // Mục "Không gian": tìm không gian tương tự bằng AI (cần backend)
     { path: '/khong-gian', name: 'khong-gian-list', component: () => import('@/views/SpacesView.vue') },
+    { path: '/bo-suu-tap', name: 'bo-suu-tap', component: () => import('@/views/CollectionView.vue') },
+    { path: '/bo-suu-tap/xem/:ma', name: 'bo-suu-tap-xem', component: () => import('@/views/CollectionView.vue') },
     { path: '/cong-trinh', redirect: to => ({ path: '/khong-gian', hash: to.hash }) },
     {
       path: '/du-an/:slug',

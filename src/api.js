@@ -42,6 +42,7 @@ async function request(method, path, { params, body, form } = {}) {
   if (body) headers['Content-Type'] = 'application/json'
   const res = await fetch(API + path + qs, { method, headers, body: form || (body && JSON.stringify(body)) })
   if (res.status === 401 && session.token) setToken(null) // expired or revoked
+  if (res.status === 204) return null // DELETE and /events answer with no body
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
     const err = new Error(res.status === 404 ? 'Không tìm thấy dữ liệu này.'
@@ -202,6 +203,15 @@ export const listLeads = (params = {}) => get('/leads', params)
 /* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
 export const sendChat = (message, history, contact, sendViews = false) =>
   request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}), ...viewsConsent(sendViews) } })
+/* Saved collection (UC07) and design brief (UC08). The browser-or-account switch lives in lib/collection.js */
+export const getMyCollection = () => get('/collections/me')
+export const saveToCollection = (spaceId, ghiChu = null) =>
+  request('PUT', '/collections/me/items/' + spaceId, { body: { ghi_chu: ghiChu || null } })
+export const removeFromCollection = spaceId => request('DELETE', '/collections/me/items/' + spaceId)
+export const mergeCollection = items => request('POST', '/collections/me/merge', { body: { items } })
+export const getSharedCollection = code => get('/collections/shared/' + encodeURIComponent(code))
+export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join(','), limit: ids.length }) : Promise.resolve([])
+export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 export const createLead = body => request('POST', '/leads', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 function viewsConsent(ticked) { // the session id goes out only with both consents; the server checks again
   const id = ticked && consent.get() === 'yes' && visitId()
