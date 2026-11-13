@@ -3,6 +3,8 @@
 
   <ProjectGrid />
 
+  <SpaceSearchBand />
+
   <!-- CTA -->
   <section class="cta wrap" aria-labelledby="cta-title">
     <div class="cta-in">
@@ -26,4 +28,5 @@
 <script setup>
 import HeroSlideshow from '@/components/HeroSlideshow.vue'
 import ProjectGrid from '@/components/ProjectGrid.vue'
+import SpaceSearchBand from '@/components/SpaceSearchBand.vue'
 </script>

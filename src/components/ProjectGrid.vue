@@ -18,7 +18,7 @@
     <div class="projects-grid">
       <router-link v-for="p in shown" :key="p.slug" class="project" :to="'/du-an/' + p.slug">
         <div class="project-img">
-          <img :src="p.cover" alt="" loading="lazy" decoding="async">
+          <img :src="p.cover" :width="p.images[0].w" :height="p.images[0].h" alt="" loading="lazy" decoding="async">
         </div>
         <h3 class="project-name">{{ p.name }}</h3>
         <p class="project-meta">{{ LOAI_NAME[p.loai] }}<template v-if="p.year"> · {{ p.year }}</template></p>
@@ -30,6 +30,12 @@
     </div>
   </section>
 </template>
+
+<script>
+// Số dự án đã mở bằng "Xem thêm", nhớ theo trang + tab, để bấm Back từ trang dự án
+// thì lưới vẫn dài như cũ (và trình duyệt cuộn về đúng chỗ). F5 thì về lại 9.
+const shownCount = new Map()
+</script>
 
 <script setup>
 /* Lưới dự án trang chủ (theo bố cục elemental.com.vn): tab lọc theo nhóm công trình,
@@ -54,10 +60,12 @@ const fromHash = hash => {
 }
 
 const current = ref(fromHash(route.hash))
-const limit = ref(PAGE)
+const key = () => route.path + '|' + current.value
+const limit = ref(shownCount.get(key()) || PAGE)
 
 watch(() => route.hash, h => { current.value = fromHash(h) })
-watch(current, () => { limit.value = PAGE })
+watch(current, () => { limit.value = shownCount.get(key()) || PAGE })
+watch(limit, n => { shownCount.set(key(), n) })
 
 function select(id) {
   current.value = id
