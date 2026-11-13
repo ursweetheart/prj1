@@ -21,7 +21,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, estimate, leads, notify, taxonomy, vertex
+from pipeline import bo_suu_tap, discovery, estimate, leads, notify, taxonomy, trends, vertex
 from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -297,10 +297,17 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
 
 
 class Event(BaseModel):
-    loai: Literal["xem_khong_gian"]
+    loai: Literal["xem_khong_gian", "luu_anh"]       # a view, or a save with the heart (trend-dashboard)
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
+
+    @field_validator("phien_id")
+    @classmethod
+    def _not_demo(cls, v):  # 'demo-' is reserved for pipeline/demo_activity.py, so demo data stays identifiable
+        if v and v.startswith("demo-"):
+            raise ValueError("phien_id_du_tru")
+        return v
 
 
 @app.post("/events", status_code=204, dependencies=[Depends(limit("events", 120, 60))])
@@ -598,6 +605,17 @@ def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
     if not row:
         raise HTTPException(404, "no such price")
     return row
+
+
+# ── Trend dashboard (UC22; act-3, seq-18) ──────────────────────────────────────
+@app.get("/analytics/overview")
+def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS))):
+    """Interest score per taxonomy value, trends vs the 4-week average, totals, leads per week, top spaces.
+    Aggregates only: no session id, account or contact data."""
+    if days not in (7, 30, 90):  # a query string is text, so a Literal of ints would refuse "7"
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return trends.overview(c, days)
 
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────

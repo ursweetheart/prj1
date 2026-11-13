@@ -155,11 +155,13 @@ export function visitId() { // random per browser tab session, never tied to an 
     return id
   } catch { return null }
 }
-export function trackView(spaceId) {
+function track(loai, spaceId) {
   const yes = consent.get() === 'yes' && visitId()
-  request('POST', '/events', { body: { loai: 'xem_khong_gian', dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
-    .catch(() => {}) // 204 has no JSON body; errors are not the visitor's problem
+  request('POST', '/events', { body: { loai, dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
+    .catch(() => {}) // errors are not the visitor's problem
 }
+export const trackView = spaceId => track('xem_khong_gian', spaceId)
+export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)
@@ -212,6 +214,8 @@ export const mergeCollection = items => request('POST', '/collections/me/merge',
 export const getSharedCollection = code => get('/collections/shared/' + encodeURIComponent(code))
 export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join(','), limit: ids.length }) : Promise.resolve([])
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+/* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
+export const getOverview = (days = 30) => get('/analytics/overview', { days })
 /* Cost estimate (UC10) and its price table D8 */
 export const estimate = body => request('POST', '/estimates', { body })
 export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })

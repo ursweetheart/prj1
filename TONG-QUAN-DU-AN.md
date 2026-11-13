@@ -150,6 +150,7 @@ docker compose down                 # tắt; dữ liệu vẫn còn trong volume
 
 - `schema.sql` chỉ tự chạy khi volume DB còn trống. Khi code thêm bảng/cột mới (vd change `lead-intake`), áp lại vào DB đang có (mọi lệnh đều chạy lại được):
   `docker compose exec -T db psql -U d3 -d d3 < backend/schema.sql`
+- Dữ liệu MÔ PHỎNG cho bảng xu hướng (chỉ để demo): `docker compose exec backend python -m pipeline.demo_activity` tạo ~8 tuần hành vi giả (phiên `demo-…`, một phong cách tăng). Bảng điều khiển hiện cảnh báo "dữ liệu mô phỏng", phân loại tự động bỏ qua chúng. **Xóa trước khi dùng thật:** `docker compose exec backend python -m pipeline.demo_activity --remove`
 - Email báo lead mới cho sales: điền `D3_SMTP_*` và `D3_SALES_EMAIL` trong `backend/.env` (mẫu ở `.env.example`). Bỏ trống thì lead chỉ ghi log và hiện "mới" ở `/khach-hang`, demo vẫn chạy.
 - Cổng 8001 vẫn mở vì callback đăng nhập Google/Facebook đã đăng ký ở `localhost:8001`.
 - Cổng 8000 để trống cho việc khác (crawl).
@@ -253,7 +254,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-1-gan-nhan-tu-dong` | UC25, UC26 | Có |
 | `seq-2-tim-khong-gian-tuong-tu` | UC03 | Có |
 | `seq-3-hoi-dap-tro-ly-rag` | UC09 | Có |
-| `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần (1 loại sự kiện) |
+| `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần: xem và lưu ảnh (`luu_anh`); tính khi mở bảng điều khiển, chưa có tiến trình hằng đêm |
 | `seq-5-gui-form-lien-he` | UC11 | Một phần (qua chat) |
 | `seq-6-duyet-va-xuat-ban` | UC14 | Có |
 | `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Có (change `saved-collection-brief`) |
@@ -266,7 +267,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
 | `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Một phần (API, chưa có UI) |
 | `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Một phần (CLI, chưa có UI) |
-| `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Chưa |
+| `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Bảng điều khiển: có (change `trend-dashboard`). Báo cáo email hằng tuần: chưa |
 | `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Một phần (API, chưa có UI) |
 
 **Class** (`Class diagram/`): 7 file.
@@ -338,8 +339,8 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 
 | UC | Tên | Trạng thái | Đang ở đâu | Còn thiếu |
 | :-- | :-- | :-- | :-- | :-- |
-| UC21 | Ghi nhận hành vi | **Một phần** | `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
-| UC22 | Bảng điều khiển xu hướng | **Chưa** | | InterestScore theo tuần, Trend so với trung bình 4 tuần, cảnh báo (M12, `seq-18`, `act-3`) |
+| UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian` và `luu_anh` (tim lưu ảnh, change `trend-dashboard`); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
+| UC22 | Bảng điều khiển xu hướng | **Có (v1)** | `/quan-tri/xu-huong` (sales, KTS trưởng, admin): điểm quan tâm = xem×1 + lưu×3 + ảnh gửi brief×5 theo từng giá trị phân loại, tỉ lệ trong chiều, xu hướng 7 ngày so với trung bình 4 tuần (tăng ≥ 50%, giảm ≤ 50%, mới nổi, cần ≥ 5 tín hiệu), cảnh báo, tổng lượt xem/lưu/brief/lead, lead theo tuần, top không gian (`pipeline/trends.py`, `GET /analytics/overview`) | Chưa có tiến trình hằng đêm và kho phân tích (tính khi mở trang), chưa phân cụm phiên, chưa có thời gian xem / độ sâu cuộn |
 | UC23 | Gửi báo cáo định kỳ | **Chưa** | | bộ lập lịch + gửi email hằng tuần |
 | UC24 | Quản lý tài khoản, phân quyền | **Một phần** | đăng ký, đăng nhập email / Google / Facebook, JWT tự gia hạn, 6 role, `PATCH /users/{id}/role`, `set_role.py` | Chưa có trang quản trị người dùng, chưa khoá hay xoá tài khoản, chưa quên mật khẩu |
 | UC25 | Gợi ý nhãn tự động | **Xong** | `pipeline/processor.py` (Gemini + màu + YOLO), `relabel.py` | Chưa đo được NFR-10 vì mới có 9 ảnh được duyệt (cần ≥ 30) |
@@ -442,8 +443,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
 | 3.1 | Thêm các loại sự kiện còn thiếu (danh sách ở UC21), vẫn chỉ ghi khi có đồng ý | seq-4, act-7, dfd-2-5 | |
-| 3.2 | **InterestScore** theo tuần cho từng giá trị phân loại (lượt xem, thời gian xem, lượt lưu, lượt chia sẻ, lead phát sinh) và **Trend** so với trung bình 4 tuần; cảnh báo khi tăng > 30% | act-3, seq-18 | có bảng số liệu tuần |
-| 3.3 | **Dashboard xu hướng** cho ban lãnh đạo và TP kinh doanh (biểu đồ theo tuần, top phong cách, phân khúc mới) | seq-18, usecase-4 | |
+| 3.2 | ✓ **InterestScore** và **Trend** (change `trend-dashboard`): xem, lưu, ảnh gửi brief; so 7 ngày với trung bình 4 tuần | act-3, seq-4 | còn: thời gian xem, chia sẻ, lead phát sinh theo giá trị |
+| 3.3 | ✓ **Dashboard xu hướng** `/quan-tri/xu-huong` (v1) | seq-18, usecase-4 | còn: phân khúc mới (phân cụm phiên) |
 | 3.4 | **Báo cáo định kỳ** hằng tuần qua email (bộ lập lịch) | seq-18, usecase-5 | |
 | 3.5 | Hiệu quả từng dự án sau khi đăng (lượt xem, lưu, lead), cho KTS xem | BFD 5.4 | |
 
@@ -532,6 +533,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/estimates` | công khai, 30/phút | ước tính từ bảng đơn giá, không lưu gì |
 | POST | `/estimates/send` | công khai, chung giới hạn với `/leads` | nhận bản chi tiết qua email → lead nguồn `estimate` (máy chủ tự tính lại) |
 | GET / PUT | `/prices`, `/prices/{id}` | approver | bảng đơn giá D8; lưu một ô thì ô đó thành `d3` (không còn là giá mẫu) |
+| GET | `/analytics/overview?days=7\|30\|90` | sales, approver | điểm quan tâm, xu hướng, cảnh báo, tổng, lead theo tuần, top không gian; chỉ số tổng hợp, không có dữ liệu cá nhân |
 | GET | `/taxonomy` | công khai | các chiều và giá trị (cho bộ lọc) |
 | POST | `/taxonomy/{dim_id}/values` | lead_architect | thêm giá trị |
 | PATCH | `/taxonomy/values/{id}` | lead_architect | đổi tên giá trị |

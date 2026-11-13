@@ -241,3 +241,10 @@ FROM (VALUES  -- apartment base, million VND / m²
 CROSS JOIN (VALUES ('can_ho', 1.0), ('nha_pho', 1.1), ('biet_thu', 1.3), ('van_phong', 0.9), ('thuong_mai', 1.15))
   AS t(loai_nha, k)
 ON CONFLICT (loai_nha, hang_muc, goi) DO NOTHING;
+
+-- ── Trend dashboard (change: trend-dashboard; act-3, seq-4) ────────────────────────────────────────────────
+-- Saves join views as consented behaviour signals. 'demo-' sessions come only from pipeline/demo_activity.py.
+ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh'));
+CREATE INDEX IF NOT EXISTS su_kien_created_at ON su_kien (created_at);
+CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, created_at);

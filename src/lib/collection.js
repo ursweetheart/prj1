@@ -6,7 +6,7 @@
  *
  * Writes are optimistic: the heart reacts at once and is put back if the server refuses. */
 import { reactive, watch } from 'vue'
-import { getMyCollection, mergeCollection, removeFromCollection, saveToCollection, session } from '@/api'
+import { STAFF, getMyCollection, hasRole, mergeCollection, removeFromCollection, saveToCollection, session, trackSave } from '@/api'
 
 export const KEY = 'd3_bo_suu_tap'
 export const MAX = 60
@@ -49,6 +49,7 @@ export function add(id, ghiChu = '') {
   return persist(() => collection.items.push(item),
                  () => { collection.items = collection.items.filter(i => i.space_id !== id) }, // items holds a proxy, not `item`
                  () => saveToCollection(id, ghiChu))
+    .then(ok => { if (ok && !hasRole(STAFF)) trackSave(id); return ok }) // staff saving is not demand
 }
 
 export function remove(id) {

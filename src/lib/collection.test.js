@@ -15,7 +15,10 @@ async function load(stored) {
     getMyCollection: vi.fn(async () => [{ space_id: 9, ghi_chu: 'từ máy khác' }]),
     mergeCollection: vi.fn(async items => items.map(i => ({ ...i }))),
     saveToCollection: vi.fn(async () => []),
-    removeFromCollection: vi.fn(async () => null)
+    removeFromCollection: vi.fn(async () => null),
+    trackSave: vi.fn(),
+    hasRole: vi.fn(() => false),
+    STAFF: ['architect', 'lead_architect', 'admin']
   }
   vi.doMock('@/api', () => api)
   const m = await import('./collection.js')
@@ -49,6 +52,27 @@ describe('without an account', () => {
     expect(m.count()).toBe(0)
     await m.add(5)
     expect(JSON.parse(mem.d3_bo_suu_tap)).toEqual([{ space_id: 5, ghi_chu: '' }])
+  })
+})
+
+describe('save events (trend-dashboard)', () => {
+  it('a successful add sends one save event, a remove sends none', async () => {
+    const m = await load()
+    await m.add(21)
+    expect(api.trackSave).toHaveBeenCalledTimes(1)
+    expect(api.trackSave).toHaveBeenCalledWith(21)
+    await m.remove(21)
+    expect(api.trackSave).toHaveBeenCalledTimes(1)
+  })
+
+  it('no event when the add fails or the user is staff', async () => {
+    const m = await load(Array.from({ length: 60 }, (_, i) => ({ space_id: i + 1, ghi_chu: '' })))
+    await m.add(99)
+    expect(api.trackSave).not.toHaveBeenCalled()
+    const m2 = await load()
+    api.hasRole.mockReturnValue(true)
+    await m2.add(5)
+    expect(api.trackSave).not.toHaveBeenCalled()
   })
 })
 

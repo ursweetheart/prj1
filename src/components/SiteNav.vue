@@ -65,7 +65,8 @@ const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },
   hasRole(APPROVERS) && { to: '/quan-tri/phan-loai', label: 'Phân loại' },
   hasRole(APPROVERS) && { to: '/quan-tri/don-gia', label: 'Đơn giá' },
-  hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' }
+  hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' },
+  hasRole(SALES) && { to: '/quan-tri/xu-huong', label: 'Xu hướng' }
 ].filter(Boolean))
 
 function signOut() { logout(); router.push('/') }
