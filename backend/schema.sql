@@ -170,3 +170,81 @@ ALTER TABLE ung_vien_phan_loai DROP CONSTRAINT IF EXISTS ung_vien_phan_loai_tran
 ALTER TABLE ung_vien_phan_loai ADD CONSTRAINT ung_vien_phan_loai_trang_thai_check
   CHECK (trang_thai IN ('cho_bang_chung', 'cho_duyet', 'chap_nhan', 'tu_choi'));
 ALTER TABLE ung_vien_phan_loai ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+-- ── Lead intake (change: lead-intake) — one table for every source (dfd-2-4, class-6 KhachTiemNang) ──────────
+-- nguon: form | chat | brief | estimate. ho_so_hanh_vi = tom_tat_so_thich: a snapshot of the consented session's views,
+-- taken at intake and never recomputed. phien_id is kept only when the visitor also ticked "send what I viewed".
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS nguon text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS ho_ten text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS so_dien_thoai text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS loi_nhan text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS ngu_canh jsonb;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS ho_so_hanh_vi jsonb;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS phien_id text REFERENCES phien_truy_cap(id) ON DELETE SET NULL;
+ALTER TABLE lead ALTER COLUMN intent DROP NOT NULL;     -- only chat leads have an intent
+UPDATE lead SET nguon = 'chat' WHERE nguon IS NULL;     -- every lead before this change came from the chat
+ALTER TABLE lead ALTER COLUMN nguon SET DEFAULT 'form';
+ALTER TABLE lead ALTER COLUMN nguon SET NOT NULL;
+ALTER TABLE lead DROP CONSTRAINT IF EXISTS lead_nguon_check;
+ALTER TABLE lead ADD CONSTRAINT lead_nguon_check CHECK (nguon IN ('form', 'chat', 'brief', 'estimate'));
+
+-- ── Saved collections and design briefs (change: saved-collection-brief; class-6 BoSuuTap, seq-13, seq-7) ─────
+-- 'dang_luu': the account's working collection (one per user). 'da_gui': the frozen copy a brief sent, with a share
+-- code; nguoi_dung_id is NULL when an anonymous visitor sent it. Anonymous working collections live in the browser.
+CREATE TABLE IF NOT EXISTS bo_suu_tap (
+  id serial PRIMARY KEY,
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE CASCADE,
+  loai text NOT NULL DEFAULT 'dang_luu' CHECK (loai IN ('dang_luu', 'da_gui')),
+  ma_chia_se text UNIQUE,
+  tom_tat jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((loai = 'da_gui') = (ma_chia_se IS NOT NULL)),
+  CHECK (loai = 'da_gui' OR nguoi_dung_id IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS bo_suu_tap_mot_dang_luu ON bo_suu_tap (nguoi_dung_id) WHERE loai = 'dang_luu';
+CREATE TABLE IF NOT EXISTS bo_suu_tap_anh (
+  bo_suu_tap_id int NOT NULL REFERENCES bo_suu_tap(id) ON DELETE CASCADE,
+  space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  ghi_chu text CHECK (length(ghi_chu) <= 300),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (bo_suu_tap_id, space_id)
+);
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS bo_suu_tap_id int REFERENCES bo_suu_tap(id) ON DELETE SET NULL;
+
+-- ── Price table D8 for the cost estimate (change: cost-estimate; seq-9, act-6) ─────────────────────────────────
+-- One VND/m² range per building type x cost item x package. D3 has no price list yet: the seed below is SAMPLE data
+-- (nguon='mau', shown as "Đơn giá mẫu" everywhere). Staff replace it at /quan-tri/don-gia, which sets nguon='d3';
+-- ON CONFLICT DO NOTHING means re-applying this file never overwrites an edited row.
+CREATE TABLE IF NOT EXISTS don_gia (
+  id serial PRIMARY KEY,
+  loai_nha text NOT NULL CHECK (loai_nha IN ('can_ho', 'nha_pho', 'biet_thu', 'van_phong', 'thuong_mai')),
+  hang_muc text NOT NULL CHECK (hang_muc IN ('thiet_ke', 'phan_tho', 'hoan_thien', 'noi_that')),
+  goi text NOT NULL CHECK (goi IN ('co_ban', 'tieu_chuan', 'cao_cap')),
+  gia_min bigint NOT NULL,
+  gia_max bigint NOT NULL,
+  nguon text NOT NULL DEFAULT 'mau' CHECK (nguon IN ('mau', 'd3')),
+  ghi_chu text,
+  cap_nhat_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  cap_nhat_luc timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (loai_nha, hang_muc, goi),
+  CHECK (0 <= gia_min AND gia_min <= gia_max)
+);
+INSERT INTO don_gia (loai_nha, hang_muc, goi, gia_min, gia_max, nguon)
+SELECT t.loai_nha, b.hang_muc, b.goi, round(b.lo * t.k * 1000000), round(b.hi * t.k * 1000000), 'mau'
+FROM (VALUES  -- apartment base, million VND / m²
+  ('thiet_ke',   'co_ban', 0.15, 0.2), ('thiet_ke',   'tieu_chuan', 0.2, 0.3), ('thiet_ke',   'cao_cap', 0.3, 0.45),
+  ('phan_tho',   'co_ban', 0.8,  1.2), ('phan_tho',   'tieu_chuan', 1.2, 1.8), ('phan_tho',   'cao_cap', 1.8, 2.5),
+  ('hoan_thien', 'co_ban', 1.5,  2.2), ('hoan_thien', 'tieu_chuan', 2.2, 3.5), ('hoan_thien', 'cao_cap', 3.5, 5.5),
+  ('noi_that',   'co_ban', 2.0,  3.0), ('noi_that',   'tieu_chuan', 3.0, 5.0), ('noi_that',   'cao_cap', 5.0, 9.0)
+) AS b(hang_muc, goi, lo, hi)
+CROSS JOIN (VALUES ('can_ho', 1.0), ('nha_pho', 1.1), ('biet_thu', 1.3), ('van_phong', 0.9), ('thuong_mai', 1.15))
+  AS t(loai_nha, k)
+ON CONFLICT (loai_nha, hang_muc, goi) DO NOTHING;
+
+-- ── Trend dashboard (change: trend-dashboard; act-3, seq-4) ────────────────────────────────────────────────
+-- Saves join views as consented behaviour signals. 'demo-' sessions come only from pipeline/demo_activity.py.
+ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh'));
+CREATE INDEX IF NOT EXISTS su_kien_created_at ON su_kien (created_at);
+CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, created_at);

@@ -142,7 +142,8 @@ def _space_facts(ids: set) -> dict:
         pub_ex, pub_all = c.execute("SELECT count(*) FILTER (WHERE id = ANY(%s)), count(*) FROM space "
                                     "WHERE review_status = 'published'", (list(ids),)).fetchone()
         on, total = c.execute("SELECT count(*) FILTER (WHERE space_id = ANY(%s)), count(*) FROM su_kien "
-                              "WHERE created_at > now() - interval '90 days'", (list(ids),)).fetchone()
+                              "WHERE created_at > now() - interval '90 days' AND loai = 'xem_khong_gian' "
+                              "AND phien_id NOT LIKE 'demo-%%'", (list(ids),)).fetchone()  # real views only
     lift = (on / total) / (pub_ex / pub_all) if total and pub_ex else 0.0
     return {"truc_giao": not (n >= 2 and (types == 1 or styles == 1)), "do_nang_xem": round(lift, 3)}
 

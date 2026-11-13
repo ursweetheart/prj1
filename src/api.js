@@ -42,10 +42,14 @@ async function request(method, path, { params, body, form } = {}) {
   if (body) headers['Content-Type'] = 'application/json'
   const res = await fetch(API + path + qs, { method, headers, body: form || (body && JSON.stringify(body)) })
   if (res.status === 401 && session.token) setToken(null) // expired or revoked
+  if (res.status === 204) return null // DELETE and /events answer with no body
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
-    if (res.status === 404) throw new Error('Không tìm thấy dữ liệu này.')
-    throw new Error(typeof detail === 'string' ? detail : 'Máy chủ không phản hồi (' + res.status + ').')
+    const err = new Error(res.status === 404 ? 'Không tìm thấy dữ liệu này.'
+      : typeof detail === 'string' ? detail : 'Máy chủ không phản hồi (' + res.status + ').')
+    err.status = res.status
+    err.detail = detail // 422: [{loc, msg}], so a form can put each error under its field
+    throw err
   }
   return res.json()
 }
@@ -144,18 +148,20 @@ export const consent = {
   get() { try { return localStorage.getItem(CONSENT_KEY) } catch { return null } },
   set(v) { try { localStorage.setItem(CONSENT_KEY, v) } catch { /* private mode: ask again next visit */ } }
 }
-function visitId() { // random per browser tab session, never tied to an account
+export function visitId() { // random per browser tab session, never tied to an account
   try {
     let id = sessionStorage.getItem('d3_phien')
     if (!id) sessionStorage.setItem('d3_phien', id = crypto.randomUUID().replaceAll('-', ''))
     return id
   } catch { return null }
 }
-export function trackView(spaceId) {
+function track(loai, spaceId) {
   const yes = consent.get() === 'yes' && visitId()
-  request('POST', '/events', { body: { loai: 'xem_khong_gian', dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
-    .catch(() => {}) // 204 has no JSON body; errors are not the visitor's problem
+  request('POST', '/events', { body: { loai, dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
+    .catch(() => {}) // errors are not the visitor's problem
 }
+export const trackView = spaceId => track('xem_khong_gian', spaceId)
+export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)
@@ -196,8 +202,30 @@ export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o 
   label: o.label_vi || o.label, kind: o.service || 'Món đồ trong ảnh', price: null
 }))
 export const listLeads = (params = {}) => get('/leads', params)
-export const sendChat = (message, history, contact) =>
-  request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}) } })
+/* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
+export const sendChat = (message, history, contact, sendViews = false) =>
+  request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}), ...viewsConsent(sendViews) } })
+/* Saved collection (UC07) and design brief (UC08). The browser-or-account switch lives in lib/collection.js */
+export const getMyCollection = () => get('/collections/me')
+export const saveToCollection = (spaceId, ghiChu = null) =>
+  request('PUT', '/collections/me/items/' + spaceId, { body: { ghi_chu: ghiChu || null } })
+export const removeFromCollection = spaceId => request('DELETE', '/collections/me/items/' + spaceId)
+export const mergeCollection = items => request('POST', '/collections/me/merge', { body: { items } })
+export const getSharedCollection = code => get('/collections/shared/' + encodeURIComponent(code))
+export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join(','), limit: ids.length }) : Promise.resolve([])
+export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+/* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
+export const getOverview = (days = 30) => get('/analytics/overview', { days })
+/* Cost estimate (UC10) and its price table D8 */
+export const estimate = body => request('POST', '/estimates', { body })
+export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+export const getPrices = () => get('/prices')
+export const savePrice = (id, body) => request('PUT', '/prices/' + id, { body })
+export const createLead = body => request('POST', '/leads', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+function viewsConsent(ticked) { // the session id goes out only with both consents; the server checks again
+  const id = ticked && consent.get() === 'yes' && visitId()
+  return id ? { phien_id: id, gui_ho_so: true } : { gui_ho_so: false }
+}
 /* Every published space, for the portfolio grid; the API caps one page at 200, so read pages until a short one */
 export async function listPublished() {
   const all = []

@@ -22,6 +22,11 @@
       </div>
     </section>
 
+    <!-- seq-5: a request from here carries this project, so the consultant knows what the visitor looked at -->
+    <div class="pv-contact">
+      <ContactForm :key="project.slug" :project="project.slug" title="Tư vấn về dự án này" />
+    </div>
+
     <nav class="pv-nav" aria-label="Dự án khác">
       <router-link class="pv-nav-link glow-hover" :to="'/du-an/' + prev.slug">
         <span aria-hidden="true">←</span> <span class="pv-nav-label">Dự án trước</span><span class="pv-nav-name">{{ prev.name }}</span>
@@ -55,6 +60,7 @@
  * theo tỉ lệ gốc (kiểu elemental.com.vn); bấm ảnh để xem toàn màn hình. */
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ContactForm from '@/components/ContactForm.vue'
 import Lightbox from '@/components/Lightbox.vue'
 import { LOAI_NAME, PROJECTS_LIST, projectBySlug } from '@/data/projects'
 import { galleryRows } from '@/lib/galleryRows'

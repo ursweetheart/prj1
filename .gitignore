@@ -31,3 +31,6 @@ prefab-segment-*.json
 .env
 .env.*
 !.env.example
+
+# diagram export from Drive (zip + images, ~320 MB) — local reference only
+docs/diagrams/
