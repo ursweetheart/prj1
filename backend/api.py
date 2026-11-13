@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import psycopg
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -17,10 +17,10 @@ from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
 from psycopg.errors import UniqueViolation
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import auth
-from pipeline import discovery, taxonomy, vertex
+from pipeline import discovery, leads, notify, taxonomy, vertex
 from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -305,26 +305,105 @@ def track(body: Event):
                   {"p": body.phien_id, "l": body.loai, "s": body.space_id})
 
 
+PHIEN = r"^[A-Za-z0-9_-]{16,64}$"  # the random browser session token of /events
+
+
 class Chat(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     history: list[dict] = Field(default_factory=list, max_length=40)  # earlier turns, kept by the client
     contact: Optional[str] = Field(default=None, max_length=200)
+    phien_id: Optional[str] = Field(default=None, pattern=PHIEN)
+    gui_ho_so: bool = False                          # "gửi kèm những không gian tôi đã xem", ticked in the chat
 
 
 @app.post("/chat", dependencies=[Depends(limit("chat", 20, 60))])
-def chat(body: Chat):
+def chat(body: Chat, tasks: BackgroundTasks):
     """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
-    return respond(body.message, body.history, body.contact)
+    out = respond(body.message, body.history, body.contact, body.phien_id, body.gui_ho_so)
+    if out.get("lead_id"):
+        tasks.add_task(notify.notify_new_lead, out["lead_id"])
+    return out
+
+
+# ── Lead intake (UC11, seq-5, dfd-2-4) ─────────────────────────────────────────
+PHONE_SEPARATORS = re.compile(r"[\s.\-()]")
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+MIN_FILL_MS = 3000  # a person needs longer than this to type a name and a phone number
+
+
+class LeadIn(BaseModel):
+    ho_ten: str = Field(max_length=100)
+    so_dien_thoai: str = Field(max_length=30)
+    email: Optional[str] = Field(default=None, max_length=200)
+    loi_nhan: Optional[str] = Field(default=None, max_length=1000)
+    trang: Optional[str] = Field(default=None, max_length=200, pattern=r"^/")   # page the form was on
+    du_an: Optional[str] = Field(default=None, max_length=100, pattern=r"^[a-z0-9-]+$")  # project slug
+    space_id: Optional[int] = None
+    phien_id: Optional[str] = Field(default=None, pattern=PHIEN)
+    gui_ho_so: bool = False
+    website: Optional[str] = None                    # honeypot: hidden from people, filled by naive bots
+    t_ms: Optional[int] = None                       # ms between showing the form and sending it
+
+    @field_validator("ho_ten")
+    @classmethod
+    def _name(cls, v):
+        if not v.strip():
+            raise ValueError("ho_ten_trong")
+        return v.strip()
+
+    @field_validator("so_dien_thoai")
+    @classmethod
+    def _phone(cls, v):  # Vietnamese mobile/landline: 0 or +84 then 9 digits; spaces, dots, dashes ignored
+        v = PHONE_SEPARATORS.sub("", v)
+        v = "0" + v[3:] if v.startswith("+84") else v
+        if not re.fullmatch(r"0\d{9}", v):
+            raise ValueError("so_dien_thoai_sai")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v):
+        v = (v or "").strip()
+        if v and not EMAIL.match(v):
+            raise ValueError("email_sai")
+        return v or None
+
+    @field_validator("loi_nhan")
+    @classmethod
+    def _message(cls, v):
+        return (v or "").strip() or None
+
+
+@app.post("/leads", status_code=201, dependencies=[Depends(limit("leads", 5, 600))])
+def post_lead(body: LeadIn, tasks: BackgroundTasks):
+    """Public contact form. Bots (honeypot filled, or sent faster than a person can type) get the same answer and
+    nothing is stored or sent, so they learn nothing."""
+    ok = {"message": "Đã nhận yêu cầu, tư vấn viên sẽ gọi lại số " + body.so_dien_thoai}
+    if body.website or (body.t_ms is not None and body.t_ms < MIN_FILL_MS):
+        return {"lead_id": None, **ok}
+    context = {k: v for k, v in {"trang": body.trang, "du_an": body.du_an, "space_id": body.space_id}.items() if v}
+    lead_id = leads.create_lead("form", ho_ten=body.ho_ten, so_dien_thoai=body.so_dien_thoai, email=body.email,
+                                loi_nhan=body.loi_nhan, ngu_canh=context or None, phien_id=body.phien_id,
+                                gui_ho_so=body.gui_ho_so)
+    tasks.add_task(notify.notify_new_lead, lead_id)
+    tasks.add_task(notify.confirm_to_visitor, lead_id)
+    return {"lead_id": lead_id, **ok}
 
 
 @app.get("/leads")
-def list_leads(status: Optional[str] = None, limit: int = 50, offset: int = 0, user=Depends(require("sales", *APPROVERS))):
-    """Leads created by the chat (price / appointment / handoff), newest first."""
+def list_leads(status: Optional[str] = None, nguon: Optional[Literal[leads.SOURCES]] = None, limit: int = 50,
+               offset: int = 0, user=Depends(require("sales", *APPROVERS))):
+    """Leads from every source (form, chat, later brief / estimate), newest first."""
     with _db() as c:
-        return c.execute(
-            "SELECT id, intent, request, conversation, contact, status, created_at FROM lead "
-            "WHERE (%(s)s::text IS NULL OR status=%(s)s) ORDER BY id DESC LIMIT %(l)s OFFSET %(o)s",
-            {"s": status, "l": limit, "o": offset}).fetchall()
+        rows = c.execute(
+            "SELECT id, nguon, intent, ho_ten, so_dien_thoai, email, loi_nhan, ngu_canh, ho_so_hanh_vi, request, "
+            "conversation, contact, status, created_at FROM lead "
+            "WHERE (%(s)s::text IS NULL OR status=%(s)s) AND (%(n)s::text IS NULL OR nguon=%(n)s) "
+            "ORDER BY id DESC LIMIT %(l)s OFFSET %(o)s",
+            {"s": status, "n": nguon, "l": limit, "o": offset}).fetchall()
+    for r in rows:
+        r["tom_tat"] = leads.profile_summary(r["ho_so_hanh_vi"])
+    return rows
 
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────

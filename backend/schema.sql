@@ -170,3 +170,21 @@ ALTER TABLE ung_vien_phan_loai DROP CONSTRAINT IF EXISTS ung_vien_phan_loai_tran
 ALTER TABLE ung_vien_phan_loai ADD CONSTRAINT ung_vien_phan_loai_trang_thai_check
   CHECK (trang_thai IN ('cho_bang_chung', 'cho_duyet', 'chap_nhan', 'tu_choi'));
 ALTER TABLE ung_vien_phan_loai ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+-- ── Lead intake (change: lead-intake) — one table for every source (dfd-2-4, class-6 KhachTiemNang) ──────────
+-- nguon: form | chat | brief | estimate. ho_so_hanh_vi = tom_tat_so_thich: a snapshot of the consented session's views,
+-- taken at intake and never recomputed. phien_id is kept only when the visitor also ticked "send what I viewed".
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS nguon text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS ho_ten text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS so_dien_thoai text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS loi_nhan text;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS ngu_canh jsonb;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS ho_so_hanh_vi jsonb;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS phien_id text REFERENCES phien_truy_cap(id) ON DELETE SET NULL;
+ALTER TABLE lead ALTER COLUMN intent DROP NOT NULL;     -- only chat leads have an intent
+UPDATE lead SET nguon = 'chat' WHERE nguon IS NULL;     -- every lead before this change came from the chat
+ALTER TABLE lead ALTER COLUMN nguon SET DEFAULT 'form';
+ALTER TABLE lead ALTER COLUMN nguon SET NOT NULL;
+ALTER TABLE lead DROP CONSTRAINT IF EXISTS lead_nguon_check;
+ALTER TABLE lead ADD CONSTRAINT lead_nguon_check CHECK (nguon IN ('form', 'chat', 'brief', 'estimate'));

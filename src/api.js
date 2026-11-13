@@ -44,8 +44,11 @@ async function request(method, path, { params, body, form } = {}) {
   if (res.status === 401 && session.token) setToken(null) // expired or revoked
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
-    if (res.status === 404) throw new Error('Không tìm thấy dữ liệu này.')
-    throw new Error(typeof detail === 'string' ? detail : 'Máy chủ không phản hồi (' + res.status + ').')
+    const err = new Error(res.status === 404 ? 'Không tìm thấy dữ liệu này.'
+      : typeof detail === 'string' ? detail : 'Máy chủ không phản hồi (' + res.status + ').')
+    err.status = res.status
+    err.detail = detail // 422: [{loc, msg}], so a form can put each error under its field
+    throw err
   }
   return res.json()
 }
@@ -143,7 +146,7 @@ export const consent = {
   get() { try { return localStorage.getItem(CONSENT_KEY) } catch { return null } },
   set(v) { try { localStorage.setItem(CONSENT_KEY, v) } catch { /* private mode: ask again next visit */ } }
 }
-function visitId() { // random per browser tab session, never tied to an account
+export function visitId() { // random per browser tab session, never tied to an account
   try {
     let id = sessionStorage.getItem('d3_phien')
     if (!id) sessionStorage.setItem('d3_phien', id = crypto.randomUUID().replaceAll('-', ''))
@@ -195,7 +198,13 @@ export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o 
   label: o.label_vi || o.label, kind: o.service || 'Món đồ trong ảnh', price: null
 }))
 export const listLeads = (params = {}) => get('/leads', params)
-export const sendChat = (message, history, contact) =>
-  request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}) } })
+/* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
+export const sendChat = (message, history, contact, sendViews = false) =>
+  request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}), ...viewsConsent(sendViews) } })
+export const createLead = body => request('POST', '/leads', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
+function viewsConsent(ticked) { // the session id goes out only with both consents; the server checks again
+  const id = ticked && consent.get() === 'yes' && visitId()
+  return id ? { phien_id: id, gui_ho_so: true } : { gui_ho_so: false }
+}
 /* Every published space, for the portfolio grid (the API caps one page at 200) */
 export const listPublished = () => get('/spaces', { review_status: 'published', limit: 200 })

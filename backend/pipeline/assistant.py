@@ -12,9 +12,8 @@ import unicodedata
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
-from psycopg.types.json import Jsonb
 
-from pipeline import taxonomy, vertex
+from pipeline import leads, taxonomy, vertex
 from pipeline.search import _embedder, by_text
 from pipeline.store import DSN
 
@@ -181,14 +180,8 @@ def _log_gap(question: str, best: float | None):
                      (question, unmapped_terms(question), best))
 
 
-def _create_lead(intent, request, conversation, contact):
-    with psycopg.connect(DSN) as conn:
-        return conn.execute(
-            "INSERT INTO lead (intent, request, conversation, contact) VALUES (%s,%s,%s,%s) RETURNING id",
-            (intent, Jsonb(request), Jsonb(conversation), contact)).fetchone()[0]
-
-
-def respond(message: str, history: list | None = None, contact: str | None = None) -> dict:
+def respond(message: str, history: list | None = None, contact: str | None = None,
+            phien_id: str | None = None, gui_ho_so: bool = False) -> dict:
     req = parse_request(message)
     hits = retrieve(message)
     known = bool(hits) and hits[0][4] >= MIN_SCORE
@@ -230,7 +223,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
         _log_gap(message, best)  # a discovery signal, kept besides the handoff lead
     intent = "handoff" if not answered else "appointment" if req["appointment_intent"] else "price" if req["price_intent"] else None
     if intent:
-        out["lead_id"] = _create_lead(intent, req, conversation, contact)
+        out["lead_id"] = leads.create_lead("chat", intent=intent, request=req, conversation=conversation, contact=contact,
+                                           phien_id=phien_id, gui_ho_so=gui_ho_so)
     return out
 
 

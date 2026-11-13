@@ -25,6 +25,11 @@
       <form class="chat-form" @submit.prevent="send">
         <input v-model.trim="contact" type="text" maxlength="200" placeholder="Số điện thoại hoặc email (không bắt buộc)"
                aria-label="Liên hệ">
+        <!-- lead-intake: second opt-in, shown only after the visitor accepted the consent banner -->
+        <label v-if="consented" class="chat-check small">
+          <input v-model="sendViews" type="checkbox">
+          <span>Gửi kèm những không gian tôi đã xem cho kiến trúc sư</span>
+        </label>
         <div class="row g6">
           <input v-model="message" type="text" maxlength="1000" placeholder="Nhập câu hỏi…" aria-label="Câu hỏi" required style="flex:1">
           <button class="btn btn-primary" :disabled="busy">Gửi</button>
@@ -42,8 +47,8 @@
 </template>
 
 <script setup>
-import { nextTick, ref } from 'vue'
-import { imageUrl, sendChat } from '@/api'
+import { nextTick, ref, watch } from 'vue'
+import { consent, imageUrl, sendChat } from '@/api'
 
 const open = ref(false)
 const turns = ref([])
@@ -52,6 +57,9 @@ const contact = ref('')
 const busy = ref(false)
 const error = ref('')
 const log = ref(null)
+const sendViews = ref(false)
+const consented = ref(false)
+watch(open, o => { if (o) consented.value = consent.get() === 'yes' }) // the banner may be answered meanwhile
 
 async function send() {
   const text = message.value
@@ -60,7 +68,7 @@ async function send() {
   const history = turns.value.map(({ role, content }) => ({ role, content }))
   turns.value.push({ role: 'user', content: text })
   try {
-    const r = await sendChat(text, history, contact.value)
+    const r = await sendChat(text, history, contact.value, consented.value && sendViews.value)
     turns.value.push({ role: 'assistant', content: r.answer, images: r.images, sources: r.sources })
   } catch (e) { error.value = e.message } finally {
     busy.value = false
@@ -70,6 +78,8 @@ async function send() {
 </script>
 
 <style scoped>
+.chat-check { display: flex; gap: 8px; align-items: flex-start; cursor: pointer }
+.chat-check input { margin-top: 2px; flex: none; accent-color: var(--accent) }
 .chat { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; color: var(--ink) }
 .chat-panel { width: min(380px, calc(100vw - 32px)); max-height: min(560px, 80vh); display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--elev-raised) }
