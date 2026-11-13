@@ -33,7 +33,14 @@
     </nav>
 
     <Lightbox v-if="open !== null" :items="lightboxItems" :index="open"
-              @close="open = null" @go="d => open = (open + d + images.length) % images.length" />
+              @close="open = null" @go="d => open = (open + d + images.length) % images.length">
+      <!-- ảnh đã có không gian AI được đăng: chỉ một link nhỏ, ảnh vẫn sạch -->
+      <template v-if="currentSpace" #bar>
+        <router-link class="lb-space glow-hover" :to="'/khong-gian/' + currentSpace.id">
+          Chi tiết không gian <span aria-hidden="true">→</span>
+        </router-link>
+      </template>
+    </Lightbox>
   </article>
 
   <section v-else class="pv wrap pv-missing">
@@ -47,10 +54,11 @@
 /* Trang một dự án: hàng tiêu đề (loại công trình, tên, mô tả khi có) rồi toàn bộ ảnh dự án
  * theo tỉ lệ gốc (kiểu elemental.com.vn); bấm ảnh để xem toàn màn hình. */
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Lightbox from '@/components/Lightbox.vue'
 import { LOAI_NAME, PROJECTS_LIST, projectBySlug } from '@/data/projects'
 import { galleryRows } from '@/lib/galleryRows'
+import { loadProjectSpaces } from '@/lib/projectSpaces'
 
 const route = useRoute()
 const project = computed(() => projectBySlug(route.params.slug))
@@ -61,12 +69,31 @@ const lightboxItems = computed(() => images.value.map(im => ({ img: im.src, alt:
 
 const open = ref(null) // ảnh đang xem toàn màn hình (chỉ số) hoặc null
 
+/* ?anh=<file>: mở sẵn Lightbox ở ảnh đó (link từ trang không gian); đi / đóng thì cập nhật URL, không thêm lịch sử */
+const router = useRouter()
+const indexOfFile = file => images.value.findIndex(im => im.file === file)
+watch(() => [route.params.slug, route.query.anh], ([, anh]) => {
+  const i = anh ? indexOfFile(anh) : -1
+  open.value = i >= 0 ? i : null
+}, { immediate: true })
+watch(open, i => {
+  const anh = i === null ? undefined : images.value[i]?.file
+  if (anh !== route.query.anh) router.replace({ query: { ...route.query, anh } })
+})
+
+/* Không gian AI đã đăng của dự án (Map tên file -> không gian); null khi không có backend */
+const spaces = ref(null)
+watch(() => route.params.slug, async slug => {
+  spaces.value = null
+  const map = project.value ? await loadProjectSpaces(slug) : null
+  if (route.params.slug === slug) spaces.value = map
+}, { immediate: true })
+const currentSpace = computed(() => (open.value !== null && spaces.value?.get(images.value[open.value]?.file)) || null)
+
 const index = computed(() => PROJECTS_LIST.findIndex(p => p.slug === route.params.slug))
 const wrap = i => (i + PROJECTS_LIST.length) % PROJECTS_LIST.length
 const prev = computed(() => PROJECTS_LIST[wrap(index.value - 1)])
 const next = computed(() => PROJECTS_LIST[wrap(index.value + 1)])
-
-watch(() => route.params.slug, () => { open.value = null })
 
 const baseTitle = document.title
 watchEffect(() => {

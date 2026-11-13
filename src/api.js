@@ -107,6 +107,7 @@ export const spaceLabel = type => SPACE_VI[type] || 'Không gian'
 export const toCard = r => ({
   id: 'ai-' + r.id,
   apiId: r.id,
+  path: r.relative_path,
   projectName: r.relative_path.split('/')[0].replace(/_/g, ' '),
   space: spaceLabel(r.space_type),
   img: imageUrl(r.relative_path),
@@ -197,5 +198,14 @@ export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o 
 export const listLeads = (params = {}) => get('/leads', params)
 export const sendChat = (message, history, contact) =>
   request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}) } })
-/* Every published space, for the portfolio grid (the API caps one page at 200) */
-export const listPublished = () => get('/spaces', { review_status: 'published', limit: 200 })
+/* Every published space, for the portfolio grid; the API caps one page at 200, so read pages until a short one */
+export async function listPublished() {
+  const all = []
+  for (let offset = 0; ; offset += 200) {
+    const page = await get('/spaces', { review_status: 'published', limit: 200, offset })
+    all.push(...page)
+    if (page.length < 200) return all
+  }
+}
+/* Published spaces of one project folder (slug with '-' -> '_'), ordered by file name */
+export const getProjectSpaces = folder => get('/projects/' + folder + '/spaces')

@@ -16,6 +16,13 @@ def test_text_search_filters_space_type():
     assert res and all(r[1] == "phong_ngu_master" for r in res)
 
 
+def test_text_search_caps_each_project():
+    from collections import Counter
+    from pipeline.search import PER_PROJECT
+    res = by_text("phòng khách", k=24)
+    assert res and max(Counter(r[0].split("/")[0] for r in res).values()) <= PER_PROJECT
+
+
 # ── photo search (search-by-image) ───────────────────────────────────────────
 import io
 

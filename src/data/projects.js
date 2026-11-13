@@ -40,7 +40,7 @@ Object.keys(files)
   .forEach(path => {
     const [slug, file] = path.split('/').slice(-2)
     const [w, h] = SIZES[slug + '/' + file] || DEFAULT_SIZE
-    ;(FOLDER_IMAGES[slug] ||= []).push({ src: files[path], w, h })
+    ;(FOLDER_IMAGES[slug] ||= []).push({ src: files[path], w, h, file }) // file: tên gốc, khớp không gian AI <folder>/<file>
   })
 
 const PROJECTS = [

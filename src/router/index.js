@@ -14,8 +14,9 @@ const router = createRouter({
       name: 'du-an-list',
       component: () => import('@/views/ProjectsView.vue')
     },
-    // Trang lọc theo không gian cần backend; tạm thời chuyển về danh sách dự án
-    { path: '/cong-trinh', redirect: '/du-an' },
+    // Mục "Không gian": tìm không gian tương tự bằng AI (cần backend)
+    { path: '/khong-gian', name: 'khong-gian-list', component: () => import('@/views/SpacesView.vue') },
+    { path: '/cong-trinh', redirect: to => ({ path: '/khong-gian', hash: to.hash }) },
     {
       path: '/du-an/:slug',
       name: 'du-an',

@@ -2,7 +2,10 @@
   <div class="lb" role="dialog" aria-modal="true" aria-label="Xem ảnh lớn" @click.self="$emit('close')">
     <div class="lb-bar">
       <span class="meta num">{{ index + 1 }} / {{ items.length }}</span>
-      <button class="btn btn-secondary" type="button" @click="$emit('close')">Đóng</button>
+      <div class="lb-bar-end">
+        <slot name="bar" />
+        <button class="btn btn-secondary" type="button" @click="$emit('close')">Đóng</button>
+      </div>
     </div>
     <img :src="items[index].img" :alt="items[index].alt">
     <button v-if="items.length > 1" class="lb-nav p" type="button"

@@ -10,6 +10,7 @@ from typing import Literal, Optional
 
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -107,6 +108,16 @@ def similar(space_id: int, k: int = 6, user=Depends(optional_user)):
     if not row or (row["review_status"] != "published" and not staff):
         raise HTTPException(404, "space not found")
     return [_hit(r) for r in similar_to(row["relative_path"], min(k, 24), published_only=not staff)]
+
+
+@app.get("/projects/{folder}/spaces")
+def project_spaces(folder: str = PathParam(pattern=r"^[a-z0-9_]{1,60}$"), user=Depends(optional_user)):
+    """Spaces of one project folder (the site's slug with '-' -> '_'), by file name; visitors get published ones only."""
+    with _db() as c:
+        return c.execute(
+            f"SELECT {FIELDS} FROM space WHERE split_part(relative_path, '/', 1) = %(f)s "
+            "AND (%(all)s OR review_status = 'published') ORDER BY relative_path",
+            {"f": folder, "all": _is_staff(user)}).fetchall()
 
 
 @app.get("/search")
