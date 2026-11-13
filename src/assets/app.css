@@ -645,11 +645,14 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   display: grid; place-items: center; color: var(--surface); font-size: 15px; line-height: 1;
 }
 .hs[aria-expanded="true"] { background: var(--accent); border-color: var(--accent) }
-.hs-card { position: absolute; z-index: 5; width: min(268px, 74vw);
+.hs-card { position: absolute; z-index: 5; width: min(232px, 74vw);
            background: var(--page); border: 1px solid var(--line);
            border-radius: var(--radius-md); padding: 14px; box-shadow: var(--elev-raised);
            display: flex; flex-direction: column; gap: 8px }
 .hs-card b { font-size: 15px; color: var(--ink) }
+.hs-link { align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer;
+           font: inherit; font-size: 13px; color: var(--ink-2) }
+.hs-link:hover, .hs-link:focus-visible { color: var(--ink) }
 .hs-card .small { color: var(--dim) }
 
 /* ─── Lightbox (câu 29: bấm để phóng to) ──────────────────────────── */
@@ -657,6 +660,8 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
       background: color-mix(in oklab, var(--fg) 94%, transparent); padding: clamp(12px, 3vw, 48px) }
 .lb img { max-width: 100%; max-height: 84vh; width: auto; height: auto;
           object-fit: contain; border-radius: var(--radius-md) }
+.lb-bar-end { display: flex; align-items: center; gap: clamp(14px, 2vw, 24px) }
+.lb-space { font-size: 13px; color: var(--ink-2); text-decoration: none; letter-spacing: 0.02em }
 .lb-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center;
           justify-content: space-between; gap: 12px; padding: 14px clamp(12px, 3vw, 24px) }
 .lb-nav { position: absolute; top: 50%; transform: translateY(-50%);

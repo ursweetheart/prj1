@@ -43,10 +43,21 @@ def similar_to(relative_path: str, k: int = 6, published_only: bool = False):
 
 
 def by_text(text: str, space_type: str | None = None, k: int = 6, published_only: bool = False):
+    """Rows like _query's, at most PER_PROJECT per project so one project's shots don't fill the page."""
+    k = max(1, min(k, MAX_K))
     vec = np.asarray(_embedder().embed_text(text), dtype=np.float32)
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
-        return _query(conn, vec, space_type, k, published_only=published_only)
+        rows = conn.execute(f"SELECT {COLS}, subfolder FROM space {WHERE} ORDER BY embedding <=> %(v)s LIMIT %(n)s",
+                            {"v": vec, "t": space_type, "x": None, "p": published_only, "n": 4 * MAX_K}).fetchall()
+    kept, per = [], Counter()
+    for r in rows:  # best first
+        if per[r[5]] < PER_PROJECT:
+            kept.append(r[:5])
+            per[r[5]] += 1
+            if len(kept) == k:
+                break
+    return kept
 
 
 def by_image(fp, space_type: str | None = None, k: int = 6, published_only: bool = False):

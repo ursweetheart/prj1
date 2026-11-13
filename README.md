@@ -48,9 +48,12 @@ docker compose up -d db                           # ở thư mục gốc: Postgr
 python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python ingest.py image_d3           # gán nhãn + embedding ảnh, ghi vào DB
 .venv\Scripts\python -m pipeline.assistant kb/sample.json   # nạp kho tri thức cho chatbot
+.venv\Scripts\python ingest_projects.py [slug ...]   # ảnh dự án của web (src/assets/projects) -> không gian nháp; --dry-run để đếm
 .venv\Scripts\python -m uvicorn api:app --port 8001 --env-file .env   # .env: copy từ .env.example, không commit
 .venv\Scripts\python -m pytest                    # cần DB đang chạy và đã ingest
 ```
+
+Ảnh dự án và không gian AI nối với nhau bằng tên thư mục: ảnh `src/assets/projects/<slug>/<file>` là không gian `image_d3/<folder>/<file>` với `folder` = `slug` đổi `-` thành `_` (vd `beaumont-lounge` → `beaumont_lounge`). `ingest_projects.py` bỏ qua ảnh đã có trong DB nên chạy lại không ghi đè chỗ kiến trúc sư đã sửa, và **không đăng** gì: khách chỉ thấy không gian sau khi duyệt và đăng ở `/quan-tri`. Trang `/du-an/<slug>` hỏi `GET /projects/<folder>/spaces` để hiện link "Chi tiết không gian"; phần AI cho khách nằm ở `/khong-gian`.
 
 Dùng `python -m ...` thay vì chạy thẳng file trong `.venv\Scripts` (venv đã đổi đường dẫn).
 

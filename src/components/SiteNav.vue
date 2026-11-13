@@ -36,6 +36,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { APPROVERS, EDITORS, SALES, hasRole, logout, session } from '@/api'
+import { ai, aiAvailable } from '@/lib/projectSpaces'
 import BrandMark from './BrandMark.vue'
 
 defineProps({
@@ -46,11 +47,14 @@ const route = useRoute()
 const router = useRouter()
 const currentLang = ref('VI')
 
-const links = [
+// "Không gian" (tìm không gian tương tự bằng AI) chỉ hiện khi backend trả lời
+aiAvailable()
+const links = computed(() => [
   { to: '/du-an',       label: 'Dự án',   key: 'du-an' },
+  ai.state === 'on' && { to: '/khong-gian', label: 'Không gian', key: 'khong-gian' },
   { to: '/ve-chung-toi', label: 'Về chúng tôi', key: 've-chung-toi' },
   { to: '/lien-he',     label: 'Liên hệ',    key: 'lien-he' }
-]
+].filter(Boolean))
 
 const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },

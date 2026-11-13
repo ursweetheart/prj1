@@ -129,3 +129,22 @@ def test_photo_search_is_rate_limited():
     codes = [_upload(b"x", "a.pdf").status_code for _ in range(11)]  # the limit counts before validation, so cheap requests do
     assert codes[:10] == [415] * 10 and codes[10] == 429
     assert _upload(b"x", "a.pdf").headers["Retry-After"]
+
+
+def test_project_spaces_visitor_sees_published_staff_sees_all(drafts, as_role):
+    [sid] = drafts(1)
+    with psycopg.connect(DSN) as c:
+        folder = c.execute("SELECT split_part(relative_path, '/', 1) FROM space WHERE id=%s", (sid,)).fetchone()[0]
+    staff = client.get(f"/projects/{folder}/spaces", headers=as_role("architect")).json()
+    assert sid in [r["id"] for r in staff] and all(r["relative_path"].startswith(folder + "/") for r in staff)
+    assert [r["relative_path"] for r in staff] == sorted(r["relative_path"] for r in staff)
+    assert sid not in [r["id"] for r in client.get(f"/projects/{folder}/spaces").json()]  # still a draft
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE space SET review_status='published' WHERE id=%s", (sid,))
+    visitor = client.get(f"/projects/{folder}/spaces").json()
+    assert sid in [r["id"] for r in visitor] and {r["review_status"] for r in visitor} == {"published"}
+
+
+def test_project_spaces_unknown_and_invalid_folder():
+    assert client.get("/projects/khong_co_du_an_nay/spaces").json() == []
+    assert client.get("/projects/Bad-Name/spaces").status_code == 422
