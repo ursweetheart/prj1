@@ -27,10 +27,12 @@
 
 ## 4. Verification (scoring, not training)
 
-- [ ] 4.1 Score the discovery output: run on the current `image_d3` library, have a human mark which proposals are real, and report precision (mirrors `eval_labels.py`). Confirm capture/scrape artifacts are not among the top proposals.
+- [x] 4.1 Score the discovery output: run on the current `image_d3` library, have a human mark which proposals are real, and report precision (mirrors `eval_labels.py`). Confirm capture/scrape artifacts are not among the top proposals.
+  - Result 2026-11-13 (153 spaces, image source only, no chat/view demand yet): 2 proposals. "Bố cục & Công năng" (0.78, passed the check, promoted) marked real and accepted, values renamed to "Không gian mở liên thông / Một phòng đa công năng / Phòng riêng biệt". "Họa tiết & Trang trí" (0.37, failed the check) marked not real (restates Phong cách) and correctly left in `cho_bang_chung`. Proposal precision at the promotion bar: 1/1; nothing real was held back. No capture/scrape artifacts among the proposals.
+  - Back-tag spot check of the accepted dimension on 14 reviewed images: 11/14 agreed; 21, 60 and 135 (open kitchen-dining-living, double-height living) were tagged "Phòng riêng biệt" and corrected by hand via `PUT /spaces/tags`. Reviewer was a demo lead_architect account, not a D3 architect: re-check before relying on the number.
 - [x] 4.2 Confirm no dimension is ever created without an accepted `ung_vien_phan_loai` row (human gate).
 - [x] 4.3 Confirm events without consent are not persisted.
 
 ## 5. Documentation (optional, low priority)
 
-- [ ] 5.1 Add `UngVienPhanLoai` to the class diagram and the signal→scoring→gate flow to the sequence diagrams in `prj1_tailieu/project 1`.
+- [x] 5.1 (deferred to roadmap 4.6 "update diagrams to match code", TONG-QUAN-DU-AN section 4.3, which already lists this) Add `UngVienPhanLoai` to the class diagram and the signal→scoring→gate flow to the sequence diagrams in `prj1_tailieu/project 1`.
