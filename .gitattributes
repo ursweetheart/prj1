@@ -1,0 +1,13 @@
+# Normalize text files to LF in the repo and the working tree; git detects binaries itself
+* text=auto eol=lf
+
+# explicit binaries (never touch line endings)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pt binary
+*.woff binary
+*.woff2 binary
