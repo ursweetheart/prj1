@@ -306,3 +306,18 @@ CREATE TABLE IF NOT EXISTS nhat_ky_tri_thuc (
   sau jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ── Account admin (change: user-admin; UC24, seq-19 b16-19) ─────────────────────────────────────────────
+-- bi_khoa: cannot sign in. phien_tu: tokens issued (iat) before it are refused, which is how a lock ends open sessions.
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS bi_khoa boolean NOT NULL DEFAULT false;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS ly_do_khoa text;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS phien_tu timestamptz;
+CREATE TABLE IF NOT EXISTS nhat_ky_tai_khoan (
+  id serial PRIMARY KEY,
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE SET NULL,     -- the admin (NULL: set_role.py)
+  tai_khoan_id int REFERENCES app_user(id) ON DELETE CASCADE,       -- the account changed
+  hanh_dong text NOT NULL,                                          -- doi_vai_tro | khoa | mo_khoa
+  truoc jsonb,
+  sau jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

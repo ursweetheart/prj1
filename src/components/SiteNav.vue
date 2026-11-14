@@ -78,6 +78,7 @@ const roleLinks = computed(() => [
   hasRole(APPROVERS) && { to: '/quan-tri/phan-loai', label: 'Phân loại' },
   hasRole(APPROVERS) && { to: '/quan-tri/don-gia', label: 'Đơn giá' },
   hasRole(['content', ...APPROVERS]) && { to: '/quan-tri/tri-thuc', label: 'Tri thức' },
+  hasRole(['admin']) && { to: '/quan-tri/tai-khoan', label: 'Tài khoản' },
   hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' },
   hasRole(SALES) && { to: '/quan-tri/xu-huong', label: 'Xu hướng' }
 ].filter(Boolean))

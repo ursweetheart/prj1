@@ -19,6 +19,7 @@ const router = createRouter({
     { path: '/uoc-tinh', name: 'uoc-tinh', component: () => import('@/views/EstimateView.vue') },
     { path: '/trac-nghiem', name: 'trac-nghiem', component: () => import('@/views/QuizView.vue') },
     { path: '/quan-tri/xu-huong', name: 'xu-huong', meta: { roles: SALES }, component: () => import('@/views/TrendsView.vue') },
+    { path: '/quan-tri/tai-khoan', name: 'tai-khoan', meta: { roles: ['admin'] }, component: () => import('@/views/UsersView.vue') },
     { path: '/quan-tri/tri-thuc', name: 'tri-thuc', meta: { roles: ['content', ...APPROVERS] }, component: () => import('@/views/KnowledgeView.vue') },
     { path: '/quan-tri/don-gia', name: 'don-gia', meta: { roles: APPROVERS }, component: () => import('@/views/PricesView.vue') },
     { path: '/bo-suu-tap', name: 'bo-suu-tap', component: () => import('@/views/CollectionView.vue') },

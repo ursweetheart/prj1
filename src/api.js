@@ -93,7 +93,10 @@ export function adoptTokenFromHash() {
 }
 export async function login(email, password) {
   const res = await fetch(API + '/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
-  if (!res.ok) throw new Error(res.status === 401 ? 'Sai email hoặc mật khẩu.' : 'Không đăng nhập được (' + res.status + ').')
+  if (!res.ok) {
+    const detail = res.status === 403 ? (await res.json().catch(() => ({}))).detail : null // 403: the account is locked
+    throw new Error(res.status === 401 ? 'Sai email hoặc mật khẩu.' : detail || 'Không đăng nhập được (' + res.status + ').')
+  }
   setToken((await res.json()).access_token)
   return loadUser()
 }
@@ -130,6 +133,13 @@ export const toFacet = d => ({
 export const getTaxonomy = () => get('/taxonomy')
 // taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
 export const getTaxonomyAdmin = () => get('/taxonomy/admin')
+// account admin (seq-19, admin only): list, role, lock / unlock; the server refuses self-changes and the last admin
+export const ROLE_VI = { visitor: 'Khách', architect: 'Kiến trúc sư', content: 'Nội dung', sales: 'Kinh doanh',
+  lead_architect: 'KTS trưởng', admin: 'Quản trị viên' }
+export const listUsers = (params = {}) => get('/users', params)
+export const setUserRole = (id, role) => request('PATCH', '/users/' + id + '/role', { body: { role } })
+export const lockUser = (id, lyDo) => request('POST', '/users/' + id + '/lock', { body: { ly_do: lyDo } })
+export const unlockUser = id => request('POST', '/users/' + id + '/unlock')
 // assistant knowledge (seq-16): entries the chatbot answers from, and the questions it could not answer
 export const listKnowledge = (params = {}) => get('/knowledge', params)
 export const createKnowledge = body => request('POST', '/knowledge', { body })

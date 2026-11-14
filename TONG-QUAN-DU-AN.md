@@ -169,14 +169,13 @@ npm ci && npm run dev                         # http://localhost:5173/prj1/ (pro
 
 ### 3.4 Tài khoản và quyền
 
-Tự đăng ký luôn được role `visitor`. Để nâng quyền:
+Tự đăng ký luôn được role `visitor`. **Quản trị viên đầu tiên** tạo một lần bằng lệnh (tài khoản phải đăng ký trước):
 
 ```bash
-cd backend
-.venv\Scripts\python set_role.py email@example.com admin
+docker compose exec backend python set_role.py email@example.com admin
 ```
 
-Khi đã có admin, có thể dùng `PATCH /users/{id}/role`.
+Sau đó mọi việc làm ở **`/quan-tri/tai-khoan`** (chỉ admin): đổi vai trò, khoá / mở khoá tài khoản (change `user-admin`). Không tự đổi vai trò hay tự khoá được, và luôn phải còn ít nhất một admin đang hoạt động.
 
 | Role | Được làm gì |
 | :-- | :-- |
@@ -269,7 +268,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Có (change `taxonomy-admin`); bước 20–22 (làm mới chỉ mục vector) không cần: không embedding nào dựng từ nhãn |
 | `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Có (change `assistant-knowledge-admin`) |
 | `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Bảng điều khiển: có (change `trend-dashboard`). Báo cáo email hằng tuần: chưa |
-| `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Một phần (API, chưa có UI) |
+| `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Bước 16–19 có (change `user-admin`); bước 1–11 (admin tạo tài khoản, thư mời đặt mật khẩu) chưa |
 
 **Class** (`Class diagram/`): 7 file.
 
@@ -343,7 +342,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian`, `luu_anh` (tim lưu ảnh, change `trend-dashboard`) và `chon_trac_nghiem` (ảnh chọn trong trắc nghiệm, change `style-quiz`; lưu nhưng **không** tính vào điểm quan tâm); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
 | UC22 | Bảng điều khiển xu hướng | **Có (v1)** | `/quan-tri/xu-huong` (sales, KTS trưởng, admin): điểm quan tâm = xem×1 + lưu×3 + ảnh gửi brief×5 theo từng giá trị phân loại, tỉ lệ trong chiều, xu hướng 7 ngày so với trung bình 4 tuần (tăng ≥ 50%, giảm ≤ 50%, mới nổi, cần ≥ 5 tín hiệu), cảnh báo, tổng lượt xem/lưu/brief/lead, lead theo tuần, top không gian (`pipeline/trends.py`, `GET /analytics/overview`) | Chưa có tiến trình hằng đêm và kho phân tích (tính khi mở trang), chưa phân cụm phiên, chưa có thời gian xem / độ sâu cuộn |
 | UC23 | Gửi báo cáo định kỳ | **Chưa** | | bộ lập lịch + gửi email hằng tuần |
-| UC24 | Quản lý tài khoản, phân quyền | **Một phần** | đăng ký, đăng nhập email / Google / Facebook, JWT tự gia hạn, 6 role, `PATCH /users/{id}/role`, `set_role.py` | Chưa có trang quản trị người dùng, chưa khoá hay xoá tài khoản, chưa quên mật khẩu |
+| UC24 | Quản lý tài khoản, phân quyền | **Có (trừ mời / quên mật khẩu)** | đăng ký, đăng nhập email / Google / Facebook, JWT tự gia hạn, 6 role. `/quan-tri/tai-khoan` (admin): danh sách (tìm theo email, lọc vai trò, lọc bị khoá; không bao giờ gửi mật khẩu băm hay mã Google / Facebook), đổi vai trò có xác nhận (hiệu lực ngay, không đăng xuất), khoá kèm lý do (đăng xuất ngay các phiên đang mở nhờ `iat` của token và `phien_tu`; không đăng nhập lại được bằng mật khẩu, Google hay Facebook) / mở khoá (phiên cũ vẫn chết); không tự đổi / tự khoá, không hạ hay khoá admin cuối cùng; nhật ký `nhat_ky_tai_khoan` (cả `set_role.py`) | Chưa có mời tài khoản qua email, quên mật khẩu, xoá tài khoản, thời điểm hoạt động gần nhất |
 | UC25 | Gợi ý nhãn tự động | **Xong** | `pipeline/processor.py` (Gemini + màu + YOLO), `relabel.py` | Chưa đo được NFR-10 vì mới có 9 ảnh được duyệt (cần ≥ 30) |
 | UC26 | Sinh mô tả nháp | **Xong** | mô tả + alt text khi ingest; `generate_transcripts.py` (mô tả dài cho RAG) | |
 | UC27 | Lập chỉ mục vector | **Xong** | pgvector: embedding ảnh (SigLIP2) + embedding mô tả (Vertex) | Chưa có chỉ mục HNSW/IVFFlat (chỉ cần khi > ~10.000 ảnh) |
@@ -422,7 +421,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 1.4 | ✓ **Thông báo cho sales** khi có lead mới (change `lead-intake`): email qua SMTP nếu cấu hình, không thì ghi log | business-flow, seq-5 | có email kèm nguồn, liên hệ, ngữ cảnh, tóm tắt sở thích |
 | 1.5 | ✓ **UI quản lý tri thức trợ lý** (change `assistant-knowledge-admin`): thêm, sửa, xoá, duyệt nháp AI, duyệt giá, câu hỏi chưa trả lời | seq-16, usecase-3 | |
 | 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio: giờ làm được ngay ở `/quan-tri/tri-thuc` (sửa từng mục, xoá dấu mẫu; mục giá cần KTS trưởng bật) | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
-| 1.7 | **UI quản trị người dùng**: danh sách, đổi role, khoá tài khoản; quên mật khẩu | seq-19, usecase-5 | admin không phải dùng `set_role.py` |
+| 1.7 | ✓ **UI quản trị người dùng** (change `user-admin`): danh sách, đổi role, khoá / mở khoá, nhật ký | seq-19, usecase-5 | còn: mời qua email, quên mật khẩu (cần SMTP) |
 | 1.8 | ✓ Duyệt ảnh: **trả về nháp / lưu nội bộ / mở lại** kèm lý do (change `review-return-reject`) | act-1, seq-6 | còn: gỡ ảnh đã đăng |
 | 1.9 | Hotspot: thêm điểm bằng tay, kéo vị trí; bảng **MonDo** (thư viện món đồ/vật liệu) và liên kết hotspot → món đồ → gói dịch vụ | seq-14, class-1 | bấm hotspot sofa ra các không gian có sofa tương tự |
 
@@ -474,7 +473,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 7. **Backend Docker chạy CPU**: ingest chậm (vài giây mỗi ảnh). Muốn nhanh thì chạy backend ngoài Docker với GPU.
 8. **Hội thoại chỉ lưu trong `lead.conversation`**, không có bảng HoiThoai/TinNhan riêng như class diagram.
 9. **Hotspot chỉ có nhãn chữ**, chưa trỏ tới bản ghi món đồ.
-10. **Tài khoản thử `qt01-walk@example.com`** (lead_architect) tạo khi chạy thử quy trình duyệt. Tài khoản này được giữ vì `review_log` tham chiếu tới. Nên hạ xuống `visitor` khi demo thật.
+10. **Tài khoản thử `qt01-walk@example.com`** (lead_architect) tạo khi chạy thử quy trình duyệt. Tài khoản này được giữ vì `review_log` tham chiếu tới. Nên hạ xuống `visitor` khi demo thật: làm ở `/quan-tri/tai-khoan`.
 11. **Quyền công bố 9 ảnh đã đăng** được tick để demo (ảnh lấy từ Behance). Khi dùng thật phải xin quyền khách.
 12. **`openspec validate`** có lúc báo 0 delta với change đã xong. Đây là lỗi của công cụ, có thể bỏ qua.
 13. **Thiếu tài liệu 02–05** (bộ câu hỏi phỏng vấn, user story, mô hình hoá, taxonomy) mà BAD tham chiếu.
@@ -559,7 +558,9 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/auth/register`, `/auth/login`, `/auth/refresh` | công khai | tài khoản, JWT |
 | GET | `/auth/me` | đã đăng nhập | thông tin người dùng |
 | GET | `/auth/google/*`, `/auth/facebook/*` | công khai | OAuth |
-| PATCH | `/users/{id}/role` | admin | đổi role |
+| GET | `/users` | admin | danh sách tài khoản (`?q=&role=&khoa=`), kèm quyền đổi / khoá từng dòng và lý do nếu không được; `gan_day`: 20 thay đổi gần nhất |
+| PATCH | `/users/{id}/role` | admin | đổi role (409: tự đổi, hoặc hạ admin cuối cùng) |
+| POST | `/users/{id}/lock`, `/users/{id}/unlock` | admin | khoá kèm `ly_do` (3–300 ký tự; các phiên đang mở bị từ chối từ lần gọi tiếp theo) / mở khoá |
 
 ### 11.3 Bảng dữ liệu (`backend/schema.sql`)
 
@@ -567,7 +568,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- |
 | `space` | mỗi ảnh/không gian: đường dẫn, nhãn AI, màu, hotspot, embedding SigLIP2, `review_status` (`draft` → `in_review` → `approved` → `cleared` → `published`, hoặc `noi_bo`: khách không đồng ý công bố, không bao giờ hiện công khai), `ly_do_duyet` (lý do trả về / lưu nội bộ / mở lại đang hiện trên thẻ, chỉ nhân viên thấy) |
 | `space_text` | mô tả dài của ảnh + embedding Vertex (RAG) |
-| `app_user` | tài khoản, role |
+| `app_user` | tài khoản, role, `bi_khoa` + `ly_do_khoa`, `phien_tu` (token phát trước thời điểm này bị từ chối) |
+| `nhat_ky_tai_khoan` | nhật ký đổi vai trò / khoá / mở khoá: ai, tài khoản nào, trước → sau, lý do |
 | `review_log` | nhật ký duyệt, sửa, gán nhãn lại |
 | `kb_chunk` | mục tri thức trợ lý: loại, tiêu đề, `cum_tu_khop`, câu trả lời, embedding (tiêu đề + cụm từ khớp), `trang_thai` (nhap / cho_duyet / dang_dung / tat; trợ lý chỉ dùng dang_dung), `nguon` (mau / ai / nhan_vien / tep), `tu_cau_hoi` |
 | `nhat_ky_tri_thuc` | nhật ký sửa tri thức: ai, hành động, trước → sau (giữ cả mục đã xoá) |
@@ -593,5 +595,5 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `python -m pipeline.assistant <file.json>` | nạp kho tri thức hàng loạt; mục nháp AI vào Chờ duyệt; nạp lại không đổi trạng thái mục đã có |
 | `python -m pipeline.discovery [--dry-run]` | chạy AI đề xuất chiều phân loại mới |
 | `seed_taxonomy.py` | nạp phân loại gốc từ `kb/taxonomy_seed.json` |
-| `set_role.py <email> <role>` | đổi role |
+| `set_role.py <email> <role>` | tạo admin đầu tiên (sau đó dùng `/quan-tri/tai-khoan`); có ghi nhật ký |
 | `eval_labels.py`, `eval_assistant.py`, `eval_photo_rag.py` | đo độ chính xác nhãn, truy hồi chatbot, RAG ảnh |
