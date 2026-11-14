@@ -4,7 +4,7 @@
 | :-- | :-- |
 | **Dự án** | Website portfolio thiết kế nội thất tích hợp AI (mã PRJ1-INTERIOR-WEB) |
 | **Nhóm** | Nhóm 6: Phạm Việt Tùng, Trần Xuân Bằng, Trần Xuân Tuấn |
-| **Cập nhật** | 11/11/2026 |
+| **Cập nhật** | 14/11/2026 |
 | **Phiên bản code** | nhánh `main`, commit `1d72fc8` (repo `github.com/ursweetheart/prj1`) |
 | **Bản tĩnh** | https://ursweetheart.github.io/prj1/ (không có backend nên các chức năng AI không chạy) |
 
@@ -262,7 +262,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-9-uoc-tinh-chi-phi` | UC10 | Có (change `cost-estimate`), với đơn giá mẫu |
 | `seq-10-loc-portfolio-va-xem-chi-tiet` | UC01, UC02 | Có (đang bị ẩn, xem mục 9) |
 | `seq-11-tim-bang-mo-ta-tu-nhien` | UC05 | Có |
-| `seq-12-trac-nghiem-phong-cach` | UC06 | Chưa |
+| `seq-12-trac-nghiem-phong-cach` | UC06 | Có (change `style-quiz`); gợi ý **không gian**, chưa gợi ý dự án (bước 12) |
 | `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Có: trình duyệt khi chưa đăng nhập, gộp vào tài khoản khi đăng ký/đăng nhập |
 | `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
 | `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Một phần (API, chưa có UI) |
@@ -312,7 +312,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC03 | Tìm không gian tương tự | **Xong** | `GET /spaces/{id}/similar`, khối "tương tự" ở `/khong-gian/:id` | Chưa đo precision@5 (NFR-11). Luồng "món đồ → dịch vụ" (M3) chưa có |
 | UC04 | Tìm bằng ảnh tải lên | **Xong** | `POST /search/image`, nút "Tìm bằng ảnh" ở `/cong-trinh` | Hiện không truy cập được vì `/cong-trinh` bị ẩn |
 | UC05 | Tìm bằng mô tả tự nhiên | **Xong** | `GET /search?q=` (SigLIP2), ô tìm ở `/cong-trinh` | Như trên |
-| UC06 | Trắc nghiệm phong cách | **Chưa** | | Thiết kế ở `seq-12` |
+| UC06 | Trắc nghiệm phong cách | **Có** | `/trac-nghiem`: 4–6 cặp ảnh đã đăng ở hai phong cách khác nhau (cùng loại không gian khi có thể), khách chọn ảnh thích hơn hoặc bỏ qua; máy chủ chấm điểm (điểm = số lần chọn / số lần hiện), lấy 2 phong cách cao nhất; gợi ý 8 không gian của 2 phong cách đó, xếp theo khoảng cách embedding SigLIP2 tới trung bình các ảnh đã chọn (`pipeline/quiz.py`). Lưu tất cả vào bộ sưu tập; "Xem thêm phong cách" mở `/khong-gian` đã lọc sẵn; kết quả gần nhất giữ trong trình duyệt, đăng nhập thì lưu vào tài khoản (bảng `ket_qua_trac_nghiem`) | Gợi ý **dự án** (seq-12 bước 12) chờ `ingest_projects.py` nối ảnh dự án với không gian. Chỉ hỏi phong cách, chưa hỏi tông màu, vật liệu. Kết quả chưa đi kèm lead / brief |
 
 ### 5.2 Tương tác cá nhân
 
@@ -339,7 +339,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 
 | UC | Tên | Trạng thái | Đang ở đâu | Còn thiếu |
 | :-- | :-- | :-- | :-- | :-- |
-| UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian` và `luu_anh` (tim lưu ảnh, change `trend-dashboard`); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
+| UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian`, `luu_anh` (tim lưu ảnh, change `trend-dashboard`) và `chon_trac_nghiem` (ảnh chọn trong trắc nghiệm, change `style-quiz`; lưu nhưng **không** tính vào điểm quan tâm); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
 | UC22 | Bảng điều khiển xu hướng | **Có (v1)** | `/quan-tri/xu-huong` (sales, KTS trưởng, admin): điểm quan tâm = xem×1 + lưu×3 + ảnh gửi brief×5 theo từng giá trị phân loại, tỉ lệ trong chiều, xu hướng 7 ngày so với trung bình 4 tuần (tăng ≥ 50%, giảm ≤ 50%, mới nổi, cần ≥ 5 tín hiệu), cảnh báo, tổng lượt xem/lưu/brief/lead, lead theo tuần, top không gian (`pipeline/trends.py`, `GET /analytics/overview`) | Chưa có tiến trình hằng đêm và kho phân tích (tính khi mở trang), chưa phân cụm phiên, chưa có thời gian xem / độ sâu cuộn |
 | UC23 | Gửi báo cáo định kỳ | **Chưa** | | bộ lập lịch + gửi email hằng tuần |
 | UC24 | Quản lý tài khoản, phân quyền | **Một phần** | đăng ký, đăng nhập email / Google / Facebook, JWT tự gia hạn, 6 role, `PATCH /users/{id}/role`, `set_role.py` | Chưa có trang quản trị người dùng, chưa khoá hay xoá tài khoản, chưa quên mật khẩu |
@@ -433,7 +433,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 2.2 | ✓ **Gửi bộ sưu tập làm brief** (change `saved-collection-brief`): lead nguồn `brief` kèm ảnh, ghi chú, tóm tắt gu, link chỉ xem | seq-7, act-8 | sales thấy brief kèm ảnh ở `/khach-hang` |
 | 2.3 | **Form liên hệ:** đã có `ContactForm.vue` + `POST /leads` (change `lead-intake`), đặt ở trang dự án. Còn lại: nhúng `<ContactForm />` vào trang `/lien-he` của 0.3 | seq-5 | lead loại "form" xuất hiện |
 | 2.4 | ✓ **Ước tính chi phí sơ bộ** (change `cost-estimate`): công thức trên bảng đơn giá, giá mẫu ghi rõ, nhân viên sửa giá không cần sửa code | seq-9, act-6 | còn lại: nhập giá thật của D3 |
-| 2.5 | **Trắc nghiệm phong cách**: chọn ảnh thích → gợi ý phong cách và không gian phù hợp (dùng embedding SigLIP2) | seq-12 | |
+| 2.5 | ✓ **Trắc nghiệm phong cách** (change `style-quiz`): chọn ảnh thích → gợi ý phong cách và không gian phù hợp (embedding SigLIP2), lưu kết quả vào tài khoản | seq-12 | còn: gợi ý dự án khi đã nối ảnh dự án ↔ không gian |
 | 2.6 | Trang chi tiết dự án đầy đủ: bảng thông số, thuyết minh, dải màu, vật liệu chính, before/after Concept ↔ Thực tế, "dự án tương tự" | seq-10, class-1 | đủ các mục của M2 |
 | 2.7 | Sắp xếp kết quả lọc (mới nhất, phổ biến) | BFD 1.2 | |
 | 2.8 | Trợ lý: lọc theo metadata (diện tích, loại công trình khách nói), lưu lịch sử hội thoại (bảng HoiThoai/TinNhan) | seq-3, class-4 | |
@@ -503,6 +503,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `/du-an/:slug` | mọi người | trang dự án: gallery, lightbox, dự án trước/tiếp |
 | `/cong-trinh` | mọi người | **đang chuyển sang `/du-an`** (trang lọc 6 chiều + tìm kiếm còn trong `CongTrinhView.vue`) |
 | `/khong-gian/:id` | mọi người | ảnh từ DB, hotspot, bảng màu, không gian tương tự |
+| `/trac-nghiem` | mọi người | trắc nghiệm phong cách: cặp ảnh → 2 phong cách + không gian gợi ý; lưu kết quả khi đăng nhập |
 | `/dang-nhap` | mọi người | email / Google / Facebook |
 | `/quan-tri` | architect, content, lead_architect, admin | duyệt và đăng ảnh |
 | `/quan-tri/phan-loai` | lead_architect, admin | duyệt chiều phân loại AI đề xuất |
@@ -532,6 +533,9 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/briefs` | công khai, chung giới hạn 5/10 phút với `/leads` | gửi bộ sưu tập cho kiến trúc sư → lead nguồn `brief` |
 | POST | `/estimates` | công khai, 30/phút | ước tính từ bảng đơn giá, không lưu gì |
 | POST | `/estimates/send` | công khai, chung giới hạn với `/leads` | nhận bản chi tiết qua email → lead nguồn `estimate` (máy chủ tự tính lại) |
+| GET | `/quiz` | công khai, 30/phút | 4–6 cặp ảnh ngẫu nhiên; 409 `chua_du_anh` khi ảnh đã đăng không đủ 4 cặp |
+| POST | `/quiz/result` | công khai, chung giới hạn với `/quiz` | gửi các cặp đã hiện + ảnh đã chọn; máy chủ kiểm tra và chấm điểm, trả phong cách + không gian gợi ý |
+| GET / PUT | `/quiz/me` | đã đăng nhập | kết quả đã lưu của tài khoản (204 khi chưa có); PUT chấm lại rồi ghi đè, mỗi tài khoản một kết quả |
 | GET / PUT | `/prices`, `/prices/{id}` | approver | bảng đơn giá D8; lưu một ô thì ô đó thành `d3` (không còn là giá mẫu) |
 | GET | `/analytics/overview?days=7\|30\|90` | sales, approver | điểm quan tâm, xu hướng, cảnh báo, tổng, lead theo tuần, top không gian; chỉ số tổng hợp, không có dữ liệu cá nhân |
 | GET | `/taxonomy` | công khai | các chiều và giá trị (cho bộ lọc) |
@@ -557,11 +561,12 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `kb_chunk` | đoạn tri thức trợ lý + embedding |
 | `lead` | khách tiềm năng mọi nguồn (`nguon`: form, chat, brief, estimate): họ tên, SĐT, email, lời nhắn, ngữ cảnh trang/dự án, hồ sơ hành vi (bản chụp), và với chat thì ý định, yêu cầu, hội thoại |
 | `bo_suu_tap`, `bo_suu_tap_anh` | bộ sưu tập: `dang_luu` (một cái mỗi tài khoản) và `da_gui` (bản cố định của mỗi brief, có `ma_chia_se`); ảnh + ghi chú (≤ 300 ký tự) |
+| `ket_qua_trac_nghiem` | kết quả trắc nghiệm đã lưu, một dòng mỗi tài khoản: phong cách + tỉ lệ, id không gian gợi ý |
 | `don_gia` | bảng đơn giá D8: 5 loại nhà × 4 hạng mục × 3 gói, khoảng VND/m², `nguon` `mau` (giá mẫu) / `d3` (nhân viên đặt) |
 | `chieu_phan_loai`, `gia_tri_phan_loai`, `space_gia_tri` | phân loại và nhãn của từng không gian |
 | `ung_vien_phan_loai` | đề xuất chiều mới chờ duyệt |
 | `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được |
-| `phien_truy_cap`, `su_kien`, `su_kien_an_danh` | hành vi có đồng ý, bộ đếm ẩn danh |
+| `phien_truy_cap`, `su_kien`, `su_kien_an_danh` | hành vi có đồng ý, bộ đếm ẩn danh; `su_kien.loai`: `xem_khong_gian`, `luu_anh`, `chon_trac_nghiem` |
 
 ### 11.4 Script backend (chạy trong `backend/`)
 

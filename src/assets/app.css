@@ -488,6 +488,10 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .pv { max-width: 1280px; padding-top: 196px; padding-bottom: clamp(48px, 7vw, 96px) }
 @media (min-width: 600px)  { .pv { padding-top: 232px } }
 @media (min-width: 1024px) { .pv { padding-top: 128px } }
+/* the same room for the fixed header on the other content pages (ước tính, bộ sưu tập, trắc nghiệm) */
+.page-top { padding-top: 196px }
+@media (min-width: 600px)  { .page-top { padding-top: 232px } }
+@media (min-width: 1024px) { .page-top { padding-top: 128px } }
 .pv-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
            gap: 16px 48px; margin-bottom: clamp(24px, 3vw, 40px) }
 .pv-eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint) }

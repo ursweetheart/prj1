@@ -7,6 +7,10 @@
           Tìm không gian tương tự trong các dự án của D3 Studio: mô tả bằng lời, dùng một ảnh bạn thích,
           hoặc lọc theo phong cách, tông màu, vật liệu.
         </p>
+        <p v-if="!offline" class="sp-quiz">
+          Chưa biết mình thích phong cách nào?
+          <router-link to="/trac-nghiem">Làm trắc nghiệm phong cách <span aria-hidden="true">→</span></router-link>
+        </p>
       </div>
     </header>
 
@@ -189,6 +193,8 @@ onBeforeUnmount(dropPhoto)
 </script>
 
 <style scoped>
+.sp-quiz { margin: 12px 0 0; font-size: 14px; color: var(--dim) }
+.sp-quiz a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px }
 .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap }
 .only-desk { display:none }
 @media (min-width: 1024px) { .only-desk { display:flex } }

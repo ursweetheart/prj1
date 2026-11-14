@@ -14,6 +14,7 @@ from collections import defaultdict
 from psycopg.rows import tuple_row
 
 WEIGHTS = {"xem_khong_gian": 1, "luu_anh": 3, "brief": 5}
+SCORED = ["xem_khong_gian", "luu_anh"]  # su_kien types in the score; quiz answers (chon_trac_nghiem) are not
 RISE, FALL, MIN_SIGNALS, MIN_AVG_FALL = 1.5, 0.5, 5, 5
 TOP_PER_DIMENSION, WEEKS_BACK, LEAD_WEEKS = 8, 4, 8
 SOURCES = ("form", "chat", "brief", "estimate")
@@ -66,7 +67,8 @@ def overview(conn, days: int) -> dict:
     period = f"{int(days)} days"
     counts = defaultdict(lambda: {"xem": 0, "luu": 0, "brief": 0})
     for value, loai, n in _rows(conn, "SELECT v, loai, count(*) FROM su_kien, unnest(gia_tri) v "
-                                      "WHERE created_at > now() - %s::interval GROUP BY v, loai", (period,)):
+                                      "WHERE created_at > now() - %s::interval AND loai = ANY(%s) GROUP BY v, loai",
+                                      (period, SCORED)):
         counts[value]["xem" if loai == "xem_khong_gian" else "luu"] += n
     for value, n in _rows(conn, "SELECT d.ma_dinh_danh || ':' || g.ma_dinh_danh, count(*) " + _BRIEF_VALUES +
                                 "AND b.created_at > now() - %s::interval GROUP BY 1", (period,)):
@@ -76,7 +78,7 @@ def overview(conn, days: int) -> dict:
     signals0 = defaultdict(int)
     for value, loai, w, n in _rows(conn, f"SELECT v, loai, {_WEEK.format(col='created_at')} w, count(*) "
                                          "FROM su_kien, unnest(gia_tri) v WHERE created_at > now() - interval '35 days' "
-                                         "GROUP BY 1, 2, 3"):
+                                         "AND loai = ANY(%s) GROUP BY 1, 2, 3", (SCORED,)):
         if 0 <= w <= WEEKS_BACK:
             weekly[value][w] += n * WEIGHTS[loai]
             signals0[value] += n if w == 0 else 0

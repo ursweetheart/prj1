@@ -248,3 +248,15 @@ ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
 ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh'));
 CREATE INDEX IF NOT EXISTS su_kien_created_at ON su_kien (created_at);
 CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, created_at);
+
+-- ── Style quiz (change: style-quiz; UC06, seq-12) ──────────────────────────────────────────────────────────
+-- A quiz answer is a consented behaviour event too; the interest score does not count it (trends.py reads views/saves).
+ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem'));
+-- one saved result per account; re-scored by the server on save, suggestions re-read (unpublished ones dropped)
+CREATE TABLE IF NOT EXISTS ket_qua_trac_nghiem (
+  nguoi_dung_id int PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+  phong_cach jsonb NOT NULL,        -- [{ma, ten, ti_le}], best first
+  goi_y int[] NOT NULL DEFAULT '{}',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);

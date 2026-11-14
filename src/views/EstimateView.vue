@@ -1,5 +1,5 @@
 <template>
-  <main class="wrap est">
+  <main class="wrap page-top est">
     <header class="projects-head">
       <div>
         <h1 class="projects-title">Ước tính chi phí</h1>

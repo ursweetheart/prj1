@@ -2,6 +2,7 @@
 
 import io
 import os
+import random
 import re
 import shutil
 from functools import lru_cache
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +22,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, estimate, leads, notify, taxonomy, trends, vertex
+from pipeline import bo_suu_tap, discovery, estimate, leads, notify, quiz, taxonomy, trends, vertex
 from pipeline.assistant import _fold, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -297,7 +298,7 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
 
 
 class Event(BaseModel):
-    loai: Literal["xem_khong_gian", "luu_anh"]       # a view, or a save with the heart (trend-dashboard)
+    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem"]  # view, heart save, photo chosen in the style quiz
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
@@ -487,6 +488,59 @@ def shared_collection(code: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,64}$")):
     if not out:
         raise HTTPException(404, "Không tìm thấy bộ sưu tập")
     return out
+
+
+# ── Style quiz (change: style-quiz; UC06, seq-12) ──────────────────────────────────────────────────────────
+class QuizAnswers(BaseModel):
+    cap: list[tuple[int, int]] = Field(min_length=1, max_length=quiz.QUESTIONS)  # the pairs shown, as GET /quiz gave them
+    chon: list[int] = Field(max_length=quiz.QUESTIONS)                          # the photo chosen in each answered pair
+
+
+def _quiz_result(c, body: QuizAnswers) -> dict:
+    try:
+        return quiz.result(c, [list(p) for p in body.cap], body.chon)
+    except quiz.Invalid as e:
+        raise HTTPException(422, [{"loc": ["body"], "msg": str(e), "type": "value_error"}])
+
+
+@app.get("/quiz", dependencies=[Depends(limit("quiz", 30, 60))])
+def quiz_pairs():
+    """A new set of photo pairs, random each time; 409 'chua_du_anh' when the published photos allow < 4 pairs."""
+    with _db() as c:
+        pairs = quiz.build_pairs(quiz.eligible(c), random.Random(os.urandom(8)))
+        if not pairs:
+            raise HTTPException(409, "chua_du_anh")
+        tiles = {t["id"]: t for t in quiz.tiles(c, [i for p in pairs for i in p])}
+    return {"cau_hoi": [{"a": tiles[a], "b": tiles[b]} for a, b in pairs]}
+
+
+@app.post("/quiz/result", dependencies=[Depends(limit("quiz", 30, 60))])
+def quiz_result(body: QuizAnswers):
+    """Scored here from the pairs and picks, never from client scores (one bucket with GET /quiz)."""
+    with _db() as c:
+        return _quiz_result(c, body)
+
+
+@app.get("/quiz/me", dependencies=SIGNED_IN)
+def my_quiz(user=Depends(require(*ROLES))):
+    with _db() as c:
+        row = c.execute("SELECT phong_cach, goi_y, updated_at FROM ket_qua_trac_nghiem WHERE nguoi_dung_id=%s",
+                        (user["id"],)).fetchone()
+        if not row:
+            return Response(status_code=204)
+        return {"phong_cach": row["phong_cach"], "goi_y": quiz.tiles(c, row["goi_y"]), "luu_luc": row["updated_at"]}
+
+
+@app.put("/quiz/me", dependencies=SIGNED_IN)
+def save_my_quiz(body: QuizAnswers, user=Depends(require(*ROLES))):
+    """Re-scores the answers, so a saved result is never invented either; one result per account, replaced on save."""
+    with _db() as c:
+        out = _quiz_result(c, body)
+        row = c.execute("INSERT INTO ket_qua_trac_nghiem (nguoi_dung_id, phong_cach, goi_y) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (nguoi_dung_id) DO UPDATE SET phong_cach = EXCLUDED.phong_cach, "
+                        "goi_y = EXCLUDED.goi_y, updated_at = now() RETURNING updated_at",
+                        (user["id"], Jsonb(out["phong_cach"]), [t["id"] for t in out["goi_y"]])).fetchone()
+    return {**out, "luu_luc": row["updated_at"]}
 
 
 HOUSE_TYPES = ("can_ho", "nha_pho", "biet_thu", "van_phong", "thuong_mai", "khac")

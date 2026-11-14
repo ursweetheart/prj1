@@ -162,6 +162,7 @@ function track(loai, spaceId) {
 }
 export const trackView = spaceId => track('xem_khong_gian', spaceId)
 export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
+export const trackQuizPick = spaceId => track('chon_trac_nghiem', spaceId) // style-quiz: not in the interest score
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)
@@ -212,6 +213,12 @@ export const saveToCollection = (spaceId, ghiChu = null) =>
 export const removeFromCollection = spaceId => request('DELETE', '/collections/me/items/' + spaceId)
 export const mergeCollection = items => request('POST', '/collections/me/merge', { body: { items } })
 export const getSharedCollection = code => get('/collections/shared/' + encodeURIComponent(code))
+
+// style quiz (UC06, seq-12): answers = { cap: [[a, b], ...], chon: [id, ...] }; the server scores, never the client
+export const getQuiz = () => get('/quiz')
+export const postQuizResult = answers => request('POST', '/quiz/result', { body: answers })
+export const getMyQuiz = () => get('/quiz/me') // null (204) when the account has no saved result
+export const saveMyQuiz = answers => request('PUT', '/quiz/me', { body: answers })
 export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join(','), limit: ids.length }) : Promise.resolve([])
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 /* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
