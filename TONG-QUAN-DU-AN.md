@@ -144,7 +144,8 @@ Dự án xây dựng website portfolio dựa trên ba trục khoá vào nhau th�
 ```bash
 docker compose up -d --build        # ở thư mục gốc → http://localhost:8080/prj1/
 docker compose exec backend python ingest.py image_d3          # nạp ảnh vào DB lần đầu
-docker compose exec backend python -m pipeline.assistant kb/sample.json   # nạp kho tri thức
+docker compose exec backend python -m pipeline.assistant kb/sample.json   # nạp kho tri thức (mục nháp AI "[AI SINH - CHƯA DUYỆT]" vào trạng thái Chờ duyệt)
+docker compose exec backend python -m pipeline.assistant kb/generated.json  # 8 mô tả dự án AI soạn: chờ duyệt ở /quan-tri/tri-thuc
 docker compose down                 # tắt; dữ liệu vẫn còn trong volume prj1_pgdata
 ```
 
@@ -266,7 +267,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Có: trình duyệt khi chưa đăng nhập, gộp vào tài khoản khi đăng ký/đăng nhập |
 | `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
 | `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Có (change `taxonomy-admin`); bước 20–22 (làm mới chỉ mục vector) không cần: không embedding nào dựng từ nhãn |
-| `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Một phần (CLI, chưa có UI) |
+| `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Có (change `assistant-knowledge-admin`) |
 | `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Bảng điều khiển: có (change `trend-dashboard`). Báo cáo email hằng tuần: chưa |
 | `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Một phần (API, chưa có UI) |
 
@@ -332,7 +333,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC13 | Gắn nhãn không gian | **Xong** | `/quan-tri`: sửa loại phòng, phong cách, vật liệu; tag loại công trình và mức đầu tư theo ảnh hoặc cả dự án | |
 | UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log`. KTS trưởng **trả về nháp**, **lưu nội bộ** (khách không đồng ý công bố) hoặc **mở lại**, luôn kèm lý do: lý do hiện trên thẻ ảnh đến khi ảnh được chuyển tiếp, lọc "Chỉ ảnh bị trả về", người tải ảnh lên nhận email (hoặc log) | Chưa gỡ được ảnh đã đăng. Chưa theo dõi hiệu quả sau 30 ngày (QT-01 bước cuối, BFD 5.4) |
 | UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). **Bộ phân loại AI vẫn dùng danh sách phong cách / không gian cố định** trong `pipeline/schemas.py`: giá trị mới thêm chỉ được gắn bởi người, AI chưa đề xuất được |
-| UC16 | Quản lý tri thức trợ lý | **Một phần** | file JSON + lệnh `python -m pipeline.assistant kb/...`; `generate_kb.py` sinh nháp | Chưa có giao diện CMS để NV nội dung thêm, sửa, xoá đoạn tri thức |
+| UC16 | Quản lý tri thức trợ lý | **Có** | `/quan-tri/tri-thuc` (NV nội dung, KTS trưởng, admin): tìm, thêm, sửa mục (loại, tiêu đề, cụm từ khớp, câu trả lời; lưu là tính lại embedding); trạng thái Nháp / Chờ duyệt / Đang dùng / Tắt, **trợ lý chỉ dùng mục Đang dùng**; mục có giá (loại `price` hoặc câu trả lời nêu số tiền) chỉ KTS trưởng bật được, NV nội dung sửa giá của mục đang dùng thì mục về Chờ duyệt; nháp AI (`kb/generated.json`, 8 mục) vào Chờ duyệt, duyệt thì bỏ dấu "[AI SINH - CHƯA DUYỆT]"; tab "Câu hỏi chưa trả lời" gom câu giống nhau, "Soạn đáp án" → mục mới, bật thì đóng câu hỏi; xoá (KTS trưởng); mục dịch vụ mà điểm nóng liên kết không đổi tên / xoá được; nhật ký `nhat_ky_tri_thuc`. File JSON + lệnh vẫn dùng được để nạp hàng loạt | 11 mục đang dùng vẫn là dữ liệu mẫu (việc 1.6). Chưa có lịch sử phiên bản của từng mục |
 | UC17 | Gắn hotspot món đồ | **Một phần** | YOLO gợi ý; ở `/quan-tri` sửa tên và xoá hotspot; hiển thị trên `/khong-gian/:id` | Chưa thêm hotspot mới bằng tay, chưa kéo vị trí, chưa liên kết tới **thư viện món đồ/vật liệu (M7)** và gói dịch vụ |
 
 ### 5.4 Phân tích và hệ thống
@@ -419,8 +420,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 1.2 | ~~Vòng đời lead (QT-02)~~ **Bỏ:** `usecase-0` và `usecase-4` ghi rõ liên hệ, phân công, theo dõi lead do đội tư vấn làm *ngoài hệ thống*; hệ thống chỉ lưu lead và báo kèm hồ sơ hành vi | act-2, usecase-0/4 | — |
 | 1.3 | ✓ **Hồ sơ hành vi trong lead** (change `lead-intake`): bản chụp không gian đã xem và giá trị phân loại nổi bật, chỉ khi khách đồng ý banner *và* tick ô trên form/chat. Chưa chấm điểm lead | act-2, seq-4 | `/khach-hang` hiện "Sở thích" kèm ảnh đã xem |
 | 1.4 | ✓ **Thông báo cho sales** khi có lead mới (change `lead-intake`): email qua SMTP nếu cấu hình, không thì ghi log | business-flow, seq-5 | có email kèm nguồn, liên hệ, ngữ cảnh, tóm tắt sở thích |
-| 1.5 | **UI quản lý tri thức trợ lý** cho NV nội dung: thêm, sửa, xoá đoạn `kb_chunk`, duyệt bản nháp AI sinh | seq-16, usecase-3 | không phải sửa JSON tay |
-| 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
+| 1.5 | ✓ **UI quản lý tri thức trợ lý** (change `assistant-knowledge-admin`): thêm, sửa, xoá, duyệt nháp AI, duyệt giá, câu hỏi chưa trả lời | seq-16, usecase-3 | |
+| 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio: giờ làm được ngay ở `/quan-tri/tri-thuc` (sửa từng mục, xoá dấu mẫu; mục giá cần KTS trưởng bật) | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
 | 1.7 | **UI quản trị người dùng**: danh sách, đổi role, khoá tài khoản; quên mật khẩu | seq-19, usecase-5 | admin không phải dùng `set_role.py` |
 | 1.8 | ✓ Duyệt ảnh: **trả về nháp / lưu nội bộ / mở lại** kèm lý do (change `review-return-reject`) | act-1, seq-6 | còn: gỡ ảnh đã đăng |
 | 1.9 | Hotspot: thêm điểm bằng tay, kéo vị trí; bảng **MonDo** (thư viện món đồ/vật liệu) và liên kết hotspot → món đồ → gói dịch vụ | seq-14, class-1 | bấm hotspot sofa ra các không gian có sofa tương tự |
@@ -525,6 +526,12 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | PUT | `/spaces/tags` | staff | gắn tag theo ảnh hoặc cả dự án |
 | POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
 | POST | `/chat` | công khai, 20/phút | trợ lý |
+| GET / POST | `/knowledge` | content, approver | danh sách mục tri thức (`?q=&trang_thai=`, kèm `can_duyet_gia`, `mau`, `ai`, `lien_ket`) / tạo mục (nháp hoặc chờ duyệt) |
+| GET / PATCH | `/knowledge/{id}` | content, approver | xem / sửa (tính lại embedding; NV nội dung sửa giá mục đang dùng → chờ duyệt) |
+| POST | `/knowledge/{id}/status` | content, approver | đổi trạng thái; bật mục có giá chỉ approver (403); bật nháp AI thì bỏ dấu |
+| DELETE | `/knowledge/{id}` | approver | xoá (409 nếu điểm nóng liên kết tới) |
+| GET | `/knowledge/gaps` | content, approver | câu hỏi chưa trả lời đang mở, gom nhóm |
+| POST | `/knowledge/gaps/dismiss` | content, approver | bỏ qua các câu hỏi |
 | POST | `/leads` | công khai, 5/10 phút | form liên hệ tạo lead (nguồn `form`), kèm hồ sơ hành vi nếu khách đồng ý |
 | GET | `/leads` | sales, approver | lead mọi nguồn, lọc `?nguon=form\|brief\|chat`; lead brief kèm ảnh, ghi chú, mã chia sẻ |
 | GET | `/spaces?ids=1,2,3` | công khai | các không gian theo id (≤ 60), cho bộ sưu tập trong trình duyệt |
@@ -562,7 +569,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `space_text` | mô tả dài của ảnh + embedding Vertex (RAG) |
 | `app_user` | tài khoản, role |
 | `review_log` | nhật ký duyệt, sửa, gán nhãn lại |
-| `kb_chunk` | đoạn tri thức trợ lý + embedding |
+| `kb_chunk` | mục tri thức trợ lý: loại, tiêu đề, `cum_tu_khop`, câu trả lời, embedding (tiêu đề + cụm từ khớp), `trang_thai` (nhap / cho_duyet / dang_dung / tat; trợ lý chỉ dùng dang_dung), `nguon` (mau / ai / nhan_vien / tep), `tu_cau_hoi` |
+| `nhat_ky_tri_thuc` | nhật ký sửa tri thức: ai, hành động, trước → sau (giữ cả mục đã xoá) |
 | `lead` | khách tiềm năng mọi nguồn (`nguon`: form, chat, brief, estimate): họ tên, SĐT, email, lời nhắn, ngữ cảnh trang/dự án, hồ sơ hành vi (bản chụp), và với chat thì ý định, yêu cầu, hội thoại |
 | `bo_suu_tap`, `bo_suu_tap_anh` | bộ sưu tập: `dang_luu` (một cái mỗi tài khoản) và `da_gui` (bản cố định của mỗi brief, có `ma_chia_se`); ảnh + ghi chú (≤ 300 ký tự) |
 | `ket_qua_trac_nghiem` | kết quả trắc nghiệm đã lưu, một dòng mỗi tài khoản: phong cách + tỉ lệ, id không gian gợi ý |
@@ -570,7 +578,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `chieu_phan_loai`, `gia_tri_phan_loai`, `space_gia_tri` | phân loại và nhãn của từng không gian |
 | `ung_vien_phan_loai` | đề xuất chiều mới chờ duyệt |
 | `nhat_ky_phan_loai` | nhật ký sửa phân loại: ai, hành động, đối tượng, trước → sau |
-| `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được |
+| `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được; `trang_thai` mo / da_xu_ly (có mục trả lời, `kb_chunk_id`) / bo_qua |
 | `phien_truy_cap`, `su_kien`, `su_kien_an_danh` | hành vi có đồng ý, bộ đếm ẩn danh; `su_kien.loai`: `xem_khong_gian`, `luu_anh`, `chon_trac_nghiem` |
 
 ### 11.4 Script backend (chạy trong `backend/`)
@@ -582,7 +590,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `reembed.py` | tính lại embedding |
 | `generate_transcripts.py` | mô tả dài từng ảnh cho RAG |
 | `generate_kb.py` | sinh nháp mô tả dự án và câu hỏi đánh giá |
-| `python -m pipeline.assistant <file.json>` | nạp kho tri thức |
+| `python -m pipeline.assistant <file.json>` | nạp kho tri thức hàng loạt; mục nháp AI vào Chờ duyệt; nạp lại không đổi trạng thái mục đã có |
 | `python -m pipeline.discovery [--dry-run]` | chạy AI đề xuất chiều phân loại mới |
 | `seed_taxonomy.py` | nạp phân loại gốc từ `kb/taxonomy_seed.json` |
 | `set_role.py <email> <role>` | đổi role |

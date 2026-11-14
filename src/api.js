@@ -130,6 +130,14 @@ export const toFacet = d => ({
 export const getTaxonomy = () => get('/taxonomy')
 // taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
 export const getTaxonomyAdmin = () => get('/taxonomy/admin')
+// assistant knowledge (seq-16): entries the chatbot answers from, and the questions it could not answer
+export const listKnowledge = (params = {}) => get('/knowledge', params)
+export const createKnowledge = body => request('POST', '/knowledge', { body })
+export const updateKnowledge = (id, body) => request('PATCH', '/knowledge/' + id, { body })
+export const setKnowledgeStatus = (id, trangThai) => request('POST', '/knowledge/' + id + '/status', { body: { trang_thai: trangThai } })
+export const deleteKnowledge = id => request('DELETE', '/knowledge/' + id)
+export const knowledgeGaps = () => get('/knowledge/gaps')
+export const dismissGaps = ids => request('POST', '/knowledge/gaps/dismiss', { body: { ids } })
 export const addDimension = body => request('POST', '/taxonomy', { body })
 export const editDimension = (id, body) => request('PATCH', '/taxonomy/' + id, { body })
 export const addValue = (dimId, body) => request('POST', '/taxonomy/' + dimId + '/values', { body })

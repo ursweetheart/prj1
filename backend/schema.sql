@@ -277,3 +277,32 @@ CREATE INDEX IF NOT EXISTS nhat_ky_phan_loai_created_at ON nhat_ky_phan_loai (cr
 -- review_status also takes 'noi_bo' (kept internal, never published). ly_do_duyet = the reason shown on the card now:
 -- {loai: tra_ve | noi_bo | mo_lai, ly_do, boi (email), luc}; cleared when the photo is advanced. review_log keeps all.
 ALTER TABLE space ADD COLUMN IF NOT EXISTS ly_do_duyet jsonb;
+
+-- ── Assistant knowledge admin (change: assistant-knowledge-admin; UC16, seq-16) ──────────────────────────
+-- An entry is used by the chatbot only while 'dang_dung'. cum_tu_khop = the match phrases embedded with the title
+-- (stored now, so an edit can re-embed). nguon: mau (sample) | ai (AI draft) | nhan_vien (staff) | tep (file).
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS cum_tu_khop text NOT NULL DEFAULT '';
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS trang_thai text NOT NULL DEFAULT 'dang_dung';
+ALTER TABLE kb_chunk DROP CONSTRAINT IF EXISTS kb_chunk_trang_thai_check;
+ALTER TABLE kb_chunk ADD CONSTRAINT kb_chunk_trang_thai_check CHECK (trang_thai IN ('nhap', 'cho_duyet', 'dang_dung', 'tat'));
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS nguon text;
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS tu_cau_hoi int[] NOT NULL DEFAULT '{}';  -- unanswered questions it was written from
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS updated_by int REFERENCES app_user(id) ON DELETE SET NULL;
+UPDATE kb_chunk SET cum_tu_khop = title WHERE cum_tu_khop = '';
+UPDATE kb_chunk SET nguon = CASE WHEN content LIKE '[DỮ LIỆU MẪU]%' THEN 'mau' WHEN content LIKE '[AI SINH%' THEN 'ai' ELSE 'tep' END
+  WHERE nguon IS NULL;
+-- unanswered questions: open until an entry answers them (da_xu_ly) or staff dismiss them (bo_qua)
+ALTER TABLE khoang_trong_tri_thuc ADD COLUMN IF NOT EXISTS trang_thai text NOT NULL DEFAULT 'mo';
+ALTER TABLE khoang_trong_tri_thuc DROP CONSTRAINT IF EXISTS khoang_trong_tri_thuc_trang_thai_check;
+ALTER TABLE khoang_trong_tri_thuc ADD CONSTRAINT khoang_trong_tri_thuc_trang_thai_check CHECK (trang_thai IN ('mo', 'da_xu_ly', 'bo_qua'));
+ALTER TABLE khoang_trong_tri_thuc ADD COLUMN IF NOT EXISTS kb_chunk_id int REFERENCES kb_chunk(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS nhat_ky_tri_thuc (
+  id serial PRIMARY KEY,
+  kb_chunk_id int,                  -- kept after a delete (no FK), so the log still says what was removed
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  hanh_dong text NOT NULL,          -- tao | sua | trang_thai | xoa | bo_qua_cau_hoi
+  truoc jsonb,
+  sau jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

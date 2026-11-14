@@ -22,8 +22,8 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, estimate, leads, notify, quiz, taxonomy, taxonomy_admin, trends, vertex
-from pipeline.assistant import respond, with_services
+from pipeline import bo_suu_tap, discovery, estimate, knowledge, leads, notify, quiz, taxonomy, taxonomy_admin, trends, vertex
+from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_image, by_text, similar_to
@@ -832,6 +832,96 @@ class MergeValue(BaseModel):
 def merge_value(value_id: int, body: MergeValue, user=Depends(require(*APPROVERS))):
     """Same dimension only; mirrored space columns move too; tong_mau never (seq-15 b16-22)."""
     return _tax_write(lambda c: taxonomy_admin.merge(c, user, value_id, body.target_id))
+
+
+# ── Assistant knowledge (change: assistant-knowledge-admin; UC16, seq-16) ─────────────────────────────────────
+KNOWLEDGE = ("content", *APPROVERS)
+
+
+def _kn(call):
+    """Run one knowledge write in a transaction and map its errors."""
+    try:
+        with _db() as c:
+            return call(c)
+    except knowledge.NotFound as e:
+        raise HTTPException(404, str(e))
+    except knowledge.Conflict as e:
+        raise HTTPException(409, str(e))
+    except knowledge.Forbidden as e:
+        raise HTTPException(403, str(e))
+    except knowledge.Invalid as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/knowledge")
+def knowledge_list(q: Optional[str] = Query(default=None, max_length=200),
+                   trang_thai: Optional[Literal[knowledge.STATUSES]] = None, user=Depends(require(*KNOWLEDGE))):
+    with _db() as c:
+        return knowledge.list_entries(c, q, trang_thai)
+
+
+@app.get("/knowledge/gaps")
+def knowledge_gaps(user=Depends(require(*KNOWLEDGE))):
+    """Questions the chatbot could not answer, still open, grouped and most asked first (seq-16 b1-6)."""
+    with _db() as c:
+        return knowledge.gaps(c)
+
+
+class GapIds(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@app.post("/knowledge/gaps/dismiss")
+def knowledge_dismiss(body: GapIds, user=Depends(require(*KNOWLEDGE))):
+    return {"bo_qua": _kn(lambda c: knowledge.dismiss_gaps(c, user, body.ids))}
+
+
+@app.get("/knowledge/{entry_id}")
+def knowledge_get(entry_id: int, user=Depends(require(*KNOWLEDGE))):
+    return _kn(lambda c: knowledge.get(c, entry_id))
+
+
+class NewEntry(BaseModel):
+    kind: Literal[KB_KINDS]
+    title: str = Field(min_length=1, max_length=200)
+    cum_tu_khop: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=4000)
+    trang_thai: Literal["nhap", "cho_duyet"] = "nhap"
+    tu_cau_hoi: list[int] = Field(default_factory=list, max_length=500)  # the unanswered questions it answers
+
+
+@app.post("/knowledge", status_code=201)
+def knowledge_create(body: NewEntry, user=Depends(require(*KNOWLEDGE))):
+    return _kn(lambda c: knowledge.create(c, user, body.kind, body.title, body.cum_tu_khop, body.content,
+                                          body.trang_thai, body.tu_cau_hoi))
+
+
+class EditEntry(BaseModel):
+    kind: Optional[Literal[KB_KINDS]] = None
+    title: Optional[str] = Field(default=None, max_length=200)
+    cum_tu_khop: Optional[str] = Field(default=None, max_length=500)
+    content: Optional[str] = Field(default=None, max_length=4000)
+
+
+@app.patch("/knowledge/{entry_id}")
+def knowledge_update(entry_id: int, body: EditEntry, user=Depends(require(*KNOWLEDGE))):
+    """Re-embeds title and match phrases; a content editor's change to a live price entry sends it back for approval."""
+    return _kn(lambda c: knowledge.update(c, user, entry_id, body.kind, body.title, body.cum_tu_khop, body.content))
+
+
+class EntryStatus(BaseModel):
+    trang_thai: Literal[knowledge.STATUSES]
+
+
+@app.post("/knowledge/{entry_id}/status")
+def knowledge_status(entry_id: int, body: EntryStatus, user=Depends(require(*KNOWLEDGE))):
+    """Only the lead architect / admin switch on an entry that states prices (seq-16: price only after approval)."""
+    return _kn(lambda c: knowledge.set_status(c, user, entry_id, body.trang_thai))
+
+
+@app.delete("/knowledge/{entry_id}", status_code=204)
+def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
+    _kn(lambda c: knowledge.delete(c, user, entry_id))
 
 
 # ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────
