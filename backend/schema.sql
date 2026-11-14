@@ -244,8 +244,7 @@ ON CONFLICT (loai_nha, hang_muc, goi) DO NOTHING;
 
 -- ── Trend dashboard (change: trend-dashboard; act-3, seq-4) ────────────────────────────────────────────────
 -- Saves join views as consented behaviour signals. 'demo-' sessions come only from pipeline/demo_activity.py.
-ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
-ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh'));
+-- (the allowed su_kien.loai list is set once, in the style-quiz section below, so re-applying never narrows it)
 CREATE INDEX IF NOT EXISTS su_kien_created_at ON su_kien (created_at);
 CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, created_at);
 
@@ -260,3 +259,16 @@ CREATE TABLE IF NOT EXISTS ket_qua_trac_nghiem (
   goi_y int[] NOT NULL DEFAULT '{}',
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- ── Taxonomy admin (change: taxonomy-admin; seq-15, UC15) ─────────────────────────────────────────────────
+-- Every staff edit of the taxonomy: who, what, before -> after (them_chieu | sua_chieu | them_gia_tri | sua_gia_tri | gop_gia_tri).
+CREATE TABLE IF NOT EXISTS nhat_ky_phan_loai (
+  id serial PRIMARY KEY,
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  hanh_dong text NOT NULL,
+  doi_tuong text NOT NULL,          -- 'phong_cach' or 'phong_cach:Japandi'
+  truoc jsonb,
+  sau jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS nhat_ky_phan_loai_created_at ON nhat_ky_phan_loai (created_at DESC);

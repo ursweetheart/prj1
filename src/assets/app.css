@@ -502,7 +502,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 @media (min-width: 600px)  { .pv { padding-top: 232px } }
 @media (min-width: 1024px) { .pv { padding-top: 128px } }
 /* the same room for the fixed header on the other content pages (ước tính, bộ sưu tập, trắc nghiệm) */
-.page-top { padding-top: 196px }
+.page-top { padding-top: 224px }  /* the stacked header is ~205px at 360px */
 @media (min-width: 600px)  { .page-top { padding-top: 232px } }
 @media (min-width: 1024px) { .page-top { padding-top: 128px } }
 .pv-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;

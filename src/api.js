@@ -128,6 +128,13 @@ export const toFacet = d => ({
   options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
 })
 export const getTaxonomy = () => get('/taxonomy')
+// taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
+export const getTaxonomyAdmin = () => get('/taxonomy/admin')
+export const addDimension = body => request('POST', '/taxonomy', { body })
+export const editDimension = (id, body) => request('PATCH', '/taxonomy/' + id, { body })
+export const addValue = (dimId, body) => request('POST', '/taxonomy/' + dimId + '/values', { body })
+export const editValue = (id, body) => request('PATCH', '/taxonomy/values/' + id, { body })
+export const mergeValue = (id, targetId) => request('POST', '/taxonomy/values/' + id + '/merge', { body: { target_id: targetId } })
 // AI-proposed dimensions awaiting the lead architect (seq-15); accepting back-tags the library, so it takes a while
 export const listCandidates = () => get('/taxonomy/candidates')
 export const acceptCandidate = (id, ten, gia_tri) => request('POST', `/taxonomy/candidates/${id}/accept`, { body: { ten, gia_tri } })

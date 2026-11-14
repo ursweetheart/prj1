@@ -8,6 +8,7 @@ reload() after editing the taxonomy (the admin API does).
 
 import json
 import logging
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
@@ -72,6 +73,13 @@ def values(dim: str) -> list[str]:
     return list(_tax().get(dim, {}).get("values", {}))
 
 
+def fold(s: str) -> str:
+    """lower-case, no diacritics: "Phòng ngủ" == "phong ngu" (request parsing compares folded text)."""
+    s = unicodedata.normalize("NFD", s.lower().replace("đ", "d"))
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+
 def synonym_map(dim: str) -> dict[str, str]:
-    """folded synonym phrase -> value ma_dinh_danh, for parse_request."""
-    return {s: ma for ma, v in _tax().get(dim, {}).get("values", {}).items() for s in v["syn"]}
+    """folded synonym phrase -> value ma_dinh_danh, for parse_request. Synonyms are stored as staff typed them
+    (with accents: material tagging needs "gỗ"), so they are folded here to meet the folded message."""
+    return {fold(s): ma for ma, v in _tax().get(dim, {}).get("values", {}).items() for s in v["syn"]}

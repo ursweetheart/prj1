@@ -7,7 +7,6 @@ import json
 import logging
 import re
 import sys
-import unicodedata
 
 import numpy as np
 import psycopg
@@ -27,9 +26,7 @@ FALLBACK =("Mình chưa có thông tin chính xác về câu hỏi này. Mình �
             "họ sẽ phản hồi bạn sớm.")
 
 
-def _fold(s: str) -> str:  # lower-case, no diacritics: "Phòng ngủ" == "phong ngu"
-    s = unicodedata.normalize("NFD", s.lower().replace("đ", "d"))
-    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+_fold = taxonomy.fold  # lower-case, no diacritics: "Phòng ngủ" == "phong ngu"
 
 
 # Keyword matching now reads from the data-driven taxonomy (tu_dong_nghia); see parse_request.

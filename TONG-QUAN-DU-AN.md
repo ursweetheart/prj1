@@ -4,7 +4,7 @@
 | :-- | :-- |
 | **Dự án** | Website portfolio thiết kế nội thất tích hợp AI (mã PRJ1-INTERIOR-WEB) |
 | **Nhóm** | Nhóm 6: Phạm Việt Tùng, Trần Xuân Bằng, Trần Xuân Tuấn |
-| **Cập nhật** | 14/11/2026 |
+| **Cập nhật** | 15/11/2026 |
 | **Phiên bản code** | nhánh `main`, commit `1d72fc8` (repo `github.com/ursweetheart/prj1`) |
 | **Bản tĩnh** | https://ursweetheart.github.io/prj1/ (không có backend nên các chức năng AI không chạy) |
 
@@ -265,7 +265,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-12-trac-nghiem-phong-cach` | UC06 | Có (change `style-quiz`); gợi ý **không gian**, chưa gợi ý dự án (bước 12) |
 | `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Có: trình duyệt khi chưa đăng nhập, gộp vào tài khoản khi đăng ký/đăng nhập |
 | `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
-| `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Một phần (API, chưa có UI) |
+| `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Có (change `taxonomy-admin`); bước 20–22 (làm mới chỉ mục vector) không cần: không embedding nào dựng từ nhãn |
 | `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Một phần (CLI, chưa có UI) |
 | `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Bảng điều khiển: có (change `trend-dashboard`). Báo cáo email hằng tuần: chưa |
 | `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Một phần (API, chưa có UI) |
@@ -331,7 +331,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC12 | Tải ảnh hàng loạt | **Xong** | `/quan-tri` → "Tải ảnh dự án mới", `POST /spaces/ingest` | Xử lý tuần tự từng ảnh; trên CPU mất vài giây mỗi ảnh |
 | UC13 | Gắn nhãn không gian | **Xong** | `/quan-tri`: sửa loại phòng, phong cách, vật liệu; tag loại công trình và mức đầu tư theo ảnh hoặc cả dự án | |
 | UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log` | Chưa có nút trả về hay từ chối. Chưa theo dõi hiệu quả sau 30 ngày (QT-01 bước cuối, BFD 5.4) |
-| UC15 | Quản lý taxonomy | **Một phần** | Phân loại nằm trong DB. API thêm / đổi tên / gộp giá trị. AI đề xuất chiều mới, duyệt ở `/quan-tri/phan-loai` | **Chưa có giao diện** thêm, đổi tên, gộp giá trị. Chưa tạo chiều mới bằng tay. Đổi tên chưa cập nhật nhãn trong chỉ mục vector |
+| UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). **Bộ phân loại AI vẫn dùng danh sách phong cách / không gian cố định** trong `pipeline/schemas.py`: giá trị mới thêm chỉ được gắn bởi người, AI chưa đề xuất được |
 | UC16 | Quản lý tri thức trợ lý | **Một phần** | file JSON + lệnh `python -m pipeline.assistant kb/...`; `generate_kb.py` sinh nháp | Chưa có giao diện CMS để NV nội dung thêm, sửa, xoá đoạn tri thức |
 | UC17 | Gắn hotspot món đồ | **Một phần** | YOLO gợi ý; ở `/quan-tri` sửa tên và xoá hotspot; hiển thị trên `/khong-gian/:id` | Chưa thêm hotspot mới bằng tay, chưa kéo vị trí, chưa liên kết tới **thư viện món đồ/vật liệu (M7)** và gói dịch vụ |
 
@@ -390,7 +390,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | NFR-10 | gán nhãn ≥ 85% ở Phong cách và Không gian | Có công cụ `eval_labels.py`; chưa đủ ảnh đã duyệt để đo |
 | NFR-11 | precision@5 ≥ 0,7 cho gợi ý tương tự | Chưa đo |
 | NFR-12 | đăng 1 dự án 40 ảnh < 20 phút | Chưa đo (đã đi hết quy trình với dự án 9 ảnh) |
-| NFR-13 | thêm phong cách mới không sửa code | Đạt về dữ liệu (phân loại trong DB); còn thiếu giao diện (UC15) |
+| NFR-13 | thêm phong cách mới không sửa code | Đạt cho bộ lọc, gắn nhãn tay, trợ lý (UC15 có giao diện). Chưa đạt cho bộ phân loại AI: `pipeline/schemas.py` còn liệt kê cố định |
 
 **Dữ liệu ngày 2/11/2026:** 152 không gian trong DB, trong đó 9 ảnh đã đăng (dự án `indochine_chinosere_villa`) và 143 ảnh nháp. Frontend tĩnh có 64 dự án trong `src/assets/projects/`.
 
@@ -415,7 +415,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
-| 1.1 | **UI quản lý taxonomy** ở `/quan-tri/phan-loai`: liệt kê chiều và giá trị; thêm, đổi tên, gộp (API đã có); thêm chiều mới bằng tay; sửa từ đồng nghĩa | seq-15, class-2 | KTS trưởng làm được mọi thao tác không cần Swagger |
+| 1.1 | ✓ **UI quản lý taxonomy** (change `taxonomy-admin`): liệt kê chiều và giá trị; thêm, đổi tên, gộp; thêm chiều bằng tay; sửa từ đồng nghĩa; nhật ký | seq-15, class-2 | còn: dựng schema của bộ phân loại AI từ taxonomy để AI gắn được giá trị mới |
 | 1.2 | ~~Vòng đời lead (QT-02)~~ **Bỏ:** `usecase-0` và `usecase-4` ghi rõ liên hệ, phân công, theo dõi lead do đội tư vấn làm *ngoài hệ thống*; hệ thống chỉ lưu lead và báo kèm hồ sơ hành vi | act-2, usecase-0/4 | — |
 | 1.3 | ✓ **Hồ sơ hành vi trong lead** (change `lead-intake`): bản chụp không gian đã xem và giá trị phân loại nổi bật, chỉ khi khách đồng ý banner *và* tick ô trên form/chat. Chưa chấm điểm lead | act-2, seq-4 | `/khach-hang` hiện "Sở thích" kèm ảnh đã xem |
 | 1.4 | ✓ **Thông báo cho sales** khi có lead mới (change `lead-intake`): email qua SMTP nếu cấu hình, không thì ghi log | business-flow, seq-5 | có email kèm nguồn, liên hệ, ngữ cảnh, tóm tắt sở thích |
@@ -506,7 +506,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `/trac-nghiem` | mọi người | trắc nghiệm phong cách: cặp ảnh → 2 phong cách + không gian gợi ý; lưu kết quả khi đăng nhập |
 | `/dang-nhap` | mọi người | email / Google / Facebook |
 | `/quan-tri` | architect, content, lead_architect, admin | duyệt và đăng ảnh |
-| `/quan-tri/phan-loai` | lead_architect, admin | duyệt chiều phân loại AI đề xuất |
+| `/quan-tri/phan-loai` | lead_architect, admin | tab "Danh mục": quản lý chiều và giá trị; tab "Đề xuất của AI" (`?tab=de-xuat`): duyệt chiều AI đề xuất |
 | `/khach-hang` | sales, lead_architect, admin | danh sách lead |
 
 ### 11.2 API backend (`http://localhost:8001`, Swagger ở `/docs`)
@@ -539,9 +539,12 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | GET / PUT | `/prices`, `/prices/{id}` | approver | bảng đơn giá D8; lưu một ô thì ô đó thành `d3` (không còn là giá mẫu) |
 | GET | `/analytics/overview?days=7\|30\|90` | sales, approver | điểm quan tâm, xu hướng, cảnh báo, tổng, lead theo tuần, top không gian; chỉ số tổng hợp, không có dữ liệu cá nhân |
 | GET | `/taxonomy` | công khai | các chiều và giá trị (cho bộ lọc) |
-| POST | `/taxonomy/{dim_id}/values` | lead_architect | thêm giá trị |
-| PATCH | `/taxonomy/values/{id}` | lead_architect | đổi tên giá trị |
-| POST | `/taxonomy/values/{id}/merge` | lead_architect | gộp giá trị |
+| GET | `/taxonomy/admin` | approver | cây chiều / giá trị kèm số không gian, đã đăng, dự án; 20 thay đổi gần nhất |
+| POST | `/taxonomy` | approver | thêm chiều (mã sinh từ tên) |
+| PATCH | `/taxonomy/{dim_id}` | approver | đổi tên, ẩn/hiện cho khách, `move: up/down` |
+| POST | `/taxonomy/{dim_id}/values` | approver | thêm giá trị (`ma_dinh_danh` tuỳ chọn, mặc định sinh từ tên; 409 nếu trùng, không phân biệt hoa thường) |
+| PATCH | `/taxonomy/values/{id}` | approver | đổi tên (giữ mã), mô tả, từ đồng nghĩa |
+| POST | `/taxonomy/values/{id}/merge` | approver | gộp vào giá trị cùng chiều; chuyển cả `design_style` / `space_type`; 422 khi khác chiều hoặc `tong_mau` |
 | GET | `/taxonomy/candidates` | approver | đề xuất chiều mới |
 | POST | `/taxonomy/candidates/{id}/accept` | approver | chấp nhận, AI gắn nhãn thư viện |
 | POST | `/taxonomy/candidates/{id}/reject` | approver | từ chối |
@@ -565,6 +568,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `don_gia` | bảng đơn giá D8: 5 loại nhà × 4 hạng mục × 3 gói, khoảng VND/m², `nguon` `mau` (giá mẫu) / `d3` (nhân viên đặt) |
 | `chieu_phan_loai`, `gia_tri_phan_loai`, `space_gia_tri` | phân loại và nhãn của từng không gian |
 | `ung_vien_phan_loai` | đề xuất chiều mới chờ duyệt |
+| `nhat_ky_phan_loai` | nhật ký sửa phân loại: ai, hành động, đối tượng, trước → sau |
 | `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được |
 | `phien_truy_cap`, `su_kien`, `su_kien_an_danh` | hành vi có đồng ý, bộ đếm ẩn danh; `su_kien.loai`: `xem_khong_gian`, `luu_anh`, `chon_trac_nghiem` |
 

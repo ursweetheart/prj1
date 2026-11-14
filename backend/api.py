@@ -22,8 +22,8 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, estimate, leads, notify, quiz, taxonomy, trends, vertex
-from pipeline.assistant import _fold, respond, with_services
+from pipeline import bo_suu_tap, discovery, estimate, leads, notify, quiz, taxonomy, taxonomy_admin, trends, vertex
+from pipeline.assistant import respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_image, by_text, similar_to
@@ -154,7 +154,7 @@ def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(
 
 def project_folder(name: str) -> str:
     """'Biệt thự Thảo Điền' -> 'biet_thu_thao_dien': the folder doubles as the project name, keep it URL- and path-safe."""
-    return re.sub(r"[^a-z0-9]+", "_", _fold(name)).strip("_")[:60]
+    return taxonomy_admin.slug(name)
 
 
 @app.post("/spaces/ingest", status_code=201)
@@ -689,42 +689,75 @@ def taxonomy_list():
     return dims
 
 
+def _tax_write(call):
+    """Run one taxonomy_admin write in a transaction, map its errors, refresh the taxonomy cache."""
+    try:
+        with _db() as c:
+            out = call(c)
+    except taxonomy_admin.NotFound as e:
+        raise HTTPException(404, str(e))
+    except taxonomy_admin.Conflict as e:
+        raise HTTPException(409, str(e))
+    except taxonomy_admin.Invalid as e:
+        raise HTTPException(422, str(e))
+    taxonomy.reload()
+    return out
+
+
+@app.get("/taxonomy/admin")
+def taxonomy_admin_tree(user=Depends(require(*APPROVERS))):
+    """Every dimension and value with usage counts, and the 20 latest changes (seq-15 b1-6)."""
+    with _db() as c:
+        return taxonomy_admin.tree(c)
+
+
+class NewDimension(BaseModel):
+    ten: str = Field(min_length=1, max_length=80)
+    cho_phep_nhieu_gia_tri: bool = False
+    hien_thi_cho_khach: bool = True
+
+
+@app.post("/taxonomy", status_code=201)
+def add_dimension(body: NewDimension, user=Depends(require(*APPROVERS))):
+    return _tax_write(lambda c: taxonomy_admin.add_dimension(c, user, body.ten, body.cho_phep_nhieu_gia_tri,
+                                                             body.hien_thi_cho_khach))
+
+
+class EditDimension(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=80)
+    hien_thi_cho_khach: Optional[bool] = None
+    move: Optional[Literal["up", "down"]] = None
+
+
+@app.patch("/taxonomy/{dim_id}")
+def edit_dimension(dim_id: int, body: EditDimension, user=Depends(require(*APPROVERS))):
+    """Rename, show/hide for visitors, move up/down; the code never changes."""
+    return _tax_write(lambda c: taxonomy_admin.edit_dimension(c, user, dim_id, body.ten, body.hien_thi_cho_khach, body.move))
+
+
 class NewValue(BaseModel):
-    ma_dinh_danh: str = Field(min_length=1, max_length=64)
     ten: str = Field(min_length=1, max_length=120)
+    ma_dinh_danh: Optional[str] = Field(default=None, min_length=1, max_length=64)  # derived from ten when omitted
+    mo_ta: Optional[str] = Field(default=None, max_length=500)
     tu_dong_nghia: list[str] = Field(default_factory=list)
 
 
 @app.post("/taxonomy/{dim_id}/values", status_code=201)
 def add_value(dim_id: int, body: NewValue, user=Depends(require(*APPROVERS))):
-    with _db() as c:
-        if not c.execute("SELECT 1 FROM chieu_phan_loai WHERE id=%s", (dim_id,)).fetchone():
-            raise HTTPException(404, "dimension not found")
-        try:
-            row = c.execute(
-                "INSERT INTO gia_tri_phan_loai (chieu_id, ma_dinh_danh, ten, tu_dong_nghia) "
-                "VALUES (%s,%s,%s,%s) RETURNING id, chieu_id, ma_dinh_danh, ten, tu_dong_nghia",
-                (dim_id, body.ma_dinh_danh, body.ten, Jsonb(body.tu_dong_nghia))).fetchone()
-        except UniqueViolation:
-            raise HTTPException(409, "value already exists in this dimension")
-    taxonomy.reload()
-    return row
+    return _tax_write(lambda c: taxonomy_admin.add_value(c, user, dim_id, body.ten, body.mo_ta, body.tu_dong_nghia,
+                                                         body.ma_dinh_danh))
 
 
-class RenameValue(BaseModel):
-    ten: str = Field(min_length=1, max_length=120)
+class EditValue(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=120)
+    mo_ta: Optional[str] = Field(default=None, max_length=500)
+    tu_dong_nghia: Optional[list[str]] = None
 
 
 @app.patch("/taxonomy/values/{value_id}")
-def rename_value(value_id: int, body: RenameValue, user=Depends(require(*APPROVERS))):
-    """Rename keeps ma_dinh_danh, so facet URLs stay valid (seq-15 b13)."""
-    with _db() as c:
-        row = c.execute("UPDATE gia_tri_phan_loai SET ten=%s WHERE id=%s RETURNING id, ma_dinh_danh, ten",
-                        (body.ten, value_id)).fetchone()
-    if not row:
-        raise HTTPException(404, "value not found")
-    taxonomy.reload()
-    return row
+def edit_value(value_id: int, body: EditValue, user=Depends(require(*APPROVERS))):
+    """Rename keeps ma_dinh_danh, so facet URLs stay valid (seq-15 b13); also description and synonyms."""
+    return _tax_write(lambda c: taxonomy_admin.edit_value(c, user, value_id, body.ten, body.mo_ta, body.tu_dong_nghia))
 
 
 class MergeValue(BaseModel):
@@ -733,21 +766,8 @@ class MergeValue(BaseModel):
 
 @app.post("/taxonomy/values/{value_id}/merge")
 def merge_value(value_id: int, body: MergeValue, user=Depends(require(*APPROVERS))):
-    """Move every space tag from the source value to the target, then delete the source (seq-15 b19)."""
-    if value_id == body.target_id:
-        raise HTTPException(422, "cannot merge a value into itself")
-    with _db() as c:
-        if len(c.execute("SELECT id FROM gia_tri_phan_loai WHERE id IN (%s,%s)",
-                         (value_id, body.target_id)).fetchall()) != 2:
-            raise HTTPException(404, "value not found")
-        affected = c.execute("SELECT COUNT(*) AS n FROM space_gia_tri WHERE gia_tri_id=%s", (value_id,)).fetchone()["n"]
-        c.execute("UPDATE space_gia_tri SET gia_tri_id=%s WHERE gia_tri_id=%s "
-                  "AND space_id NOT IN (SELECT space_id FROM space_gia_tri WHERE gia_tri_id=%s)",
-                  (body.target_id, value_id, body.target_id))
-        c.execute("DELETE FROM space_gia_tri WHERE gia_tri_id=%s", (value_id,))  # any duplicates left behind
-        c.execute("DELETE FROM gia_tri_phan_loai WHERE id=%s", (value_id,))
-    taxonomy.reload()  # ponytail: vector-index label refresh (seq-15 b20-22) is a future queue job
-    return {"merged_into": body.target_id, "affected": affected}
+    """Same dimension only; mirrored space columns move too; tong_mau never (seq-15 b16-22)."""
+    return _tax_write(lambda c: taxonomy_admin.merge(c, user, value_id, body.target_id))
 
 
 # ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────
