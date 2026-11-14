@@ -272,3 +272,8 @@ CREATE TABLE IF NOT EXISTS nhat_ky_phan_loai (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS nhat_ky_phan_loai_created_at ON nhat_ky_phan_loai (created_at DESC);
+
+-- ── Review: return to draft / keep internal (change: review-return-reject; act-1, seq-6) ────────────────
+-- review_status also takes 'noi_bo' (kept internal, never published). ly_do_duyet = the reason shown on the card now:
+-- {loai: tra_ve | noi_bo | mo_lai, ly_do, boi (email), luc}; cleared when the photo is advanced. review_log keeps all.
+ALTER TABLE space ADD COLUMN IF NOT EXISTS ly_do_duyet jsonb;

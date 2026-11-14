@@ -176,7 +176,13 @@ export const SPACE_TYPES = Object.keys(SPACE_VI)
 export const STYLES = [...Object.keys(PC), 'Khac']
 // QT-01; 'cleared' = the client allowed publishing the photos
 export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
-export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng' }
+export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
+  noi_bo: 'Lưu nội bộ' } // noi_bo: the client refused publishing; final, never public (review-return-reject)
+// backward paths, lead architect / admin, always with a reason (5-500 characters); all or nothing
+export const RETURNABLE = ['in_review', 'approved', 'cleared']
+export const returnSpaces = (ids, lyDo) => request('POST', '/spaces/return', { body: { space_ids: ids, ly_do: lyDo } })
+export const keepInternal = (ids, lyDo) => request('POST', '/spaces/keep-internal', { body: { space_ids: ids, ly_do: lyDo } })
+export const reopenSpaces = (ids, lyDo) => request('POST', '/spaces/reopen', { body: { space_ids: ids, ly_do: lyDo } })
 export const EDITORS = [...STAFF, 'content'] // content may only edit caption / alt text of spaces in review
 
 export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })

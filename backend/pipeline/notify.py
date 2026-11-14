@@ -138,3 +138,46 @@ def confirm_to_visitor(lead_id: int):
         _send(lead["email"], subject, body)
     except Exception:
         log.exception("lead %s: could not send the visitor confirmation", lead_id)
+
+
+# ── Review: photos sent back (change review-return-reject; seq-6 b12) ───────────────────────────────────
+KIND_VI = {"tra_ve": "Trả về nháp", "noi_bo": "Lưu nội bộ (không xuất bản)", "mo_lai": "Mở lại"}
+review_log = logging.getLogger("d3.review")
+review_log.setLevel(logging.INFO)
+if not review_log.handlers:
+    _rh = logging.StreamHandler()
+    _rh.setFormatter(logging.Formatter("%(levelname)s:     %(name)s %(message)s"))
+    review_log.addHandler(_rh)
+
+
+def uploaders(space_ids) -> dict:
+    """space id -> email of whoever uploaded it (its latest 'ingest' log row); photos ingested by scripts have none."""
+    with psycopg.connect(DSN) as c:
+        rows = c.execute("SELECT DISTINCT ON (l.space_id) l.space_id, u.email FROM review_log l JOIN app_user u ON u.id = l.user_id "
+                         "WHERE l.action = 'ingest' AND l.space_id = ANY(%s) ORDER BY l.space_id, l.at DESC",
+                         (list(space_ids),)).fetchall()
+    return dict(rows)
+
+
+def notify_returned(items, by: str):
+    """items: [(space_id, relative_path, kind, reason)]. One message per uploader; never raises."""
+    try:
+        owner = uploaders([i[0] for i in items])
+        groups: dict = {}
+        for sid, path, kind, reason in items:
+            groups.setdefault(owner.get(sid), []).append((sid, path, kind, reason))
+        site = os.getenv("D3_FRONTEND_URL", "").rstrip("/")
+        for to, rows in groups.items():
+            lines = [f"{by} đã chuyển {len(rows)} ảnh của bạn:", ""]
+            lines += [f"- #{sid} {path}: {KIND_VI.get(kind, kind)}. Lý do: {reason}" for sid, path, kind, reason in rows]
+            lines += ["", f"Xem và sửa tại: {site}/quan-tri"]
+            if to and _smtp_ready():
+                try:
+                    _send(to, f"[D3] {len(rows)} ảnh bị trả về", "\n".join(lines))
+                    continue
+                except Exception:
+                    review_log.exception("could not email %s about %d returned photos", to, len(rows))
+            review_log.info("%d ảnh (%s) — %s: %s", len(rows), ", ".join(f"#{r[0]}" for r in rows),
+                            to or "không rõ người tải lên", "; ".join(f"{KIND_VI.get(r[2], r[2])}: {r[3]}" for r in rows))
+    except Exception:
+        review_log.exception("could not notify about returned photos")

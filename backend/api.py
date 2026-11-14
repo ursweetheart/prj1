@@ -81,19 +81,23 @@ def _processor():  # loads YOLO + SigLIP2 on first ingest only
 def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = None,
                 review_status: Optional[str] = None, limit: int = 50, offset: int = 0,
                 ids: Optional[str] = Query(default=None, pattern=r"^\d+(,\d+)*$", description="comma list, ≤ 60"),
+                tra_ve: bool = Query(default=False, description="staff: only drafts returned with a reason"),
                 user=Depends(optional_user)):
     id_list = [int(i) for i in ids.split(",")] if ids else None  # the browser collection shows its photos in one call
     if id_list and len(id_list) > bo_suu_tap.MAX_ITEMS:
         raise HTTPException(422, f"at most {bo_suu_tap.MAX_ITEMS} ids")
-    if not _is_staff(user):
+    staff = _is_staff(user)
+    if not staff:
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
         return c.execute(
-            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS} "
+            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
+            + (", ly_do_duyet" if staff else "") + " "  # the review reason is staff-only
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
+            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
-            {"t": space_type, "s": design_style, "r": review_status, "i": id_list,
+            {"t": space_type, "s": design_style, "r": review_status, "i": id_list, "rv": tra_ve and staff,
              "l": max(min(limit, 200), len(id_list or [])), "o": offset}).fetchall()
 
 
@@ -203,7 +207,7 @@ def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str
     new = NEXT[status]
     if new == "cleared" and not rights_confirmed:
         raise HTTPException(422, f"space {space_id}: confirm the client allowed publishing these photos (rights_confirmed)")
-    c.execute("UPDATE space SET review_status=%s WHERE id=%s", (new, space_id))
+    c.execute("UPDATE space SET review_status=%s, ly_do_duyet=NULL WHERE id=%s", (new, space_id))  # moved on: reason done
     _log(c, space_id, user, "advance", {"from": status, "to": new, **({"rights_confirmed": True} if new == "cleared" else {})})
     return new
 
@@ -255,6 +259,66 @@ def advance_many(body: AdvanceMany, user=Depends(require(*STAFF))):
             raise HTTPException(404, f"space {min(missing)} not found")
         moved = {r["id"]: _advance(c, r["id"], r["review_status"], user, body.rights_confirmed) for r in rows}
     return {"advanced": sorted(moved), "status": sorted(set(moved.values()))}
+
+
+# ── Backward paths (change: review-return-reject; act-1, seq-6 b9-12) ─────────────────────────────────────
+RETURNABLE = {"in_review", "approved", "cleared"}           # -> draft ("Trả về nháp")
+BACK = {  # action: (allowed source statuses, target status, reason kind, log action)
+    "return": (RETURNABLE, "draft", "tra_ve", "return"),
+    "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
+    "reopen": ({"noi_bo"}, "draft", "mo_lai", "reopen"),
+}
+STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
+             "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
+
+
+class MoveBack(BaseModel):
+    space_ids: list[int] = Field(min_length=1, max_length=500)
+    ly_do: str = Field(max_length=500)
+
+    @field_validator("ly_do")
+    @classmethod
+    def _reason(cls, v):
+        v = " ".join(v.split())
+        if len(v) < 5:
+            raise ValueError("lý do cần ít nhất 5 ký tự")
+        return v
+
+
+def _move_back(action: str, body: MoveBack, user, tasks: BackgroundTasks) -> dict:
+    """All or nothing, like /spaces/advance: one photo in the wrong status rolls the whole selection back."""
+    sources, target, kind, log_action = BACK[action]
+    with _db() as c:
+        rows = c.execute("SELECT id, relative_path, review_status FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+                         (body.space_ids,)).fetchall()
+        if missing := set(body.space_ids) - {r["id"] for r in rows}:
+            raise HTTPException(404, f"space {min(missing)} not found")
+        if bad := next((r for r in rows if r["review_status"] not in sources), None):
+            raise HTTPException(409, f"space {bad['id']}: không thể từ «{STATUS_VI.get(bad['review_status'], bad['review_status'])}»")
+        shown = {"loai": kind, "ly_do": body.ly_do, "boi": user["email"], "luc": c.execute("SELECT now()").fetchone()["now"].isoformat()}
+        for r in rows:
+            c.execute("UPDATE space SET review_status=%s, ly_do_duyet=%s WHERE id=%s", (target, Jsonb(shown), r["id"]))
+            _log(c, r["id"], user, log_action, {"from": r["review_status"], "to": target, "reason": body.ly_do})
+    tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows], user["email"])
+    return {"moved": [r["id"] for r in rows], "status": target}
+
+
+@app.post("/spaces/return")
+def return_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Trả về nháp": in review / approved / cleared -> draft, with a reason the uploader is told about."""
+    return _move_back("return", body, user, tasks)
+
+
+@app.post("/spaces/keep-internal")
+def keep_internal(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Lưu nội bộ": approved / cleared -> noi_bo, a final status never shown publicly (act-1)."""
+    return _move_back("keep_internal", body, user, tasks)
+
+
+@app.post("/spaces/reopen")
+def reopen_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Mở lại": noi_bo -> draft."""
+    return _move_back("reopen", body, user, tasks)
 
 
 AI_DIMS = {"khong_gian", "phong_cach", "tong_mau", "vat_lieu"}  # mirrored from space columns by sync_ai_tags

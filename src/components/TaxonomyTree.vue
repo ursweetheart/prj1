@@ -327,7 +327,7 @@ onMounted(load)
 .tt-log li { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--ink); overflow-wrap: anywhere }
 .tt-when, .tt-who { color: var(--dim) }
 
-.tt-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg, #141413); color: var(--ink);
+.tt-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); color: var(--ink);
              padding: 20px; width: min(480px, calc(100vw - 32px)) }
 .tt-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
 .tt-warn { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink) }

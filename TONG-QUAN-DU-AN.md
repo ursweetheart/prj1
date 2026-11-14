@@ -256,7 +256,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-3-hoi-dap-tro-ly-rag` | UC09 | Có |
 | `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần: xem và lưu ảnh (`luu_anh`); tính khi mở bảng điều khiển, chưa có tiến trình hằng đêm |
 | `seq-5-gui-form-lien-he` | UC11 | Một phần (qua chat) |
-| `seq-6-duyet-va-xuat-ban` | UC14 | Có |
+| `seq-6-duyet-va-xuat-ban` | UC14 | Có; nhánh từ chối (bước 9–12) có từ change `review-return-reject`. Bước 18 (sitemap) chưa |
 | `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Có (change `saved-collection-brief`) |
 | `seq-8-tim-bang-anh-tai-len` | UC04 | Có |
 | `seq-9-uoc-tinh-chi-phi` | UC10 | Có (change `cost-estimate`), với đơn giá mẫu |
@@ -330,7 +330,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | :-- | :-- | :-- | :-- | :-- |
 | UC12 | Tải ảnh hàng loạt | **Xong** | `/quan-tri` → "Tải ảnh dự án mới", `POST /spaces/ingest` | Xử lý tuần tự từng ảnh; trên CPU mất vài giây mỗi ảnh |
 | UC13 | Gắn nhãn không gian | **Xong** | `/quan-tri`: sửa loại phòng, phong cách, vật liệu; tag loại công trình và mức đầu tư theo ảnh hoặc cả dự án | |
-| UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log` | Chưa có nút trả về hay từ chối. Chưa theo dõi hiệu quả sau 30 ngày (QT-01 bước cuối, BFD 5.4) |
+| UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log`. KTS trưởng **trả về nháp**, **lưu nội bộ** (khách không đồng ý công bố) hoặc **mở lại**, luôn kèm lý do: lý do hiện trên thẻ ảnh đến khi ảnh được chuyển tiếp, lọc "Chỉ ảnh bị trả về", người tải ảnh lên nhận email (hoặc log) | Chưa gỡ được ảnh đã đăng. Chưa theo dõi hiệu quả sau 30 ngày (QT-01 bước cuối, BFD 5.4) |
 | UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). **Bộ phân loại AI vẫn dùng danh sách phong cách / không gian cố định** trong `pipeline/schemas.py`: giá trị mới thêm chỉ được gắn bởi người, AI chưa đề xuất được |
 | UC16 | Quản lý tri thức trợ lý | **Một phần** | file JSON + lệnh `python -m pipeline.assistant kb/...`; `generate_kb.py` sinh nháp | Chưa có giao diện CMS để NV nội dung thêm, sửa, xoá đoạn tri thức |
 | UC17 | Gắn hotspot món đồ | **Một phần** | YOLO gợi ý; ở `/quan-tri` sửa tên và xoá hotspot; hiển thị trên `/khong-gian/:id` | Chưa thêm hotspot mới bằng tay, chưa kéo vị trí, chưa liên kết tới **thư viện món đồ/vật liệu (M7)** và gói dịch vụ |
@@ -422,7 +422,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 1.5 | **UI quản lý tri thức trợ lý** cho NV nội dung: thêm, sửa, xoá đoạn `kb_chunk`, duyệt bản nháp AI sinh | seq-16, usecase-3 | không phải sửa JSON tay |
 | 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
 | 1.7 | **UI quản trị người dùng**: danh sách, đổi role, khoá tài khoản; quên mật khẩu | seq-19, usecase-5 | admin không phải dùng `set_role.py` |
-| 1.8 | Duyệt ảnh: nút **trả về / từ chối** kèm lý do | act-1, seq-6 | |
+| 1.8 | ✓ Duyệt ảnh: **trả về nháp / lưu nội bộ / mở lại** kèm lý do (change `review-return-reject`) | act-1, seq-6 | còn: gỡ ảnh đã đăng |
 | 1.9 | Hotspot: thêm điểm bằng tay, kéo vị trí; bảng **MonDo** (thư viện món đồ/vật liệu) và liên kết hotspot → món đồ → gói dịch vụ | seq-14, class-1 | bấm hotspot sofa ra các không gian có sofa tương tự |
 
 ### Giai đoạn 2: Hoàn thiện trải nghiệm khách
@@ -521,6 +521,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/spaces/ingest` | staff | tải ảnh + chạy pipeline AI |
 | PATCH | `/spaces/{id}` | staff / content | sửa nhãn, mô tả, hotspot, chuyển trạng thái |
 | POST | `/spaces/advance` | staff / approver | chuyển trạng thái hàng loạt |
+| POST | `/spaces/return`, `/spaces/keep-internal`, `/spaces/reopen` | approver | trả về nháp (từ chờ duyệt / đã duyệt / đã xác nhận quyền), lưu nội bộ (từ đã duyệt / đã xác nhận quyền), mở lại (từ lưu nội bộ); `{space_ids, ly_do}` lý do 5–500 ký tự, tất cả hoặc không; báo người tải ảnh lên qua email hoặc log |
 | PUT | `/spaces/tags` | staff | gắn tag theo ảnh hoặc cả dự án |
 | POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
 | POST | `/chat` | công khai, 20/phút | trợ lý |
@@ -557,7 +558,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 | Bảng | Nội dung |
 | :-- | :-- |
-| `space` | mỗi ảnh/không gian: đường dẫn, nhãn AI, màu, hotspot, embedding SigLIP2, `review_status` |
+| `space` | mỗi ảnh/không gian: đường dẫn, nhãn AI, màu, hotspot, embedding SigLIP2, `review_status` (`draft` → `in_review` → `approved` → `cleared` → `published`, hoặc `noi_bo`: khách không đồng ý công bố, không bao giờ hiện công khai), `ly_do_duyet` (lý do trả về / lưu nội bộ / mở lại đang hiện trên thẻ, chỉ nhân viên thấy) |
 | `space_text` | mô tả dài của ảnh + embedding Vertex (RAG) |
 | `app_user` | tài khoản, role |
 | `review_log` | nhật ký duyệt, sửa, gán nhãn lại |
