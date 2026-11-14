@@ -383,7 +383,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | NFR-02/03 | tìm vector trên 10.000 ảnh < 1 s; 50.000 ảnh, 100 người dùng | Ngoài phạm vi (chỉ demo local, không kiểm thử tải) |
 | NFR-04 | ảnh đúng màu, không méo | Gallery giữ tỉ lệ gốc; ảnh dự án nén 1600 px q75, cần KTS xác nhận chất lượng |
 | NFR-05 | giao diện tối giản, ≤ 2 font | Đã theo phong cách Elemental |
-| NFR-06 | mobile-first, Safari iOS, Chrome Android | Header co lại dưới 1024 px; **chưa thử trên điện thoại thật** (task 5.4, 5.5 của `responsive-stacked-navbar`) |
+| NFR-06 | mobile-first, Safari iOS, Chrome Android | Header xếp chồng dưới 1024 px; link nhân viên gom vào nút "Quản trị"; hover chỉ áp dụng khi thiết bị có chuột (`hover: hover`), đã thử bằng giả lập cảm ứng Chromium. **Chưa thử trên điện thoại thật** |
 | NFR-07 | SEO: SSR, schema.org, URL theo facet | Chưa (SPA thuần; SSR ngoài phạm vi demo) |
 | NFR-08 | phân quyền, chặn file độc hại, giới hạn gọi AI | Có: role, kiểm tra loại và kích thước ảnh (415/413), rate limit |
 | NFR-09 | banner đồng ý, ẩn danh hành vi | Có |
@@ -409,7 +409,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 0.3 | Tạo trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`). Menu đang trỏ tới nhưng chưa có route. Trang Liên hệ **không tự làm form**: `import ContactForm from '@/components/ContactForm.vue'` rồi đặt `<ContactForm />` (lead tự ghi trang `/lien-he`) | BFD 2, seq-5 | không còn link chết trên menu |
 | 0.4 | Duyệt và đăng thêm ảnh để có dữ liệu demo (mục tiêu ≥ 30 ảnh đã duyệt) | act-1 | `eval_labels.py` chạy được |
 | 0.5 | Duyệt 2 đề xuất phân loại đang chờ, đánh dấu thật/sai để làm task 4.1, archive change `discover-taxonomy-dimensions` | seq-15 | change được archive |
-| 0.6 | Archive 8 change frontend đã xong task; hoàn thành task 5.4, 5.5 của `responsive-stacked-navbar` | | `openspec list` chỉ còn change đang làm |
+| 0.6 | ✓ Archive các change đã xong; `responsive-stacked-navbar` xong và đã archive (14/11/2026) | | `openspec list` không còn change nào |
 
 ### Giai đoạn 1: Hoàn thiện nghiệp vụ nội bộ
 

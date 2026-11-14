@@ -1,5 +1,5 @@
 <template>
-  <main class="wrap" style="padding-block:clamp(40px,6vw,96px);max-width:460px">
+  <main class="wrap page-top" style="padding-bottom:clamp(40px,6vw,96px);max-width:460px">
     <p class="eyebrow">Tài khoản</p>
     <h1 class="h-2" style="margin-top:10px">{{ isRegister ? 'Tạo tài khoản' : 'Đăng nhập' }}</h1>
 

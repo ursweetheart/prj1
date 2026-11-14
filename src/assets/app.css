@@ -314,20 +314,33 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   will-change: transform;
 }
 .brand { display: inline-flex; filter: drop-shadow(0 1px 8px rgba(0, 0, 0, 0.35)) }
-.nav-links a:hover, .nav-links a:focus-visible,
-.nav-account a:hover, .nav-account a:focus-visible,
-.nav-account button:hover, .nav-account button:focus-visible,
-.lang-switch button:hover, .lang-switch button:focus-visible {
+/* :hover only where the pointer can really hover, so a tap on a phone does not leave an item lifted */
+.nav-links a:focus-visible, .nav-account a:focus-visible, .nav-account button:focus-visible,
+.lang-switch button:focus-visible {
   transform: translateY(-3px);
   color: #ffffff;
   text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
 }
-.nav-links a.is-active:hover, .nav-links a.is-active:focus-visible {
+.nav-links a.is-active:focus-visible {
   text-shadow: 0 0 14px rgba(192, 25, 25, 0.6), 0 1px 10px rgba(0, 0, 0, 0.45);
 }
-.brand:hover, .brand:focus-visible {
+.brand:focus-visible {
   transform: translateY(-4px);
   filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.5));
+}
+@media (hover: hover) {
+  .nav-links a:hover, .nav-account a:hover, .nav-account button:hover, .lang-switch button:hover {
+    transform: translateY(-3px);
+    color: #ffffff;
+    text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
+  }
+  .nav-links a.is-active:hover {
+    text-shadow: 0 0 14px rgba(192, 25, 25, 0.6), 0 1px 10px rgba(0, 0, 0, 0.45);
+  }
+  .brand:hover {
+    transform: translateY(-4px);
+    filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.5));
+  }
 }
 
 @media (min-width: 600px) {
@@ -746,7 +759,23 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 }
 
 /* Tài khoản trên thanh điều hướng */
-.nav-account { display: flex; align-items: center; gap: 20px }
+.nav-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 20px }
+@media (min-width: 1024px) { .nav-account { flex-wrap: nowrap } }
+/* "Quản trị": staff links grouped in a small panel under the button */
+.nav-menu { position: relative }
+.nav-menu-btn.is-here { color: #ffffff; font-weight: 700 }
+.nav-caret { display: inline-block; margin-left: 2px; font-size: 11px; transition: transform .2s ease }
+.nav-menu-btn[aria-expanded="true"] .nav-caret { transform: rotate(180deg) }
+.nav-menu-list { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 60;
+                 min-width: 180px; margin: 0; padding: 6px; list-style: none; text-align: left;
+                 background: rgba(20, 20, 19, 0.96); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px;
+                 box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4); text-shadow: none }
+@media (min-width: 1024px) { .nav-menu-list { left: auto; right: 0; transform: none } }
+.nav-menu-list a { display: block; width: 100%; padding: 9px 12px; border-radius: 6px; white-space: nowrap }
+.nav-menu-list a[aria-current="page"] { color: #ffffff; font-weight: 700 }
+.nav-account .nav-menu-list a:hover, .nav-account .nav-menu-list a:focus-visible {
+  transform: none; text-shadow: none; background: rgba(255, 255, 255, 0.08); color: #ffffff }
+@media (prefers-reduced-motion: reduce) { .nav-caret { transition: none } }
 .nav-account a, .nav-account button {
   font: inherit; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.8);
   background: none; border: 0; padding: 6px 0; cursor: pointer; text-align: left }
