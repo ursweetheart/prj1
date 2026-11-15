@@ -402,3 +402,22 @@ CREATE TABLE IF NOT EXISTS ma_dat_mat_khau (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ma_dat_mat_khau_tai_khoan ON ma_dat_mat_khau (tai_khoan_id);
+
+-- Forbidden topics (change topic-guard-sitemap-item-services; seq-3 b15): keywords the assistant must not discuss.
+-- A question or answer that hits a switched-on topic is replaced by the handoff message; the hit is kept on the reply.
+CREATE TABLE IF NOT EXISTS chu_de_cam (
+  id serial PRIMARY KEY,
+  ten text NOT NULL CHECK (length(ten) BETWEEN 1 AND 80),
+  ten_khoa text NOT NULL UNIQUE,      -- folded name: the duplicate check (case and accents ignored)
+  tu_khoa text[] NOT NULL CHECK (cardinality(tu_khoa) BETWEEN 1 AND 30),
+  ghi_chu text CHECK (length(ghi_chu) <= 300),
+  bat boolean NOT NULL DEFAULT true,
+  tao_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  cap_nhat_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE tin_nhan ADD COLUMN IF NOT EXISTS chu_de_cam jsonb;  -- {id, ten, o: cau_hoi | tra_loi}; staff only
+
+-- Item -> service package (same change; roadmap 1.9): the visitor's hotspot card shows it, over the label mapping.
+ALTER TABLE mon_do ADD COLUMN IF NOT EXISTS dich_vu_id int REFERENCES kb_chunk(id) ON DELETE SET NULL;

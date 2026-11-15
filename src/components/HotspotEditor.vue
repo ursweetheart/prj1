@@ -60,6 +60,7 @@
             <label>Vật liệu<input v-model="creating.vat_lieu" class="txt" maxlength="60" :list="uid + '-mat'"></label>
             <label>Màu<input v-model="creating.mau_sac" class="txt" maxlength="40"></label>
             <label class="he-wide">Nhà cung cấp (chỉ nội bộ)<input v-model="creating.nha_cung_cap" class="txt" maxlength="120"></label>
+            <ServicePicker :id="uid + '-dv'" v-model="creating.dich_vu_id" class="he-wide" :services="services" />
           </div>
           <p v-if="creating.error" class="field-err" role="alert">{{ creating.error }}</p>
           <div class="row g10">
@@ -83,7 +84,8 @@
 /* Gắn hotspot món đồ (seq-14; change hotspot-items) cho KTS: thêm, kéo, dời bằng phím, đặt tên, gắn món đồ trong thư viện.
    Khách chỉ thấy tên điểm; nhà cung cấp không bao giờ rời trang quản trị. */
 import { computed, nextTick, reactive, ref, useId } from 'vue'
-import { createItem, getTaxonomy, saveHotspots, searchItems } from '@/api'
+import { createItem, getTaxonomy, itemServices, saveHotspots, searchItems } from '@/api'
+import ServicePicker from '@/components/ServicePicker.vue'
 
 const props = defineProps({
   spaceId: { type: Number, required: true },
@@ -194,16 +196,19 @@ function link(i, item) {
   if (!p.label_vi.trim() || p.label_vi === p.auto) p.label_vi = item.phan_loai || item.ten // never the supplier
   pick.open = false; pick.q = ''
 }
-const creating = reactive({ row: -1, ten: '', phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', error: '', busy: false })
+const creating = reactive({ row: -1, ten: '', phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', dich_vu_id: null, error: '', busy: false })
+const services = ref([])
+itemServices().then(r => { services.value = r }).catch(() => {})
 function choose(i, o) {
   if (o.id) return link(i, o)
-  Object.assign(creating, { row: i, ten: o.ten, phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', error: '', busy: false })
+  Object.assign(creating, { row: i, ten: o.ten, phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', dich_vu_id: null, error: '', busy: false })
   pick.open = false
 }
 async function createAndLink(i) {
   creating.busy = true; creating.error = ''
   const body = Object.fromEntries(['ten', 'phan_loai', 'kieu_dang', 'vat_lieu', 'mau_sac', 'nha_cung_cap']
     .map(k => [k, creating[k].trim() || null]).filter(([, v]) => v))
+  if (creating.dich_vu_id) body.dich_vu_id = creating.dich_vu_id
   try {
     const item = await createItem(body)
     library.value = [...library.value, { ...item, so_anh: 0 }]

@@ -62,10 +62,12 @@ def start_or_get(conn, hid: str | None, phien_id: str | None = None):
     return hid, rang_buoc or {}, [{"role": "user" if r == "khach" else "assistant", "content": c} for r, c in turns]
 
 
-def add_turn(conn, hid, question, answer, sources, best, answered, rang_buoc):
+def add_turn(conn, hid, question, answer, sources, best, answered, rang_buoc, chu_de_cam=None):
+    """chu_de_cam: {id, ten, o} when a forbidden topic replaced the answer; kept for staff only."""
     conn.execute("INSERT INTO tin_nhan (hoi_thoai_id, vai_tro, noi_dung) VALUES (%s, 'khach', %s)", (hid, mask(question)))
-    conn.execute("INSERT INTO tin_nhan (hoi_thoai_id, vai_tro, noi_dung, nguon, diem_cao_nhat, tra_loi_duoc) "
-                 "VALUES (%s, 'tro_ly', %s, %s, %s, %s)", (hid, answer, Jsonb(sources or []), best, answered))
+    conn.execute("INSERT INTO tin_nhan (hoi_thoai_id, vai_tro, noi_dung, nguon, diem_cao_nhat, tra_loi_duoc, chu_de_cam) "
+                 "VALUES (%s, 'tro_ly', %s, %s, %s, %s, %s)",
+                 (hid, answer, Jsonb(sources or []), best, answered, Jsonb(chu_de_cam) if chu_de_cam else None))
     conn.execute("UPDATE hoi_thoai SET cap_nhat = now(), so_tin_nhan = so_tin_nhan + 2, "
                  "chua_tra_loi = chua_tra_loi + %s, rang_buoc = %s WHERE id = %s",
                  (0 if answered else 1, Jsonb(merge({}, rang_buoc)), hid))
@@ -78,13 +80,13 @@ def link_lead(conn, hid, lead_id, handoff: bool):
 
 
 def _messages(conn, hid, staff=False):
-    rows = _rows(conn, "SELECT vai_tro, noi_dung, nguon, diem_cao_nhat, tra_loi_duoc, thoi_diem FROM tin_nhan "
+    rows = _rows(conn, "SELECT vai_tro, noi_dung, nguon, diem_cao_nhat, tra_loi_duoc, thoi_diem, chu_de_cam FROM tin_nhan "
                        "WHERE hoi_thoai_id = %s ORDER BY id", (hid,))
     out = []
-    for vai_tro, noi_dung, nguon, diem, ok, at in rows:
+    for vai_tro, noi_dung, nguon, diem, ok, at, cam in rows:
         m = {"vai_tro": vai_tro, "noi_dung": noi_dung, "nguon": nguon or [], "thoi_diem": at}
-        if staff:
-            m.update({"diem_cao_nhat": diem, "tra_loi_duoc": ok})
+        if staff:  # the visitor never learns which topic stopped an answer
+            m.update({"diem_cao_nhat": diem, "tra_loi_duoc": ok, "chu_de_cam": cam})
         out.append(m)
     return out
 

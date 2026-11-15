@@ -106,6 +106,11 @@
       </ul>
     </section>
 
+    <!-- ── forbidden topics (seq-3 b15) ── -->
+    <section v-if="tab === 'chu-de-cam'" id="kp-chu-de-cam" role="tabpanel" aria-labelledby="kt-chu-de-cam">
+      <ForbiddenTopics :is-approver="isApprover" />
+    </section>
+
     <dialog ref="delEl" class="kn-dialog" aria-labelledby="kn-del-h" @close="onDelClose">
       <form v-if="deleting" class="stack" style="gap:12px" @submit.prevent="doDelete">
         <h2 id="kn-del-h" class="h-4" style="margin:0">Xoá «{{ deleting.title }}»?</h2>
@@ -127,11 +132,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { APPROVERS, createKnowledge, deleteKnowledge, dismissGaps, hasRole, knowledgeGaps, listKnowledge,
   setKnowledgeStatus, updateKnowledge } from '@/api'
 import { needsPriceApproval } from '@/lib/priceRule'
+import ForbiddenTopics from '@/components/ForbiddenTopics.vue'
 
 const STATUS = { nhap: 'Nháp', cho_duyet: 'Chờ duyệt', dang_dung: 'Đang dùng', tat: 'Tắt' }
 const KIND = { faq: 'Hỏi đáp', price: 'Giá', service: 'Dịch vụ', project: 'Dự án' }
 const SOURCE = { mau: 'dữ liệu mẫu', ai: 'AI soạn', nhan_vien: 'nhân viên', tep: 'tệp' }
-const TABS = [{ id: 'muc', label: 'Mục tri thức' }, { id: 'cau-hoi', label: 'Câu hỏi chưa trả lời' }]
+const TABS = [{ id: 'muc', label: 'Mục tri thức' }, { id: 'cau-hoi', label: 'Câu hỏi chưa trả lời' },
+  { id: 'chu-de-cam', label: 'Chủ đề cấm' }]
 
 /* the four fields of an entry, shared by "new" and "edit" */
 const EntryFields = defineComponent({
@@ -162,7 +169,7 @@ const EntryFields = defineComponent({
 
 const route = useRoute()
 const router = useRouter()
-const tab = computed(() => (route.query.tab === 'cau-hoi' ? 'cau-hoi' : 'muc'))
+const tab = computed(() => (TABS.some(t => t.id === route.query.tab) ? route.query.tab : 'muc'))
 const tabEls = ref([])
 const isApprover = computed(() => hasRole(APPROVERS))
 
@@ -320,7 +327,7 @@ onMounted(async () => { await load(); await answerFromHash() })
 <style scoped>
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 .kn-page { padding-bottom: clamp(48px, 7vw, 96px) }
-.kn-tabs { display: flex; gap: 4px; margin: 24px 0 16px; border-bottom: 1px solid var(--line) }
+.kn-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 24px 0 16px; border-bottom: 1px solid var(--line) }
 .kn-tab { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 14px;
           font: inherit; font-size: 15px; color: var(--dim); cursor: pointer }
 .kn-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600 }

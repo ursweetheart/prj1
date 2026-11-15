@@ -36,9 +36,9 @@ class NotFound(Exception):
 
 
 class Invalid(Exception):
-    def __init__(self, row, msg):
+    def __init__(self, row, msg, field=None):
         super().__init__(msg)
-        self.row, self.msg = row, msg
+        self.row, self.msg, self.field = row, msg, field
 
 
 def _rows(conn, sql, args=()):
@@ -53,9 +53,33 @@ def _clean(data: dict) -> dict:
     return {k: (str(v).strip() or None) if v is not None else None for k, v in data.items() if k in FIELDS}
 
 
+SERVICE = "SELECT id FROM kb_chunk WHERE id = %s AND kind = 'service'"
+
+
+def _service(conn, data: dict, d: dict):
+    """dich_vu_id: a knowledge entry of kind 'service' (the visitor card shows its title), or None to unlink."""
+    if "dich_vu_id" not in data:
+        return
+    sid = data["dich_vu_id"]
+    if sid is not None and not (isinstance(sid, int) and _rows(conn, SERVICE, (sid,))):
+        raise Invalid(None, "dịch vụ không tồn tại", field="dich_vu_id")
+    d["dich_vu_id"] = sid
+
+
+def services(conn) -> list:
+    """Service packages an item may point to; trang_thai tells staff whether visitors see it."""
+    cols = ("id", "title", "trang_thai")
+    return [dict(zip(cols, r)) for r in _rows(conn, "SELECT id, title, trang_thai FROM kb_chunk WHERE kind = 'service' ORDER BY title")]
+
+
+DV = ("dich_vu_id", "dich_vu")
+DV_SQL = "m.dich_vu_id, (SELECT k.title FROM kb_chunk k WHERE k.id = m.dich_vu_id AND k.kind = 'service')"
+
+
 def get(conn, item_id):
-    cols = ("id",) + FIELDS + ("updated_at",)
-    r = _rows(conn, f"SELECT {', '.join(cols)} FROM mon_do WHERE id = %s", (item_id,))
+    cols = ("id",) + FIELDS + ("updated_at",) + DV
+    r = _rows(conn, f"SELECT m.id, {', '.join('m.' + f for f in FIELDS)}, m.updated_at, {DV_SQL} FROM mon_do m WHERE m.id = %s",
+              (item_id,))
     return dict(zip(cols, r[0])) if r else None
 
 
@@ -69,6 +93,7 @@ def create(conn, data: dict, user_id=None) -> dict:
     d = _clean(data)
     if not d.get("ten") or not key(d["ten"]):
         raise Invalid(None, "tên món đồ trống")
+    _service(conn, data, d)
     _check_unique(conn, d["ten"])
     cols = list(d)
     item_id = _rows(conn, f"INSERT INTO mon_do ({', '.join(cols)}, ten_khoa, tao_boi, cap_nhat_boi) "
@@ -86,6 +111,7 @@ def update(conn, item_id, data: dict, user_id=None) -> dict:
             raise Invalid(None, "tên món đồ trống")
         _check_unique(conn, d["ten"], item_id)
         d["ten_khoa"] = key(d["ten"])
+    _service(conn, data, d)
     if d:
         sets = ", ".join(f"{k} = %s" for k in d)
         conn.execute(f"UPDATE mon_do SET {sets}, cap_nhat_boi = %s, updated_at = now() WHERE id = %s",
@@ -115,9 +141,9 @@ def search(conn, q: str = "", limit: int = 20) -> list:
 
 
 def list_with_usage(conn) -> list:
-    cols = ("id",) + FIELDS + ("updated_at", "so_anh")
+    cols = ("id",) + FIELDS + ("updated_at", "so_anh") + DV
     rows = _rows(conn, f"""
-        SELECT m.id, {', '.join('m.' + f for f in FIELDS)}, m.updated_at, COALESCE(u.n, 0)
+        SELECT m.id, {', '.join('m.' + f for f in FIELDS)}, m.updated_at, COALESCE(u.n, 0), {DV_SQL}
           FROM mon_do m LEFT JOIN (
                SELECT (o->>'mon_do_id')::int AS id, count(DISTINCT s.id) AS n
                  FROM space s, jsonb_array_elements(COALESCE(s.hotspots->'objects', '[]')) o

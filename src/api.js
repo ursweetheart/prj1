@@ -159,6 +159,12 @@ export const updateKnowledge = (id, body) => request('PATCH', '/knowledge/' + id
 export const setKnowledgeStatus = (id, trangThai) => request('POST', '/knowledge/' + id + '/status', { body: { trang_thai: trangThai } })
 export const deleteKnowledge = id => request('DELETE', '/knowledge/' + id)
 export const knowledgeGaps = () => get('/knowledge/gaps')
+// forbidden topics (seq-3 b15): keywords the assistant must not discuss
+export const listTopics = () => get('/forbidden-topics')
+export const createTopic = body => request('POST', '/forbidden-topics', { body })
+export const updateTopic = (id, body) => request('PATCH', '/forbidden-topics/' + id, { body })
+export const deleteTopic = id => request('DELETE', '/forbidden-topics/' + id)
+export const tryTopics = text => request('POST', '/forbidden-topics/try', { body: { text } })
 export const dismissGaps = ids => request('POST', '/knowledge/gaps/dismiss', { body: { ids } })
 export const addDimension = body => request('POST', '/taxonomy', { body })
 export const editDimension = (id, body) => request('PATCH', '/taxonomy/' + id, { body })
@@ -238,6 +244,7 @@ export const createItem = body => request('POST', '/items', { body })
 export const updateItem = (id, body) => request('PATCH', '/items/' + id, { body })
 export const deleteItem = id => request('DELETE', '/items/' + id)
 export const itemSpaces = id => get('/items/' + id + '/spaces')
+export const itemServices = () => get('/items/services') // service packages an item may point to
 export const advanceSpaces = (ids, rightsConfirmed = false) =>
   request('POST', '/spaces/advance', { body: { space_ids: ids, rights_confirmed: rightsConfirmed } })
 export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}

@@ -21,7 +21,7 @@
     <div v-else class="it-list" role="table" aria-label="Món đồ">
       <div class="it-head" role="row">
         <span role="columnheader">Tên</span><span role="columnheader">Loại</span><span role="columnheader">Vật liệu</span>
-        <span role="columnheader">Màu</span><span role="columnheader">Nhà cung cấp</span><span role="columnheader">Số ảnh</span>
+        <span role="columnheader">Màu</span><span role="columnheader">Nhà cung cấp</span><span role="columnheader">Dịch vụ</span><span role="columnheader">Số ảnh</span>
         <span role="columnheader"><span class="sr-only">Thao tác</span></span>
       </div>
       <div v-for="it in shown" :key="it.id" class="it-row" role="row">
@@ -30,6 +30,7 @@
         <span role="cell"><span class="it-k">Vật liệu</span>{{ it.vat_lieu || '–' }}</span>
         <span role="cell"><span class="it-k">Màu</span>{{ it.mau_sac || '–' }}</span>
         <span role="cell"><span class="it-k">Nhà cung cấp</span>{{ it.nha_cung_cap || '–' }}</span>
+        <span role="cell"><span class="it-k">Dịch vụ</span>{{ it.dich_vu || '–' }}</span>
         <span role="cell" class="num"><span class="it-k">Số ảnh</span>{{ it.so_anh }}</span>
         <span role="cell" class="it-act">
           <button type="button" class="btn btn-ghost" :aria-label="'Sửa ' + it.ten" @click="edit(it, $event)">Sửa</button>
@@ -54,6 +55,7 @@
           <input v-if="f.k !== 'ghi_chu'" v-model="form[f.k]" class="txt" :maxlength="f.max" :required="f.k === 'ten'">
           <textarea v-else v-model="form.ghi_chu" class="txt" rows="3" maxlength="500"></textarea>
         </label>
+        <ServicePicker v-model="form.dich_vu_id" :services="services" id="it-dv" />
         <p v-if="formError" class="field-err" role="alert">{{ formError }}</p>
         <div class="row g10">
           <button class="btn btn-primary" type="submit" :disabled="busy">Lưu</button>
@@ -67,7 +69,8 @@
 <script setup>
 /* Thư viện món đồ (change hotspot-items; class-1 MonDo) cho KTS, KTS trưởng, admin. */
 import { computed, reactive, ref } from 'vue'
-import { STATUS_VI, deleteItem, itemSpaces, searchItems, updateItem } from '@/api'
+import { STATUS_VI, deleteItem, itemServices, itemSpaces, searchItems, updateItem } from '@/api'
+import ServicePicker from '@/components/ServicePicker.vue'
 
 const FIELDS = [
   { k: 'ten', t: 'Tên', max: 120 }, { k: 'phan_loai', t: 'Loại', max: 60 }, { k: 'kieu_dang', t: 'Kiểu dáng', max: 60 },
@@ -83,6 +86,8 @@ const dlg = ref(null)
 const form = reactive({})
 const formError = ref('')
 const inUse = reactive({ id: null, n: 0, spaces: [] })
+const services = ref([])
+itemServices().then(r => { services.value = r }).catch(() => {})
 let editing = null
 let opener = null
 
@@ -98,13 +103,14 @@ async function load() {
 function edit(it, e) {
   editing = it; opener = e.currentTarget; formError.value = ''
   for (const f of FIELDS) form[f.k] = it[f.k] || ''
+  form.dich_vu_id = it.dich_vu_id ?? null
   dlg.value.showModal()
 }
 function onClose() { opener?.focus() }
 async function saveEdit() {
   busy.value = true; formError.value = ''
   try {
-    const body = Object.fromEntries(FIELDS.map(f => [f.k, form[f.k].trim() || null]))
+    const body = { ...Object.fromEntries(FIELDS.map(f => [f.k, form[f.k].trim() || null])), dich_vu_id: form.dich_vu_id }
     await updateItem(editing.id, body)
     dlg.value.close(); await load()
     note.value = `Đã lưu «${body.ten}».` // after the list shows it
@@ -146,7 +152,7 @@ load()
 .it-inuse { grid-column: 1 / -1; display: grid; gap: 6px; padding: 10px; border: 1px solid var(--danger); border-radius: var(--radius-sm) }
 .it-photos { margin: 0; padding-left: 18px; font-size: 13px }
 @media (min-width: 760px) {
-  .it-head, .it-row { grid-template-columns: minmax(0, 2fr) 1fr 1fr .8fr 1.3fr .6fr auto; align-items: center }
+  .it-head, .it-row { grid-template-columns: minmax(0, 2fr) 1fr 1fr .8fr 1.2fr 1.4fr .6fr auto; align-items: center }
   .it-head { display: grid; gap: 14px; padding: 0 14px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint) }
   .it-name, .it-act { grid-column: auto }
   .it-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }

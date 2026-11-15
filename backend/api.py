@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 
 import auth
 from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
-                      trends, vertex, weekly_report)
+                      topic_guard, trends, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -495,8 +495,9 @@ def chat(body: Chat, tasks: BackgroundTasks):
         # the server's own turns once there are any; the lead keeps what the visitor saw, unmasked
         out = respond(body.message, stored or body.history, body.contact, body.phien_id, body.gui_ho_so,
                       rang_buoc=rang_buoc, lead_history=body.history or stored)
+        blocked = out.pop("chu_de_cam", None)  # staff only: never in the public reply
         conversations.add_turn(c, hid, body.message, out["answer"], out["sources"], out.get("diem_cao_nhat"),
-                               out["answered"], out["rang_buoc"])
+                               out["answered"], out["rang_buoc"], blocked)
         if out.get("lead_id"):
             conversations.link_lead(c, hid, out["lead_id"], handoff=not out["answered"])
     if out.get("lead_id"):
@@ -875,7 +876,7 @@ class HotspotsIn(BaseModel):
 
 def _item_error(e):
     if isinstance(e, items.Invalid):
-        loc = ["body", "hotspots", e.row] if e.row is not None else ["body"]
+        loc = ["body", "hotspots", e.row] if e.row is not None else ["body", e.field] if e.field else ["body"]
         return HTTPException(422, [{"loc": loc, "msg": e.msg, "type": "value_error"}])
     if isinstance(e, items.Conflict):
         return HTTPException(409, {"msg": str(e), "existing": e.existing})
@@ -900,7 +901,8 @@ def save_hotspots(space_id: int, body: HotspotsIn, user=Depends(require(*STAFF))
         _log(c, space_id, user, "hotspots", {"truoc": len((row["hotspots"] or {}).get("objects", [])), "sau": len(objs),
                                              "thu_cong": sum(o.get("nguon_tao") == "thu_cong" for o in objs),
                                              "lien_ket": sum(o.get("mon_do_id") is not None for o in objs)})
-    return {"hotspots": with_services(doc)}
+        out = with_services(doc, c)
+    return {"hotspots": out}
 
 
 class ItemIn(BaseModel):
@@ -911,6 +913,14 @@ class ItemIn(BaseModel):
     mau_sac: Optional[str] = Field(default=None, max_length=40)
     nha_cung_cap: Optional[str] = Field(default=None, max_length=120)
     ghi_chu: Optional[str] = Field(default=None, max_length=500)
+    dich_vu_id: Optional[int] = None  # a knowledge entry of kind 'service'; null unlinks
+
+
+@app.get("/items/services")
+def items_services(user=Depends(require(*STAFF))):
+    """Service packages an item may point to (architects cannot open the knowledge screens)."""
+    with _db() as c:
+        return items.services(c)
 
 
 @app.get("/items")
@@ -1242,6 +1252,90 @@ def knowledge_status(entry_id: int, body: EntryStatus, user=Depends(require(*KNO
 @app.delete("/knowledge/{entry_id}", status_code=204)
 def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
     _kn(lambda c: knowledge.delete(c, user, entry_id))
+
+
+# ── Sitemap (seq-6 b18, roadmap 4.5; change topic-guard-sitemap-item-services) ─
+SITEMAP_PAGES = ("", "du-an", "khong-gian", "uoc-tinh", "trac-nghiem", "lien-he", "ve-chung-toi")
+SITEMAP_FOLDER = re.compile(r"^[a-z0-9_]{1,60}$")
+
+
+@app.get("/sitemap.xml")
+def sitemap(request: Request):
+    """Public. Built from the database on every read, so a publish or a take-down shows at once: the public pages,
+    each project with at least one published photo (its folder, '_' -> '-'), and each published photo. lastmod: the
+    photo's latest review_log entry (space has no timestamp of its own; a photo with no log entry gets today)."""
+    from xml.sax.saxutils import escape
+    base = os.getenv("D3_FRONTEND_URL") or f"{request.url.scheme}://{request.headers.get('host', 'localhost')}/prj1/"
+    base = base.rstrip("/") + "/"
+    with _db() as c:
+        rows = c.execute("SELECT s.id, s.relative_path, coalesce(max(r.at), now()) AS lastmod FROM space s "
+                         "LEFT JOIN review_log r ON r.space_id = s.id WHERE s.review_status = 'published' "
+                         "GROUP BY s.id ORDER BY s.id").fetchall()
+    projects = {}
+    for r in rows:
+        folder = r["relative_path"].split("/")[0] if "/" in r["relative_path"] else None
+        if folder and SITEMAP_FOLDER.match(folder):
+            projects[folder] = max(projects.get(folder, r["lastmod"]), r["lastmod"])
+
+    def url(path, lastmod=None):
+        mod = f"<lastmod>{lastmod.date().isoformat()}</lastmod>" if lastmod else ""
+        return f"<url><loc>{escape(base + path)}</loc>{mod}</url>"
+    body = ([url(p) for p in SITEMAP_PAGES] + [url("du-an/" + f.replace("_", "-"), m) for f, m in sorted(projects.items())]
+            + [url(f"khong-gian/{r['id']}", r["lastmod"]) for r in rows])
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+           + "\n".join(body) + "\n</urlset>\n")
+    return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=300"})
+
+
+# ── Forbidden topics (seq-3 b15; change topic-guard-sitemap-item-services) ─────
+class TopicIn(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=200)
+    tu_khoa: Optional[list[str]] = Field(default=None, max_length=100)
+    ghi_chu: Optional[str] = Field(default=None, max_length=1000)
+    bat: Optional[bool] = None
+
+
+class TopicTry(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+def _tg(call):
+    try:
+        with _db() as c:
+            return call(c)
+    except topic_guard.Invalid as e:
+        raise HTTPException(422, [{"loc": ["body", e.field], "msg": e.msg, "type": "value_error"}])
+    except topic_guard.Conflict as e:
+        raise HTTPException(409, {"msg": str(e), "existing": e.existing})
+    except topic_guard.NotFound:
+        raise HTTPException(404, "no such topic")
+
+
+@app.get("/forbidden-topics")
+def topics_list(user=Depends(require(*KNOWLEDGE))):
+    return _tg(topic_guard.list_all)
+
+
+@app.post("/forbidden-topics/try")
+def topics_try(body: TopicTry, user=Depends(require(*KNOWLEDGE))):
+    """Which switched-on topic a sample sentence hits, and through which keyword; the assistant is not asked."""
+    return {"trung": _tg(lambda c: topic_guard.check(c, body.text))}
+
+
+@app.post("/forbidden-topics", status_code=201)
+def topics_create(body: TopicIn, user=Depends(require(*KNOWLEDGE))):
+    return _tg(lambda c: topic_guard.create(c, body.model_dump(exclude_unset=True), user["id"]))
+
+
+@app.patch("/forbidden-topics/{topic_id}")
+def topics_update(topic_id: int, body: TopicIn, user=Depends(require(*KNOWLEDGE))):
+    return _tg(lambda c: topic_guard.update(c, topic_id, body.model_dump(exclude_unset=True), user["id"]))
+
+
+@app.delete("/forbidden-topics/{topic_id}", status_code=204)
+def topics_delete(topic_id: int, user=Depends(require(*APPROVERS))):
+    """Content staff switch a topic off instead."""
+    _tg(lambda c: topic_guard.delete(c, topic_id))
 
 
 # ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────

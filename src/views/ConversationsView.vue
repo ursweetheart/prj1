@@ -49,10 +49,11 @@
                   <span class="cv-who small">{{ m.vai_tro === 'khach' ? 'Khách' : 'Trợ lý' }}</span>
                   <p class="cv-text">{{ m.noi_dung }}</p>
                   <p v-if="m.vai_tro === 'tro_ly'" class="small cv-src">
-                    <span v-if="m.tra_loi_duoc === false" class="cv-badge is-miss">Chưa trả lời được</span>
+                    <span v-if="m.chu_de_cam" class="cv-badge is-miss">Chặn: {{ m.chu_de_cam.ten }} ({{ m.chu_de_cam.o === 'cau_hoi' ? 'câu hỏi' : 'câu trả lời' }})</span>
+                    <span v-else-if="m.tra_loi_duoc === false" class="cv-badge is-miss">Chưa trả lời được</span>
                     <span v-if="m.diem_cao_nhat !== null" class="num">điểm {{ m.diem_cao_nhat.toFixed(2) }}</span>
                     <span v-if="m.nguon.length">Nguồn: {{ m.nguon.map(s => s.title).join(', ') }}</span>
-                    <router-link v-if="m.tra_loi_duoc === false && canWrite && question(detail[c.id].data, i)"
+                    <router-link v-if="m.tra_loi_duoc === false && !m.chu_de_cam && canWrite && question(detail[c.id].data, i)"
                                  :to="{ path: '/quan-tri/tri-thuc', hash: '#soan=' + encodeURIComponent(question(detail[c.id].data, i)) }">
                       Soạn đáp án →</router-link>
                   </p>
