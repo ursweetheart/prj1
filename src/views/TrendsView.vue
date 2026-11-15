@@ -1,19 +1,27 @@
 <template>
-  <main class="wrap wrap-wide tr" style="padding-block:clamp(28px,4vw,56px)">
+  <main class="wrap wrap-wide page-top tr" style="padding-bottom:clamp(28px,4vw,56px)">
     <p class="eyebrow">Phân tích</p>
     <h1 class="h-2" style="margin-top:10px">Xu hướng quan tâm</h1>
     <p class="lead" style="margin-top:10px">
       Điểm quan tâm theo từng giá trị phân loại: lượt xem × 1, lượt lưu × 3, ảnh gửi trong bộ sưu tập × 5, chỉ từ khách
       đã đồng ý. Xu hướng so 7 ngày gần nhất với trung bình 4 tuần trước đó.
+      Kết quả của từng dự án: <router-link to="/quan-tri/hieu-qua">Hiệu quả dự án</router-link>.
     </p>
 
     <p v-if="data?.co_du_lieu_mo_phong" class="tr-demo" role="note">
       Đang hiển thị cả dữ liệu mô phỏng. Xóa bằng <code>python -m pipeline.demo_activity --remove</code> trước khi dùng thật.
     </p>
 
-    <div class="row g6 tr-period" role="group" aria-label="Khoảng thời gian">
-      <button v-for="d in [7, 30, 90]" :key="d" type="button" class="chip" :aria-pressed="String(days === d)"
-              @click="days = d">{{ d }} ngày</button>
+    <div class="tr-bar">
+      <div class="row g6" role="group" aria-label="Khoảng thời gian">
+        <button v-for="d in [7, 30, 90]" :key="d" type="button" class="chip" :aria-pressed="String(days === d)"
+                @click="days = d">{{ d }} ngày</button>
+      </div>
+      <label v-if="optIn !== null" class="row g10 small">
+        <input type="checkbox" :checked="optIn" :disabled="optBusy" @change="saveOptIn($event.target.checked)">
+        Nhận báo cáo tuần qua email (thứ Hai, 8:00)
+      </label>
+      <span v-if="optMsg" class="small" role="status">{{ optMsg }}</span>
     </div>
 
     <p v-if="error" class="small" style="margin-top:16px;color:var(--danger)" role="alert">{{ error }}</p>
@@ -85,6 +93,8 @@
         </div>
       </section>
 
+      <WeeklyReportPanel v-if="isApprover" />
+
       <!-- top spaces -->
       <section class="tr-card" aria-labelledby="tr-top">
         <h2 id="tr-top" class="tr-h">Không gian được xem nhiều <span class="tr-note">{{ days }} ngày</span></h2>
@@ -105,7 +115,8 @@
 <script setup>
 /* Bảng điều khiển xu hướng (UC22; act-3, seq-18) cho TP Kinh doanh, KTS trưởng, admin. Chỉ số tổng hợp, không có dữ liệu cá nhân. */
 import { computed, ref, watch } from 'vue'
-import { getOverview, imageUrl, spaceLabel } from '@/api'
+import { APPROVERS, getOverview, getWeeklyOptIn, hasRole, imageUrl, setWeeklyOptIn, spaceLabel } from '@/api'
+import WeeklyReportPanel from '@/components/WeeklyReportPanel.vue'
 
 const SOURCES = [{ v: 'form', t: 'Form' }, { v: 'chat', t: 'Chat' }, { v: 'brief', t: 'Bộ sưu tập' }, { v: 'estimate', t: 'Ước tính' }]
 const ARROW = { dang_tang: '↑', moi_noi: '✦', dang_giam: '↓' }
@@ -128,13 +139,28 @@ async function load() {
   try { data.value = await getOverview(days.value) } catch (e) { error.value = e.message }
 }
 watch(days, load, { immediate: true })
+
+/* Báo cáo tuần: mỗi người tự bật / tắt; KTS trưởng và admin xem thêm lịch sử gửi */
+const isApprover = computed(() => hasRole(APPROVERS))
+const optIn = ref(null)
+const optBusy = ref(false)
+const optMsg = ref('')
+getWeeklyOptIn().then(r => { optIn.value = r.nhan }, () => {}) // without it the box just stays hidden
+async function saveOptIn(on) {
+  optBusy.value = true; optMsg.value = ''
+  try {
+    optIn.value = (await setWeeklyOptIn(on)).nhan
+    optMsg.value = on ? 'Đã bật báo cáo tuần.' : 'Đã tắt báo cáo tuần.'
+  } catch (e) { optMsg.value = e.message } finally { optBusy.value = false }
+}
 </script>
 
 <style scoped>
 .tr-demo { margin: 16px 0 0; padding: 12px 14px; border: 1px solid var(--accent); border-radius: var(--radius-md);
            color: var(--ink); font-size: 14px; background: color-mix(in oklab, var(--accent) 12%, transparent) }
 .tr-demo code { font-size: 13px; overflow-wrap: anywhere }
-.tr-period { margin-top: 20px; flex-wrap: wrap }
+.tr-bar { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin-top: 20px }
+.tr-bar > .row { flex-wrap: wrap }
 .tr-tiles { display: grid; gap: 14px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)) }
 .tr-tile, .tr-card { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); padding: 16px 18px; min-width: 0 }
 .tr-k { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint) }

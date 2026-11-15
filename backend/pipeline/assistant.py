@@ -7,7 +7,6 @@ import json
 import logging
 import re
 import sys
-import unicodedata
 
 import numpy as np
 import psycopg
@@ -27,9 +26,7 @@ FALLBACK =("Mình chưa có thông tin chính xác về câu hỏi này. Mình �
             "họ sẽ phản hồi bạn sớm.")
 
 
-def _fold(s: str) -> str:  # lower-case, no diacritics: "Phòng ngủ" == "phong ngu"
-    s = unicodedata.normalize("NFD", s.lower().replace("đ", "d"))
-    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+_fold = taxonomy.fold  # lower-case, no diacritics: "Phòng ngủ" == "phong ngu"
 
 
 # Keyword matching now reads from the data-driven taxonomy (tu_dong_nghia); see parse_request.
@@ -59,7 +56,8 @@ def parse_request(message: str) -> dict:
 
 
 KB_KINDS = ("price", "faq", "service", "project")
-MARKS = ("[DỮ LIỆU MẪU]", "[AI SINH - CHƯA DUYỆT]")  # sample / machine-written text nobody has checked
+SAMPLE_MARK, AI_MARK = "[DỮ LIỆU MẪU]", "[AI SINH - CHƯA DUYỆT]"
+MARKS = (SAMPLE_MARK, AI_MARK)  # sample / machine-written text nobody has checked
 
 
 def validate_kb(chunks: list) -> list[str]:
@@ -83,16 +81,21 @@ def load_kb(path: str) -> int:
     if errors := validate_kb(chunks):
         raise ValueError("knowledge base not loaded:\n  " + "\n  ".join(errors))
     if sample := sum(any(m in ch["content"] for m in MARKS) for ch in chunks):
-        print(f"WARNING: {sample}/{len(chunks)} chunks still carry a sample/unreviewed marker; check the text and delete the marker before going live")
+        print(f"WARNING: {sample}/{len(chunks)} chunks still carry a sample/unreviewed marker; AI drafts are stored as "
+              "'cho_duyet' (not used until approved at /quan-tri/tri-thuc), sample text stays live with its marker")
     emb = _embedder()
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         for ch in chunks:
             vec = np.asarray(emb.embed_text(f"{ch['title']}. {ch['match']}"), dtype=np.float32)
+            ai = ch["content"].startswith(AI_MARK)
+            # an AI draft waits for a human (assistant-knowledge-admin); re-loading never changes an existing row's status
             conn.execute(
-                "INSERT INTO kb_chunk (kind, title, content, embedding) VALUES (%s,%s,%s,%s) "
-                "ON CONFLICT (title) DO UPDATE SET kind=EXCLUDED.kind, content=EXCLUDED.content, embedding=EXCLUDED.embedding",
-                (ch["kind"], ch["title"], ch["content"], vec))
+                "INSERT INTO kb_chunk (kind, title, content, cum_tu_khop, embedding, trang_thai, nguon) VALUES (%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (title) DO UPDATE SET kind=EXCLUDED.kind, content=EXCLUDED.content, cum_tu_khop=EXCLUDED.cum_tu_khop, "
+                "embedding=EXCLUDED.embedding, updated_at=now()",
+                (ch["kind"], ch["title"], ch["content"], ch["match"], vec, "cho_duyet" if ai else "dang_dung",
+                 "ai" if ai else "mau" if ch["content"].startswith(SAMPLE_MARK) else "tep"))
     return len(chunks)
 
 
@@ -101,7 +104,8 @@ def retrieve(question: str, k: int = 3):
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         return conn.execute(
-            "SELECT id, kind, title, content, 1 - (embedding <=> %s) AS score FROM kb_chunk ORDER BY embedding <=> %s LIMIT %s",
+            "SELECT id, kind, title, content, 1 - (embedding <=> %s) AS score FROM kb_chunk WHERE trang_thai = 'dang_dung' "
+            "ORDER BY embedding <=> %s LIMIT %s",  # drafts, entries waiting for approval and switched-off ones are never said
             (vec, vec, k)).fetchall()
 
 

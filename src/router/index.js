@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { APPROVERS, EDITORS, SALES, hasRole, loadUser, session } from '@/api'
+import { APPROVERS, EDITORS, SALES, STAFF, hasRole, loadUser, session } from '@/api'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,7 +17,13 @@ const router = createRouter({
     // Mục "Không gian": tìm không gian tương tự bằng AI (cần backend)
     { path: '/khong-gian', name: 'khong-gian-list', component: () => import('@/views/SpacesView.vue') },
     { path: '/uoc-tinh', name: 'uoc-tinh', component: () => import('@/views/EstimateView.vue') },
+    { path: '/trac-nghiem', name: 'trac-nghiem', component: () => import('@/views/QuizView.vue') },
+    { path: '/lien-he', name: 'lien-he', component: () => import('@/views/ContactView.vue') },
+    { path: '/ve-chung-toi', name: 've-chung-toi', component: () => import('@/views/AboutView.vue') },
     { path: '/quan-tri/xu-huong', name: 'xu-huong', meta: { roles: SALES }, component: () => import('@/views/TrendsView.vue') },
+    { path: '/quan-tri/hieu-qua', name: 'hieu-qua', meta: { roles: [...STAFF, 'sales'] }, component: () => import('@/views/ProjectStatsView.vue') },
+    { path: '/quan-tri/tai-khoan', name: 'tai-khoan', meta: { roles: ['admin'] }, component: () => import('@/views/UsersView.vue') },
+    { path: '/quan-tri/tri-thuc', name: 'tri-thuc', meta: { roles: ['content', ...APPROVERS] }, component: () => import('@/views/KnowledgeView.vue') },
     { path: '/quan-tri/don-gia', name: 'don-gia', meta: { roles: APPROVERS }, component: () => import('@/views/PricesView.vue') },
     { path: '/bo-suu-tap', name: 'bo-suu-tap', component: () => import('@/views/CollectionView.vue') },
     { path: '/bo-suu-tap/xem/:ma', name: 'bo-suu-tap-xem', component: () => import('@/views/CollectionView.vue') },

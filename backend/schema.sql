@@ -244,7 +244,93 @@ ON CONFLICT (loai_nha, hang_muc, goi) DO NOTHING;
 
 -- ── Trend dashboard (change: trend-dashboard; act-3, seq-4) ────────────────────────────────────────────────
 -- Saves join views as consented behaviour signals. 'demo-' sessions come only from pipeline/demo_activity.py.
-ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
-ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh'));
+-- (the allowed su_kien.loai list is set once, in the style-quiz section below, so re-applying never narrows it)
 CREATE INDEX IF NOT EXISTS su_kien_created_at ON su_kien (created_at);
 CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, created_at);
+
+-- ── Style quiz (change: style-quiz; UC06, seq-12) ──────────────────────────────────────────────────────────
+-- A quiz answer is a consented behaviour event too; the interest score does not count it (trends.py reads views/saves).
+ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem'));
+-- one saved result per account; re-scored by the server on save, suggestions re-read (unpublished ones dropped)
+CREATE TABLE IF NOT EXISTS ket_qua_trac_nghiem (
+  nguoi_dung_id int PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
+  phong_cach jsonb NOT NULL,        -- [{ma, ten, ti_le}], best first
+  goi_y int[] NOT NULL DEFAULT '{}',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── Taxonomy admin (change: taxonomy-admin; seq-15, UC15) ─────────────────────────────────────────────────
+-- Every staff edit of the taxonomy: who, what, before -> after (them_chieu | sua_chieu | them_gia_tri | sua_gia_tri | gop_gia_tri).
+CREATE TABLE IF NOT EXISTS nhat_ky_phan_loai (
+  id serial PRIMARY KEY,
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  hanh_dong text NOT NULL,
+  doi_tuong text NOT NULL,          -- 'phong_cach' or 'phong_cach:Japandi'
+  truoc jsonb,
+  sau jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS nhat_ky_phan_loai_created_at ON nhat_ky_phan_loai (created_at DESC);
+
+-- ── Review: return to draft / keep internal (change: review-return-reject; act-1, seq-6) ────────────────
+-- review_status also takes 'noi_bo' (kept internal, never published). ly_do_duyet = the reason shown on the card now:
+-- {loai: tra_ve | noi_bo | mo_lai, ly_do, boi (email), luc}; cleared when the photo is advanced. review_log keeps all.
+ALTER TABLE space ADD COLUMN IF NOT EXISTS ly_do_duyet jsonb;
+
+-- ── Assistant knowledge admin (change: assistant-knowledge-admin; UC16, seq-16) ──────────────────────────
+-- An entry is used by the chatbot only while 'dang_dung'. cum_tu_khop = the match phrases embedded with the title
+-- (stored now, so an edit can re-embed). nguon: mau (sample) | ai (AI draft) | nhan_vien (staff) | tep (file).
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS cum_tu_khop text NOT NULL DEFAULT '';
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS trang_thai text NOT NULL DEFAULT 'dang_dung';
+ALTER TABLE kb_chunk DROP CONSTRAINT IF EXISTS kb_chunk_trang_thai_check;
+ALTER TABLE kb_chunk ADD CONSTRAINT kb_chunk_trang_thai_check CHECK (trang_thai IN ('nhap', 'cho_duyet', 'dang_dung', 'tat'));
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS nguon text;
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS tu_cau_hoi int[] NOT NULL DEFAULT '{}';  -- unanswered questions it was written from
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS updated_by int REFERENCES app_user(id) ON DELETE SET NULL;
+UPDATE kb_chunk SET cum_tu_khop = title WHERE cum_tu_khop = '';
+UPDATE kb_chunk SET nguon = CASE WHEN content LIKE '[DỮ LIỆU MẪU]%' THEN 'mau' WHEN content LIKE '[AI SINH%' THEN 'ai' ELSE 'tep' END
+  WHERE nguon IS NULL;
+-- unanswered questions: open until an entry answers them (da_xu_ly) or staff dismiss them (bo_qua)
+ALTER TABLE khoang_trong_tri_thuc ADD COLUMN IF NOT EXISTS trang_thai text NOT NULL DEFAULT 'mo';
+ALTER TABLE khoang_trong_tri_thuc DROP CONSTRAINT IF EXISTS khoang_trong_tri_thuc_trang_thai_check;
+ALTER TABLE khoang_trong_tri_thuc ADD CONSTRAINT khoang_trong_tri_thuc_trang_thai_check CHECK (trang_thai IN ('mo', 'da_xu_ly', 'bo_qua'));
+ALTER TABLE khoang_trong_tri_thuc ADD COLUMN IF NOT EXISTS kb_chunk_id int REFERENCES kb_chunk(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS nhat_ky_tri_thuc (
+  id serial PRIMARY KEY,
+  kb_chunk_id int,                  -- kept after a delete (no FK), so the log still says what was removed
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  hanh_dong text NOT NULL,          -- tao | sua | trang_thai | xoa | bo_qua_cau_hoi
+  truoc jsonb,
+  sau jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── Account admin (change: user-admin; UC24, seq-19 b16-19) ─────────────────────────────────────────────
+-- bi_khoa: cannot sign in. phien_tu: tokens issued (iat) before it are refused, which is how a lock ends open sessions.
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS bi_khoa boolean NOT NULL DEFAULT false;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS ly_do_khoa text;
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS phien_tu timestamptz;
+CREATE TABLE IF NOT EXISTS nhat_ky_tai_khoan (
+  id serial PRIMARY KEY,
+  nguoi_dung_id int REFERENCES app_user(id) ON DELETE SET NULL,     -- the admin (NULL: set_role.py)
+  tai_khoan_id int REFERENCES app_user(id) ON DELETE CASCADE,       -- the account changed
+  hanh_dong text NOT NULL,                                          -- doi_vai_tro | khoa | mo_khoa
+  truoc jsonb,
+  sau jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Weekly report (change weekly-report; UC23, seq-18). One row per week, claimed before sending so a restart never sends twice.
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS nhan_bao_cao_tuan boolean NOT NULL DEFAULT true;
+CREATE TABLE IF NOT EXISTS bao_cao_tuan (
+  tuan_bat_dau date PRIMARY KEY,  -- the Monday (UTC+7) of the week reported
+  gui_luc timestamptz NOT NULL DEFAULT now(),
+  so_nguoi_nhan int NOT NULL DEFAULT 0,
+  so_loi int NOT NULL DEFAULT 0,
+  ket_qua text NOT NULL DEFAULT 'dang_gui'
+    CHECK (ket_qua IN ('dang_gui', 'da_gui', 'loi_mot_phan', 'loi', 'chi_ghi_log')),
+  tieu_de text,
+  noi_dung text
+);

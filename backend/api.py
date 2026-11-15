@@ -1,15 +1,20 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
+import asyncio
 import io
 import os
+import random
 import re
 import shutil
+import sys
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,8 +26,9 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, estimate, leads, notify, taxonomy, trends, vertex
-from pipeline.assistant import _fold, respond, with_services
+from pipeline import (bo_suu_tap, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+                      trends, vertex, weekly_report)
+from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_image, by_text, similar_to
@@ -43,7 +49,41 @@ NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "c
 SPACE_TYPES = SpaceClassificationResult.model_fields["space_type"].annotation.__args__
 STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__args__
 
-app = FastAPI(title="D3 Studio AI")
+# ── Weekly report scheduler (UC23; seq-18 b1): checks 30 s after start, then every 10 minutes ─────────────
+WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
+
+
+def _weekly_once():
+    now = datetime.now(timezone.utc)
+    if weekly_report.due(now):
+        with _db() as c:
+            weekly_report.send_week(c, now)
+
+
+async def _weekly_loop():
+    await asyncio.sleep(WEEKLY_FIRST)
+    while True:
+        try:
+            await asyncio.to_thread(_weekly_once)
+        except Exception:
+            weekly_report.log.exception("weekly report check failed")
+        await asyncio.sleep(WEEKLY_EVERY)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    task = None
+    if os.getenv("D3_WEEKLY_REPORT", "on").lower() in ("off", "0", "false", "no"):
+        weekly_report.log.info("weekly report scheduler: off (D3_WEEKLY_REPORT)")
+    elif "pytest" not in sys.modules:  # tests call the module directly and must never send
+        weekly_report.log.info("weekly report scheduler: on (Monday from 08:00 UTC+7)")
+        task = asyncio.create_task(_weekly_loop())
+    yield
+    if task:
+        task.cancel()
+
+
+app = FastAPI(title="D3 Studio AI", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=auth.SECRET)  # only holds the OAuth state during Google sign-in
 if origins := [o.strip() for o in os.getenv("D3_CORS_ORIGINS", "").split(",") if o.strip()]:
     # the site on GitHub Pages calls this API from another origin; tokens travel in the Authorization header, so no cookies
@@ -80,19 +120,23 @@ def _processor():  # loads YOLO + SigLIP2 on first ingest only
 def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = None,
                 review_status: Optional[str] = None, limit: int = 50, offset: int = 0,
                 ids: Optional[str] = Query(default=None, pattern=r"^\d+(,\d+)*$", description="comma list, ≤ 60"),
+                tra_ve: bool = Query(default=False, description="staff: only drafts returned with a reason"),
                 user=Depends(optional_user)):
     id_list = [int(i) for i in ids.split(",")] if ids else None  # the browser collection shows its photos in one call
     if id_list and len(id_list) > bo_suu_tap.MAX_ITEMS:
         raise HTTPException(422, f"at most {bo_suu_tap.MAX_ITEMS} ids")
-    if not _is_staff(user):
+    staff = _is_staff(user)
+    if not staff:
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
         return c.execute(
-            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS} "
+            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
+            + (", ly_do_duyet" if staff else "") + " "  # the review reason is staff-only
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
+            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
-            {"t": space_type, "s": design_style, "r": review_status, "i": id_list,
+            {"t": space_type, "s": design_style, "r": review_status, "i": id_list, "rv": tra_ve and staff,
              "l": max(min(limit, 200), len(id_list or [])), "o": offset}).fetchall()
 
 
@@ -153,7 +197,7 @@ def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(
 
 def project_folder(name: str) -> str:
     """'Biệt thự Thảo Điền' -> 'biet_thu_thao_dien': the folder doubles as the project name, keep it URL- and path-safe."""
-    return re.sub(r"[^a-z0-9]+", "_", _fold(name)).strip("_")[:60]
+    return taxonomy_admin.slug(name)
 
 
 @app.post("/spaces/ingest", status_code=201)
@@ -202,7 +246,7 @@ def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str
     new = NEXT[status]
     if new == "cleared" and not rights_confirmed:
         raise HTTPException(422, f"space {space_id}: confirm the client allowed publishing these photos (rights_confirmed)")
-    c.execute("UPDATE space SET review_status=%s WHERE id=%s", (new, space_id))
+    c.execute("UPDATE space SET review_status=%s, ly_do_duyet=NULL WHERE id=%s", (new, space_id))  # moved on: reason done
     _log(c, space_id, user, "advance", {"from": status, "to": new, **({"rights_confirmed": True} if new == "cleared" else {})})
     return new
 
@@ -256,6 +300,66 @@ def advance_many(body: AdvanceMany, user=Depends(require(*STAFF))):
     return {"advanced": sorted(moved), "status": sorted(set(moved.values()))}
 
 
+# ── Backward paths (change: review-return-reject; act-1, seq-6 b9-12) ─────────────────────────────────────
+RETURNABLE = {"in_review", "approved", "cleared"}           # -> draft ("Trả về nháp")
+BACK = {  # action: (allowed source statuses, target status, reason kind, log action)
+    "return": (RETURNABLE, "draft", "tra_ve", "return"),
+    "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
+    "reopen": ({"noi_bo"}, "draft", "mo_lai", "reopen"),
+}
+STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
+             "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
+
+
+class MoveBack(BaseModel):
+    space_ids: list[int] = Field(min_length=1, max_length=500)
+    ly_do: str = Field(max_length=500)
+
+    @field_validator("ly_do")
+    @classmethod
+    def _reason(cls, v):
+        v = " ".join(v.split())
+        if len(v) < 5:
+            raise ValueError("lý do cần ít nhất 5 ký tự")
+        return v
+
+
+def _move_back(action: str, body: MoveBack, user, tasks: BackgroundTasks) -> dict:
+    """All or nothing, like /spaces/advance: one photo in the wrong status rolls the whole selection back."""
+    sources, target, kind, log_action = BACK[action]
+    with _db() as c:
+        rows = c.execute("SELECT id, relative_path, review_status FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+                         (body.space_ids,)).fetchall()
+        if missing := set(body.space_ids) - {r["id"] for r in rows}:
+            raise HTTPException(404, f"space {min(missing)} not found")
+        if bad := next((r for r in rows if r["review_status"] not in sources), None):
+            raise HTTPException(409, f"space {bad['id']}: không thể từ «{STATUS_VI.get(bad['review_status'], bad['review_status'])}»")
+        shown = {"loai": kind, "ly_do": body.ly_do, "boi": user["email"], "luc": c.execute("SELECT now()").fetchone()["now"].isoformat()}
+        for r in rows:
+            c.execute("UPDATE space SET review_status=%s, ly_do_duyet=%s WHERE id=%s", (target, Jsonb(shown), r["id"]))
+            _log(c, r["id"], user, log_action, {"from": r["review_status"], "to": target, "reason": body.ly_do})
+    tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows], user["email"])
+    return {"moved": [r["id"] for r in rows], "status": target}
+
+
+@app.post("/spaces/return")
+def return_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Trả về nháp": in review / approved / cleared -> draft, with a reason the uploader is told about."""
+    return _move_back("return", body, user, tasks)
+
+
+@app.post("/spaces/keep-internal")
+def keep_internal(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Lưu nội bộ": approved / cleared -> noi_bo, a final status never shown publicly (act-1)."""
+    return _move_back("keep_internal", body, user, tasks)
+
+
+@app.post("/spaces/reopen")
+def reopen_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Mở lại": noi_bo -> draft."""
+    return _move_back("reopen", body, user, tasks)
+
+
 AI_DIMS = {"khong_gian", "phong_cach", "tong_mau", "vat_lieu"}  # mirrored from space columns by sync_ai_tags
 
 
@@ -297,7 +401,7 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
 
 
 class Event(BaseModel):
-    loai: Literal["xem_khong_gian", "luu_anh"]       # a view, or a save with the heart (trend-dashboard)
+    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem"]  # view, heart save, photo chosen in the style quiz
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
@@ -489,6 +593,59 @@ def shared_collection(code: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,64}$")):
     return out
 
 
+# ── Style quiz (change: style-quiz; UC06, seq-12) ──────────────────────────────────────────────────────────
+class QuizAnswers(BaseModel):
+    cap: list[tuple[int, int]] = Field(min_length=1, max_length=quiz.QUESTIONS)  # the pairs shown, as GET /quiz gave them
+    chon: list[int] = Field(max_length=quiz.QUESTIONS)                          # the photo chosen in each answered pair
+
+
+def _quiz_result(c, body: QuizAnswers) -> dict:
+    try:
+        return quiz.result(c, [list(p) for p in body.cap], body.chon)
+    except quiz.Invalid as e:
+        raise HTTPException(422, [{"loc": ["body"], "msg": str(e), "type": "value_error"}])
+
+
+@app.get("/quiz", dependencies=[Depends(limit("quiz", 30, 60))])
+def quiz_pairs():
+    """A new set of photo pairs, random each time; 409 'chua_du_anh' when the published photos allow < 4 pairs."""
+    with _db() as c:
+        pairs = quiz.build_pairs(quiz.eligible(c), random.Random(os.urandom(8)))
+        if not pairs:
+            raise HTTPException(409, "chua_du_anh")
+        tiles = {t["id"]: t for t in quiz.tiles(c, [i for p in pairs for i in p])}
+    return {"cau_hoi": [{"a": tiles[a], "b": tiles[b]} for a, b in pairs]}
+
+
+@app.post("/quiz/result", dependencies=[Depends(limit("quiz", 30, 60))])
+def quiz_result(body: QuizAnswers):
+    """Scored here from the pairs and picks, never from client scores (one bucket with GET /quiz)."""
+    with _db() as c:
+        return _quiz_result(c, body)
+
+
+@app.get("/quiz/me", dependencies=SIGNED_IN)
+def my_quiz(user=Depends(require(*ROLES))):
+    with _db() as c:
+        row = c.execute("SELECT phong_cach, goi_y, updated_at FROM ket_qua_trac_nghiem WHERE nguoi_dung_id=%s",
+                        (user["id"],)).fetchone()
+        if not row:
+            return Response(status_code=204)
+        return {"phong_cach": row["phong_cach"], "goi_y": quiz.tiles(c, row["goi_y"]), "luu_luc": row["updated_at"]}
+
+
+@app.put("/quiz/me", dependencies=SIGNED_IN)
+def save_my_quiz(body: QuizAnswers, user=Depends(require(*ROLES))):
+    """Re-scores the answers, so a saved result is never invented either; one result per account, replaced on save."""
+    with _db() as c:
+        out = _quiz_result(c, body)
+        row = c.execute("INSERT INTO ket_qua_trac_nghiem (nguoi_dung_id, phong_cach, goi_y) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (nguoi_dung_id) DO UPDATE SET phong_cach = EXCLUDED.phong_cach, "
+                        "goi_y = EXCLUDED.goi_y, updated_at = now() RETURNING updated_at",
+                        (user["id"], Jsonb(out["phong_cach"]), [t["id"] for t in out["goi_y"]])).fetchone()
+    return {**out, "luu_luc": row["updated_at"]}
+
+
 HOUSE_TYPES = ("can_ho", "nha_pho", "biet_thu", "van_phong", "thuong_mai", "khac")
 BUDGETS = ("duoi_300tr", "300tr_700tr", "700tr_1500tr", "tren_1500tr", "chua_ro")
 
@@ -618,6 +775,84 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
         return trends.overview(c, days)
 
 
+
+# ── Project results (BFD 5.4; act-1 30-day check; roadmap 3.5) ────────────────
+PROJECT_STATS_ROLES = ("sales", *STAFF)
+
+
+def _stats_days(days: int) -> int:
+    if days not in (30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 30 or 90", "type": "value_error"}])
+    return days
+
+
+@app.get("/analytics/projects")
+def analytics_projects(days: int = 30, cua_toi: bool = False, user=Depends(require(*PROJECT_STATS_ROLES))):
+    """One row per project with published photos: views, saves, leads and the 30-day status. Counts only."""
+    with _db() as c:
+        return project_stats.overview(c, _stats_days(days), user["id"] if cua_toi else None)
+
+
+@app.get("/analytics/projects/{folder}")
+def analytics_project(folder: str, days: int = 30, user=Depends(require(*PROJECT_STATS_ROLES))):
+    """One project's photos (most viewed first) and the suggestions that apply."""
+    days = _stats_days(days)
+    with _db() as c:
+        out = project_stats.detail(c, folder, days)
+    if out is None:
+        raise HTTPException(404, "no published photo in this project")
+    return out
+
+
+# ── Weekly report (UC23; seq-18): opt-out, log, preview, test send ─────────────
+REPORT_ROLES = ("sales", *APPROVERS)
+
+
+class WeeklyOptIn(BaseModel):
+    nhan: bool
+
+
+@app.get("/me/weekly-report")
+def weekly_opt_in(user=Depends(require(*REPORT_ROLES))):
+    with _db() as c:
+        return {"nhan": c.execute("SELECT nhan_bao_cao_tuan FROM app_user WHERE id=%s", (user["id"],)).fetchone()["nhan_bao_cao_tuan"]}
+
+
+@app.put("/me/weekly-report")
+def set_weekly_opt_in(body: WeeklyOptIn, user=Depends(require(*REPORT_ROLES))):
+    with _db() as c:
+        c.execute("UPDATE app_user SET nhan_bao_cao_tuan=%s WHERE id=%s", (body.nhan, user["id"]))
+    return {"nhan": body.nhan}
+
+
+@app.get("/reports/weekly")
+def weekly_history(user=Depends(require(*APPROVERS))):
+    """The last 8 weekly reports, newest first, without their text."""
+    with _db() as c:
+        return weekly_report.history(c)
+
+
+@app.get("/reports/weekly/preview")
+def weekly_preview(user=Depends(require(*APPROVERS))):
+    """This week's report (the last full week), built now, not sent."""
+    with _db() as c:
+        r = weekly_report.build(c, datetime.now(timezone.utc))
+        return {"tuan_bat_dau": r["tuan_bat_dau"], "tieu_de": r["tieu_de"], "noi_dung": r["noi_dung"],
+                "nguoi_nhan": len(weekly_report.recipients(c))}
+
+
+@app.post("/reports/weekly/test")
+def weekly_test(user=Depends(require(*APPROVERS))):
+    """A copy to the caller only; it does not count as the week's report."""
+    if not notify._smtp_ready():
+        raise HTTPException(409, "Chưa cấu hình email (D3_SMTP_HOST)")
+    try:
+        with _db() as c:
+            return weekly_report.send_week(c, datetime.now(timezone.utc), force_to=user["email"])
+    except Exception:
+        weekly_report.log.exception("weekly report: test send failed")
+        raise HTTPException(502, "Không gửi được email thử")
+
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────
 @app.get("/taxonomy")
 def taxonomy_list():
@@ -635,42 +870,75 @@ def taxonomy_list():
     return dims
 
 
+def _tax_write(call):
+    """Run one taxonomy_admin write in a transaction, map its errors, refresh the taxonomy cache."""
+    try:
+        with _db() as c:
+            out = call(c)
+    except taxonomy_admin.NotFound as e:
+        raise HTTPException(404, str(e))
+    except taxonomy_admin.Conflict as e:
+        raise HTTPException(409, str(e))
+    except taxonomy_admin.Invalid as e:
+        raise HTTPException(422, str(e))
+    taxonomy.reload()
+    return out
+
+
+@app.get("/taxonomy/admin")
+def taxonomy_admin_tree(user=Depends(require(*APPROVERS))):
+    """Every dimension and value with usage counts, and the 20 latest changes (seq-15 b1-6)."""
+    with _db() as c:
+        return taxonomy_admin.tree(c)
+
+
+class NewDimension(BaseModel):
+    ten: str = Field(min_length=1, max_length=80)
+    cho_phep_nhieu_gia_tri: bool = False
+    hien_thi_cho_khach: bool = True
+
+
+@app.post("/taxonomy", status_code=201)
+def add_dimension(body: NewDimension, user=Depends(require(*APPROVERS))):
+    return _tax_write(lambda c: taxonomy_admin.add_dimension(c, user, body.ten, body.cho_phep_nhieu_gia_tri,
+                                                             body.hien_thi_cho_khach))
+
+
+class EditDimension(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=80)
+    hien_thi_cho_khach: Optional[bool] = None
+    move: Optional[Literal["up", "down"]] = None
+
+
+@app.patch("/taxonomy/{dim_id}")
+def edit_dimension(dim_id: int, body: EditDimension, user=Depends(require(*APPROVERS))):
+    """Rename, show/hide for visitors, move up/down; the code never changes."""
+    return _tax_write(lambda c: taxonomy_admin.edit_dimension(c, user, dim_id, body.ten, body.hien_thi_cho_khach, body.move))
+
+
 class NewValue(BaseModel):
-    ma_dinh_danh: str = Field(min_length=1, max_length=64)
     ten: str = Field(min_length=1, max_length=120)
+    ma_dinh_danh: Optional[str] = Field(default=None, min_length=1, max_length=64)  # derived from ten when omitted
+    mo_ta: Optional[str] = Field(default=None, max_length=500)
     tu_dong_nghia: list[str] = Field(default_factory=list)
 
 
 @app.post("/taxonomy/{dim_id}/values", status_code=201)
 def add_value(dim_id: int, body: NewValue, user=Depends(require(*APPROVERS))):
-    with _db() as c:
-        if not c.execute("SELECT 1 FROM chieu_phan_loai WHERE id=%s", (dim_id,)).fetchone():
-            raise HTTPException(404, "dimension not found")
-        try:
-            row = c.execute(
-                "INSERT INTO gia_tri_phan_loai (chieu_id, ma_dinh_danh, ten, tu_dong_nghia) "
-                "VALUES (%s,%s,%s,%s) RETURNING id, chieu_id, ma_dinh_danh, ten, tu_dong_nghia",
-                (dim_id, body.ma_dinh_danh, body.ten, Jsonb(body.tu_dong_nghia))).fetchone()
-        except UniqueViolation:
-            raise HTTPException(409, "value already exists in this dimension")
-    taxonomy.reload()
-    return row
+    return _tax_write(lambda c: taxonomy_admin.add_value(c, user, dim_id, body.ten, body.mo_ta, body.tu_dong_nghia,
+                                                         body.ma_dinh_danh))
 
 
-class RenameValue(BaseModel):
-    ten: str = Field(min_length=1, max_length=120)
+class EditValue(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=120)
+    mo_ta: Optional[str] = Field(default=None, max_length=500)
+    tu_dong_nghia: Optional[list[str]] = None
 
 
 @app.patch("/taxonomy/values/{value_id}")
-def rename_value(value_id: int, body: RenameValue, user=Depends(require(*APPROVERS))):
-    """Rename keeps ma_dinh_danh, so facet URLs stay valid (seq-15 b13)."""
-    with _db() as c:
-        row = c.execute("UPDATE gia_tri_phan_loai SET ten=%s WHERE id=%s RETURNING id, ma_dinh_danh, ten",
-                        (body.ten, value_id)).fetchone()
-    if not row:
-        raise HTTPException(404, "value not found")
-    taxonomy.reload()
-    return row
+def edit_value(value_id: int, body: EditValue, user=Depends(require(*APPROVERS))):
+    """Rename keeps ma_dinh_danh, so facet URLs stay valid (seq-15 b13); also description and synonyms."""
+    return _tax_write(lambda c: taxonomy_admin.edit_value(c, user, value_id, body.ten, body.mo_ta, body.tu_dong_nghia))
 
 
 class MergeValue(BaseModel):
@@ -679,21 +947,98 @@ class MergeValue(BaseModel):
 
 @app.post("/taxonomy/values/{value_id}/merge")
 def merge_value(value_id: int, body: MergeValue, user=Depends(require(*APPROVERS))):
-    """Move every space tag from the source value to the target, then delete the source (seq-15 b19)."""
-    if value_id == body.target_id:
-        raise HTTPException(422, "cannot merge a value into itself")
+    """Same dimension only; mirrored space columns move too; tong_mau never (seq-15 b16-22)."""
+    return _tax_write(lambda c: taxonomy_admin.merge(c, user, value_id, body.target_id))
+
+
+# ── Assistant knowledge (change: assistant-knowledge-admin; UC16, seq-16) ─────────────────────────────────────
+KNOWLEDGE = ("content", *APPROVERS)
+
+
+def _kn(call):
+    """Run one knowledge write in a transaction and map its errors."""
+    try:
+        with _db() as c:
+            return call(c)
+    except knowledge.NotFound as e:
+        raise HTTPException(404, str(e))
+    except knowledge.Conflict as e:
+        raise HTTPException(409, str(e))
+    except knowledge.Forbidden as e:
+        raise HTTPException(403, str(e))
+    except knowledge.Invalid as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/knowledge")
+def knowledge_list(q: Optional[str] = Query(default=None, max_length=200),
+                   trang_thai: Optional[Literal[knowledge.STATUSES]] = None, user=Depends(require(*KNOWLEDGE))):
     with _db() as c:
-        if len(c.execute("SELECT id FROM gia_tri_phan_loai WHERE id IN (%s,%s)",
-                         (value_id, body.target_id)).fetchall()) != 2:
-            raise HTTPException(404, "value not found")
-        affected = c.execute("SELECT COUNT(*) AS n FROM space_gia_tri WHERE gia_tri_id=%s", (value_id,)).fetchone()["n"]
-        c.execute("UPDATE space_gia_tri SET gia_tri_id=%s WHERE gia_tri_id=%s "
-                  "AND space_id NOT IN (SELECT space_id FROM space_gia_tri WHERE gia_tri_id=%s)",
-                  (body.target_id, value_id, body.target_id))
-        c.execute("DELETE FROM space_gia_tri WHERE gia_tri_id=%s", (value_id,))  # any duplicates left behind
-        c.execute("DELETE FROM gia_tri_phan_loai WHERE id=%s", (value_id,))
-    taxonomy.reload()  # ponytail: vector-index label refresh (seq-15 b20-22) is a future queue job
-    return {"merged_into": body.target_id, "affected": affected}
+        return knowledge.list_entries(c, q, trang_thai)
+
+
+@app.get("/knowledge/gaps")
+def knowledge_gaps(user=Depends(require(*KNOWLEDGE))):
+    """Questions the chatbot could not answer, still open, grouped and most asked first (seq-16 b1-6)."""
+    with _db() as c:
+        return knowledge.gaps(c)
+
+
+class GapIds(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@app.post("/knowledge/gaps/dismiss")
+def knowledge_dismiss(body: GapIds, user=Depends(require(*KNOWLEDGE))):
+    return {"bo_qua": _kn(lambda c: knowledge.dismiss_gaps(c, user, body.ids))}
+
+
+@app.get("/knowledge/{entry_id}")
+def knowledge_get(entry_id: int, user=Depends(require(*KNOWLEDGE))):
+    return _kn(lambda c: knowledge.get(c, entry_id))
+
+
+class NewEntry(BaseModel):
+    kind: Literal[KB_KINDS]
+    title: str = Field(min_length=1, max_length=200)
+    cum_tu_khop: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=4000)
+    trang_thai: Literal["nhap", "cho_duyet"] = "nhap"
+    tu_cau_hoi: list[int] = Field(default_factory=list, max_length=500)  # the unanswered questions it answers
+
+
+@app.post("/knowledge", status_code=201)
+def knowledge_create(body: NewEntry, user=Depends(require(*KNOWLEDGE))):
+    return _kn(lambda c: knowledge.create(c, user, body.kind, body.title, body.cum_tu_khop, body.content,
+                                          body.trang_thai, body.tu_cau_hoi))
+
+
+class EditEntry(BaseModel):
+    kind: Optional[Literal[KB_KINDS]] = None
+    title: Optional[str] = Field(default=None, max_length=200)
+    cum_tu_khop: Optional[str] = Field(default=None, max_length=500)
+    content: Optional[str] = Field(default=None, max_length=4000)
+
+
+@app.patch("/knowledge/{entry_id}")
+def knowledge_update(entry_id: int, body: EditEntry, user=Depends(require(*KNOWLEDGE))):
+    """Re-embeds title and match phrases; a content editor's change to a live price entry sends it back for approval."""
+    return _kn(lambda c: knowledge.update(c, user, entry_id, body.kind, body.title, body.cum_tu_khop, body.content))
+
+
+class EntryStatus(BaseModel):
+    trang_thai: Literal[knowledge.STATUSES]
+
+
+@app.post("/knowledge/{entry_id}/status")
+def knowledge_status(entry_id: int, body: EntryStatus, user=Depends(require(*KNOWLEDGE))):
+    """Only the lead architect / admin switch on an entry that states prices (seq-16: price only after approval)."""
+    return _kn(lambda c: knowledge.set_status(c, user, entry_id, body.trang_thai))
+
+
+@app.delete("/knowledge/{entry_id}", status_code=204)
+def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
+    _kn(lambda c: knowledge.delete(c, user, entry_id))
 
 
 # ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────

@@ -1,5 +1,5 @@
 <template>
-  <main class="wrap wrap-wide" style="padding-block:clamp(28px,4vw,56px)">
+  <main class="wrap wrap-wide page-top" style="padding-bottom:clamp(28px,4vw,56px)">
     <p class="eyebrow">Quản trị</p>
     <h1 class="h-2" style="margin-top:10px">Duyệt không gian</h1>
     <p class="lead" style="margin-top:10px">AI gán nhãn ở trạng thái nháp; kiến trúc sư xác nhận, content biên tập lời, KTS trưởng duyệt và đăng.</p>
@@ -43,7 +43,13 @@
               @click="advanceSelected">
         Chuyển {{ selected.size }} mục sang «{{ STATUS_VI[NEXT_STATUS[status]] }}»
       </button>
+      <button v-if="canReturn" class="btn btn-secondary" type="button" :disabled="!selected.size"
+              @click="ask('return', [...selected], $event)">Trả về nháp {{ selected.size }} mục</button>
     </div>
+    <label v-if="status === 'draft'" class="row g10 small" style="margin-top:14px">
+      <input v-model="onlyReturned" type="checkbox"> Chỉ ảnh bị trả về
+    </label>
+    <p v-if="moved" class="small" style="margin-top:12px" role="status">{{ moved }}</p>
 
     <p v-if="error" class="small" style="margin-top:16px;color:var(--danger)" role="alert">{{ error }}</p>
     <p v-else-if="!rows.length" class="small" style="margin-top:20px">{{ loading ? 'Đang tải…' : 'Không có không gian nào ở trạng thái này.' }}</p>
@@ -52,7 +58,7 @@
       <div class="row g10" style="flex-wrap:wrap;align-items:center">
         <label v-if="canAdvance" class="row g10"><input type="checkbox" :checked="g.rows.every(r => selected.has(r.id))"
                @change="selectProject(g, $event.target.checked)" :aria-label="'Chọn cả dự án ' + g.project"></label>
-        <h2 class="h-4" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
+        <h2 :id="'p-' + g.project" class="h-4 rv-anchor" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
         <template v-if="isStaff">
           <select v-for="d in humanDims" :key="d.id" :value="projectTags[g.project + d.id] || ''" :aria-label="d.label + ' cho cả dự án'"
                   @change="projectTags[g.project + d.id] = $event.target.value">
@@ -71,6 +77,11 @@
           </button>
           <div class="stack" style="flex:1;min-width:260px;gap:10px">
             <p class="small">{{ r.relative_path }}</p>
+            <p v-if="r.ly_do_duyet" class="rv-reason" :class="'is-' + r.ly_do_duyet.loai">
+              <strong>{{ REASON_VI[r.ly_do_duyet.loai] }}</strong>
+              <span class="rv-by">· {{ r.ly_do_duyet.boi }} · {{ when(r.ly_do_duyet.luc) }}</span><br>
+              {{ r.ly_do_duyet.ly_do }}
+            </p>
             <div v-if="isStaff" class="row g10" style="flex-wrap:wrap">
               <select v-model="r.space_type" :aria-label="'Loại không gian ' + r.id">
                 <option v-for="t in SPACE_TYPES" :key="t" :value="t">{{ spaceLabel(t) }}</option>
@@ -117,25 +128,53 @@
               <button v-if="canAdvance && NEXT_STATUS[status] !== 'cleared'" class="btn btn-primary" type="button" @click="advanceOne(r)">
                 Chuyển sang «{{ STATUS_VI[NEXT_STATUS[status]] }}»
               </button>
+              <template v-if="isApprover">
+                <button v-if="RETURNABLE.includes(status)" class="btn btn-ghost" type="button" @click="ask('return', [r.id], $event)">Trả về nháp</button>
+                <button v-if="status === 'approved' || status === 'cleared'" class="btn btn-ghost" type="button"
+                        @click="ask('keep_internal', [r.id], $event)">Lưu nội bộ</button>
+                <button v-if="status === 'noi_bo'" class="btn btn-secondary" type="button" @click="ask('reopen', [r.id], $event)">Mở lại</button>
+              </template>
               <span v-if="saved === r.id" class="small" aria-live="polite">Đã lưu</span>
             </div>
           </div>
         </li>
       </ul>
     </section>
+
+    <!-- the reason for a backward move (seq-6 b9): required, shown on the card and sent to the uploader -->
+    <dialog ref="dlgEl" class="rv-dialog" aria-labelledby="rv-dlg-h" @close="onDialogClose">
+      <form v-if="dlg.action" class="stack" style="gap:12px" @submit.prevent="confirmMove">
+        <h2 id="rv-dlg-h" class="h-4" style="margin:0">{{ ACTION_VI[dlg.action] }} · {{ dlg.ids.length }} ảnh</h2>
+        <div class="field">
+          <label for="rv-reason">Lý do <span class="small">(bắt buộc, người tải ảnh lên sẽ nhận được)</span></label>
+          <textarea id="rv-reason" v-model="dlg.reason" rows="3" maxlength="500" required
+                    :aria-invalid="!!dlg.error" aria-describedby="rv-count rv-err"></textarea>
+          <span id="rv-count" class="small num">{{ dlg.reason.trim().length }}/500</span>
+          <span v-if="dlg.error" id="rv-err" class="small" style="color:var(--danger)" role="alert">{{ dlg.error }}</span>
+        </div>
+        <div class="row g10">
+          <button class="btn btn-primary" :disabled="dlg.busy">{{ dlg.busy ? 'Đang chuyển…' : 'Xác nhận' }}</button>
+          <button class="btn btn-ghost" type="button" @click="dlgEl.close()">Huỷ</button>
+        </div>
+      </form>
+    </dialog>
   </main>
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
-  APPROVERS, NEXT_STATUS, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
-  imageUrl, listSpaces, projectOf, reviewSpace, setTags, spaceLabel, toFacet, uploadAll
+  APPROVERS, NEXT_STATUS, RETURNABLE, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
+  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, uploadAll
 } from '@/api'
 
 const HUMAN = ['loai_cong_trinh', 'muc_dau_tu'] // the AI cannot see these; staff fill them per project
 
-const status = ref('draft')
+/* /quan-tri#p-<folder> (from the project results page): open the published tab and scroll to that project */
+const route = useRoute()
+const target = ref(route.hash.startsWith('#p-') ? decodeURIComponent(route.hash.slice(3)) : '')
+const status = ref(target.value ? 'published' : 'draft')
 const rows = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -154,12 +193,18 @@ const groups = computed(() => {
 })
 
 async function load() {
-  loading.value = true; error.value = ''; selected.clear(); hs.id = null
+  loading.value = true; error.value = ''; selected.clear(); hs.id = null; moved.value = ''
   try {
-    rows.value = (await listSpaces({ review_status: status.value }))
+    rows.value = (await listSpaces({ review_status: status.value, ...(status.value === 'draft' && onlyReturned.value ? { tra_ve: 1 } : {}) }))
       .map(r => ({ ...r, materialsText: (r.materials || []).join(', ') }))
   } catch (e) { error.value = e.message; rows.value = [] }
   finally { loading.value = false }
+  if (target.value) {
+    await nextTick()
+    const h = document.getElementById('p-' + target.value)
+    if (h) { h.scrollIntoView({ block: 'start' }); h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }) }
+    target.value = ''
+  }
 }
 
 async function run(fn) {
@@ -240,6 +285,45 @@ const advanceSelected = () => run(async () => {
   await load()
 })
 
+/* ── backward paths: return to draft, keep internal, reopen (review-return-reject) ── */
+const isApprover = computed(() => hasRole(APPROVERS))
+const canReturn = computed(() => isApprover.value && RETURNABLE.includes(status.value))
+const onlyReturned = ref(false)
+const moved = ref('')
+const REASON_VI = { tra_ve: 'Bị trả về', noi_bo: 'Lưu nội bộ', mo_lai: 'Mở lại' }
+const ACTION_VI = { return: 'Trả về nháp', keep_internal: 'Lưu nội bộ, không xuất bản', reopen: 'Mở lại về nháp' }
+const CALL = { return: returnSpaces, keep_internal: keepInternal, reopen: reopenSpaces }
+const when = t => (t ? new Date(t).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : '')
+const dlgEl = ref(null)
+const dlg = reactive({ action: '', ids: [], reason: '', error: '', busy: false, opener: null })
+
+function ask(action, ids, e) {
+  Object.assign(dlg, { action, ids, reason: '', error: '', busy: false, opener: e?.currentTarget || null })
+  nextTick(() => { dlgEl.value.showModal(); document.getElementById('rv-reason')?.focus() })
+}
+function onDialogClose() {
+  const back = dlg.opener
+  dlg.action = ''
+  if (back?.isConnected) back.focus() // Esc / Huỷ: focus returns to the button that opened the dialog
+}
+async function confirmMove() {
+  const reason = dlg.reason.trim()
+  if (reason.length < 5) { dlg.error = 'Lý do cần ít nhất 5 ký tự.'; return }
+  dlg.busy = true; dlg.error = ''
+  try {
+    const out = await CALL[dlg.action](dlg.ids, reason)
+    const n = out.moved.length
+    dlg.opener = null // the card is gone; focus stays on the page
+    dlgEl.value.close()
+    moved.value = `Đã chuyển ${n} ảnh sang «${STATUS_VI[out.status]}».`
+    rows.value = rows.value.filter(r => !out.moved.includes(r.id))
+    out.moved.forEach(id => selected.delete(id))
+  } catch (e) {
+    dlg.error = typeof e.detail === 'string' ? e.detail : Array.isArray(e.detail) ? e.detail.map(x => x.msg).join('; ') : e.message
+  } finally { dlg.busy = false }
+}
+
+watch(onlyReturned, load)
 watch(status, load, { immediate: true })
 getTaxonomy()
   .then(dims => { humanDims.value = dims.filter(d => HUMAN.includes(d.ma_dinh_danh)).map(toFacet) })
@@ -247,6 +331,8 @@ getTaxonomy()
 </script>
 
 <style scoped>
+.rv-anchor { scroll-margin-top: 232px } /* below the fixed header, as .page-top */
+@media (min-width: 1024px) { .rv-anchor { scroll-margin-top: 128px } }
 select, .txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
   padding: 10px 12px; min-height: 42px; max-width: 100%; color-scheme: dark }
 select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
@@ -256,6 +342,16 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .thumb:disabled { cursor: default }
 .hs-edit { position: relative; max-width: 520px }
 .hs-edit img { width: 100%; display: block; border-radius: var(--radius-sm) }
+.rv-reason { margin: 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--panel); font-size: 14px;
+  color: var(--ink); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; overflow-wrap: anywhere }
+.rv-reason.is-noi_bo { border-left-color: var(--danger) }
+.rv-reason.is-mo_lai { border-left-color: var(--success) }
+.rv-by { color: var(--dim); font-size: 13px }
+.rv-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); color: var(--ink);
+  padding: 20px; width: min(520px, calc(100vw - 32px)) }
+.rv-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
+.rv-dialog textarea { width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 10px 12px; font: inherit; color-scheme: dark }
 .dot { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%;
   background: var(--accent); color: var(--accent-on); font-size: 12px; display: grid; place-items: center }
 </style>

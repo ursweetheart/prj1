@@ -93,7 +93,10 @@ export function adoptTokenFromHash() {
 }
 export async function login(email, password) {
   const res = await fetch(API + '/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
-  if (!res.ok) throw new Error(res.status === 401 ? 'Sai email hoặc mật khẩu.' : 'Không đăng nhập được (' + res.status + ').')
+  if (!res.ok) {
+    const detail = res.status === 403 ? (await res.json().catch(() => ({}))).detail : null // 403: the account is locked
+    throw new Error(res.status === 401 ? 'Sai email hoặc mật khẩu.' : detail || 'Không đăng nhập được (' + res.status + ').')
+  }
   setToken((await res.json()).access_token)
   return loadUser()
 }
@@ -128,6 +131,28 @@ export const toFacet = d => ({
   options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
 })
 export const getTaxonomy = () => get('/taxonomy')
+// taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
+export const getTaxonomyAdmin = () => get('/taxonomy/admin')
+// account admin (seq-19, admin only): list, role, lock / unlock; the server refuses self-changes and the last admin
+export const ROLE_VI = { visitor: 'Khách', architect: 'Kiến trúc sư', content: 'Nội dung', sales: 'Kinh doanh',
+  lead_architect: 'KTS trưởng', admin: 'Quản trị viên' }
+export const listUsers = (params = {}) => get('/users', params)
+export const setUserRole = (id, role) => request('PATCH', '/users/' + id + '/role', { body: { role } })
+export const lockUser = (id, lyDo) => request('POST', '/users/' + id + '/lock', { body: { ly_do: lyDo } })
+export const unlockUser = id => request('POST', '/users/' + id + '/unlock')
+// assistant knowledge (seq-16): entries the chatbot answers from, and the questions it could not answer
+export const listKnowledge = (params = {}) => get('/knowledge', params)
+export const createKnowledge = body => request('POST', '/knowledge', { body })
+export const updateKnowledge = (id, body) => request('PATCH', '/knowledge/' + id, { body })
+export const setKnowledgeStatus = (id, trangThai) => request('POST', '/knowledge/' + id + '/status', { body: { trang_thai: trangThai } })
+export const deleteKnowledge = id => request('DELETE', '/knowledge/' + id)
+export const knowledgeGaps = () => get('/knowledge/gaps')
+export const dismissGaps = ids => request('POST', '/knowledge/gaps/dismiss', { body: { ids } })
+export const addDimension = body => request('POST', '/taxonomy', { body })
+export const editDimension = (id, body) => request('PATCH', '/taxonomy/' + id, { body })
+export const addValue = (dimId, body) => request('POST', '/taxonomy/' + dimId + '/values', { body })
+export const editValue = (id, body) => request('PATCH', '/taxonomy/values/' + id, { body })
+export const mergeValue = (id, targetId) => request('POST', '/taxonomy/values/' + id + '/merge', { body: { target_id: targetId } })
 // AI-proposed dimensions awaiting the lead architect (seq-15); accepting back-tags the library, so it takes a while
 export const listCandidates = () => get('/taxonomy/candidates')
 export const acceptCandidate = (id, ten, gia_tri) => request('POST', `/taxonomy/candidates/${id}/accept`, { body: { ten, gia_tri } })
@@ -162,13 +187,20 @@ function track(loai, spaceId) {
 }
 export const trackView = spaceId => track('xem_khong_gian', spaceId)
 export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
+export const trackQuizPick = spaceId => track('chon_trac_nghiem', spaceId) // style-quiz: not in the interest score
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 
 export const SPACE_TYPES = Object.keys(SPACE_VI)
 export const STYLES = [...Object.keys(PC), 'Khac']
 // QT-01; 'cleared' = the client allowed publishing the photos
 export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
-export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng' }
+export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
+  noi_bo: 'Lưu nội bộ' } // noi_bo: the client refused publishing; final, never public (review-return-reject)
+// backward paths, lead architect / admin, always with a reason (5-500 characters); all or nothing
+export const RETURNABLE = ['in_review', 'approved', 'cleared']
+export const returnSpaces = (ids, lyDo) => request('POST', '/spaces/return', { body: { space_ids: ids, ly_do: lyDo } })
+export const keepInternal = (ids, lyDo) => request('POST', '/spaces/keep-internal', { body: { space_ids: ids, ly_do: lyDo } })
+export const reopenSpaces = (ids, lyDo) => request('POST', '/spaces/reopen', { body: { space_ids: ids, ly_do: lyDo } })
 export const EDITORS = [...STAFF, 'content'] // content may only edit caption / alt text of spaces in review
 
 export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })
@@ -212,10 +244,23 @@ export const saveToCollection = (spaceId, ghiChu = null) =>
 export const removeFromCollection = spaceId => request('DELETE', '/collections/me/items/' + spaceId)
 export const mergeCollection = items => request('POST', '/collections/me/merge', { body: { items } })
 export const getSharedCollection = code => get('/collections/shared/' + encodeURIComponent(code))
+
+// style quiz (UC06, seq-12): answers = { cap: [[a, b], ...], chon: [id, ...] }; the server scores, never the client
+export const getQuiz = () => get('/quiz')
+export const postQuizResult = answers => request('POST', '/quiz/result', { body: answers })
+export const getMyQuiz = () => get('/quiz/me') // null (204) when the account has no saved result
+export const saveMyQuiz = answers => request('PUT', '/quiz/me', { body: answers })
 export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join(','), limit: ids.length }) : Promise.resolve([])
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 /* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
 export const getOverview = (days = 30) => get('/analytics/overview', { days })
+export const getProjectStats = (days = 30, cuaToi = false) => get('/analytics/projects', { days, ...(cuaToi ? { cua_toi: true } : {}) })
+export const getProjectDetail = (folder, days = 30) => get('/analytics/projects/' + encodeURIComponent(folder), { days })
+export const getWeeklyOptIn = () => get('/me/weekly-report')
+export const setWeeklyOptIn = nhan => request('PUT', '/me/weekly-report', { body: { nhan } })
+export const listWeeklyReports = () => get('/reports/weekly')
+export const previewWeeklyReport = () => get('/reports/weekly/preview')
+export const testWeeklyReport = () => request('POST', '/reports/weekly/test')
 /* Cost estimate (UC10) and its price table D8 */
 export const estimate = body => request('POST', '/estimates', { body })
 export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })

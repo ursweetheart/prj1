@@ -178,3 +178,16 @@ def test_demo_generate_rerun_remove(world):
     assert _q("SELECT count(*) FROM phien_truy_cap WHERE id LIKE 'demo-%%'")[0][0] == 0
     assert _q("SELECT count(*) FROM phien_truy_cap WHERE id=%s", real)[0][0] == 1
     assert _overview(30)["co_du_lieu_mo_phong"] is False
+
+
+# ── style-quiz: quiz answers are stored but not scored ────────────────────────
+def test_quiz_answers_not_scored(world):
+    a = world.space("Japandi")
+    pid = world.session()
+    before = _overview(30)
+    world.events(pid, a, "chon_trac_nghiem", n=4)
+    after = _overview(30)
+    assert _value(after, "phong_cach", "Japandi") == _value(before, "phong_cach", "Japandi")
+    assert after["tong"] == before["tong"]
+    assert next((x for x in after["canh_bao"] if x["ma"] == "Japandi"), None) == \
+        next((x for x in before["canh_bao"] if x["ma"] == "Japandi"), None)

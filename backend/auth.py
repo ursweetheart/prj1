@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from psycopg.errors import UniqueViolation
@@ -15,6 +15,7 @@ from psycopg.rows import dict_row
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr, Field
 
+from pipeline import accounts
 from pipeline.store import DSN
 from ratelimit import limit
 
@@ -23,7 +24,7 @@ SECRET = os.getenv("D3_JWT_SECRET") or secrets.token_urlsafe(32)
 if not os.getenv("D3_JWT_SECRET"):
     logging.getLogger(__name__).warning("D3_JWT_SECRET is not set: login tokens stop working whenever the server restarts")
 TOKEN_TTL = timedelta(minutes=60)
-ROLES = ("visitor", "architect", "content", "sales", "lead_architect", "admin")
+ROLES = accounts.ROLES  # visitor, architect, content, sales, lead_architect, admin
 STAFF = {"architect", "lead_architect", "admin"}  # may see drafts, ingest and edit facets
 APPROVERS = {"lead_architect", "admin"}  # may approve and publish (QT-01)
 
@@ -37,9 +38,14 @@ def _conn():
     return psycopg.connect(DSN, row_factory=dict_row)
 
 
+LOCKED = "Tài khoản đã bị khoá. Liên hệ quản trị viên."
+
+
 def make_token(user_id: int) -> str:
-    exp = datetime.now(timezone.utc) + TOKEN_TTL
-    return jwt.encode({"sub": str(user_id), "exp": exp}, SECRET, algorithm="HS256")
+    now = datetime.now(timezone.utc)
+    # iat (sub-second, as JWT allows): an account's phien_tu (set by a lock) refuses every token issued before it,
+    # so even a token from the same second as the lock stays dead after an unlock (user-admin)
+    return jwt.encode({"sub": str(user_id), "iat": round(now.timestamp(), 6), "exp": now + TOKEN_TTL}, SECRET, algorithm="HS256")
 
 
 def optional_user(token: str | None = Depends(oauth2)):
@@ -47,13 +53,19 @@ def optional_user(token: str | None = Depends(oauth2)):
     if not token:
         return None
     try:
-        uid = int(jwt.decode(token, SECRET, algorithms=["HS256"])["sub"])
-    except (jwt.InvalidTokenError, ValueError):
+        claims = jwt.decode(token, SECRET, algorithms=["HS256"])
+        uid, issued = int(claims["sub"]), float(claims.get("iat", 0))  # tokens from before user-admin have no iat
+    except (jwt.InvalidTokenError, ValueError, KeyError):
         raise HTTPException(401, "invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
     with _conn() as c:
-        user = c.execute("SELECT id, email, role FROM app_user WHERE id=%s", (uid,)).fetchone()
+        user = c.execute("SELECT id, email, role, bi_khoa, phien_tu FROM app_user WHERE id=%s", (uid,)).fetchone()
     if not user:
         raise HTTPException(401, "unknown user", headers={"WWW-Authenticate": "Bearer"})
+    # 401, not 403: the site signs the user out on 401, which is what a lock must do to an open session
+    if user.pop("bi_khoa"):
+        raise HTTPException(401, LOCKED, headers={"WWW-Authenticate": "Bearer"})
+    if (cut := user.pop("phien_tu")) and issued < cut.timestamp():
+        raise HTTPException(401, "session ended, please sign in again", headers={"WWW-Authenticate": "Bearer"})
     return user
 
 
@@ -87,10 +99,12 @@ def register(body: Credentials):
 @router.post("/auth/login", dependencies=[Depends(limit("login", 10, 60))])
 def login(form: OAuth2PasswordRequestForm = Depends()):
     with _conn() as c:
-        u = c.execute("SELECT id, password_hash FROM app_user WHERE email=%s", (form.username.lower(),)).fetchone()
+        u = c.execute("SELECT id, password_hash, bi_khoa FROM app_user WHERE email=%s", (form.username.lower(),)).fetchone()
     ok = _hasher.verify(form.password, (u and u["password_hash"]) or _DUMMY)  # same cost whether or not the user exists
     if not (u and u["password_hash"] and ok):
         raise HTTPException(401, "wrong email or password", headers={"WWW-Authenticate": "Bearer"})
+    if u["bi_khoa"]:  # only after the right password: a lock reveals nothing to someone guessing
+        raise HTTPException(403, LOCKED)
     return {"access_token": make_token(u["id"]), "token_type": "bearer"}
 
 
@@ -109,15 +123,46 @@ class RoleChange(BaseModel):
     role: str
 
 
-@router.patch("/users/{user_id}/role")
-def set_role(user_id: int, body: RoleChange, _=Depends(require("admin"))):
-    if body.role not in ROLES:
-        raise HTTPException(422, f"role must be one of {ROLES}")
+def _accounts(call):
+    """One accounts write in a transaction, its errors mapped (user-admin)."""
+    try:
+        with _conn() as c:
+            return call(c)
+    except accounts.NotFound as e:
+        raise HTTPException(404, str(e))
+    except accounts.Conflict as e:
+        raise HTTPException(409, str(e))
+    except accounts.Invalid as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get("/users")
+def list_users(q: str | None = Query(default=None, max_length=200), role: str | None = None, khoa: bool | None = None,
+               me=Depends(require("admin"))):
+    """Every account (no password hash, Google or Facebook id), whether each control is allowed, and the last changes."""
     with _conn() as c:
-        row = c.execute("UPDATE app_user SET role=%s WHERE id=%s RETURNING id, email, role", (body.role, user_id)).fetchone()
-    if not row:
-        raise HTTPException(404, "user not found")
-    return row
+        return {"items": accounts.list_accounts(c, me, q, role, khoa), "gan_day": accounts.recent(c)}
+
+
+@router.patch("/users/{user_id}/role")
+def set_role(user_id: int, body: RoleChange, me=Depends(require("admin"))):
+    """Applies on the account's next request (the role is read per request); never the caller's own or the last admin's."""
+    return _accounts(lambda c: accounts.change_role(c, me, user_id, body.role))
+
+
+class LockBody(BaseModel):
+    ly_do: str = Field(max_length=300)
+
+
+@router.post("/users/{user_id}/lock")
+def lock_user(user_id: int, body: LockBody, me=Depends(require("admin"))):
+    """Cannot sign in any more, and every open session ends on its next request (seq-19 b16-19)."""
+    return _accounts(lambda c: accounts.lock(c, me, user_id, body.ly_do))
+
+
+@router.post("/users/{user_id}/unlock")
+def unlock_user(user_id: int, me=Depends(require("admin"))):
+    return _accounts(lambda c: accounts.unlock(c, me, user_id))
 
 
 # ---- Google sign-in (authorization-code flow with OIDC) ----
@@ -151,9 +196,17 @@ def upsert_google_user(sub: str, email: str) -> int:
 
 
 def _signed_in(user_id: int):
-    """JSON for API clients; with D3_FRONTEND_URL set (browser flow) redirect to the site with the token in the fragment."""
+    """JSON for API clients; with D3_FRONTEND_URL set (browser flow) redirect to the site with the token in the fragment.
+    A locked account gets no token: back to the sign-in page with the reason, or 403."""
+    url = os.getenv("D3_FRONTEND_URL")
+    with _conn() as c:
+        locked = (c.execute("SELECT bi_khoa FROM app_user WHERE id=%s", (user_id,)).fetchone() or {}).get("bi_khoa")
+    if locked:
+        if url:
+            return RedirectResponse(f"{url.rstrip('/')}/dang-nhap#loi=tai_khoan_bi_khoa")
+        raise HTTPException(403, LOCKED)
     token = make_token(user_id)
-    if url := os.getenv("D3_FRONTEND_URL"):
+    if url:
         return RedirectResponse(f"{url}#token={token}")
     return {"access_token": token, "token_type": "bearer"}
 

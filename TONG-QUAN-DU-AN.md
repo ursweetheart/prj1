@@ -4,7 +4,7 @@
 | :-- | :-- |
 | **Dự án** | Website portfolio thiết kế nội thất tích hợp AI (mã PRJ1-INTERIOR-WEB) |
 | **Nhóm** | Nhóm 6: Phạm Việt Tùng, Trần Xuân Bằng, Trần Xuân Tuấn |
-| **Cập nhật** | 11/11/2026 |
+| **Cập nhật** | 15/11/2026 |
 | **Phiên bản code** | nhánh `main`, commit `1d72fc8` (repo `github.com/ursweetheart/prj1`) |
 | **Bản tĩnh** | https://ursweetheart.github.io/prj1/ (không có backend nên các chức năng AI không chạy) |
 
@@ -144,13 +144,17 @@ Dự án xây dựng website portfolio dựa trên ba trục khoá vào nhau th�
 ```bash
 docker compose up -d --build        # ở thư mục gốc → http://localhost:8080/prj1/
 docker compose exec backend python ingest.py image_d3          # nạp ảnh vào DB lần đầu
-docker compose exec backend python -m pipeline.assistant kb/sample.json   # nạp kho tri thức
+docker compose exec backend python -m pipeline.assistant kb/sample.json   # nạp kho tri thức (mục nháp AI "[AI SINH - CHƯA DUYỆT]" vào trạng thái Chờ duyệt)
+docker compose exec backend python -m pipeline.assistant kb/generated.json  # 8 mô tả dự án AI soạn: chờ duyệt ở /quan-tri/tri-thuc
 docker compose down                 # tắt; dữ liệu vẫn còn trong volume prj1_pgdata
 ```
 
 - `schema.sql` chỉ tự chạy khi volume DB còn trống. Khi code thêm bảng/cột mới (vd change `lead-intake`), áp lại vào DB đang có (mọi lệnh đều chạy lại được):
   `docker compose exec -T db psql -U d3 -d d3 < backend/schema.sql`
 - Dữ liệu MÔ PHỎNG cho bảng xu hướng (chỉ để demo): `docker compose exec backend python -m pipeline.demo_activity` tạo ~8 tuần hành vi giả (phiên `demo-…`, một phong cách tăng). Bảng điều khiển hiện cảnh báo "dữ liệu mô phỏng", phân loại tự động bỏ qua chúng. **Xóa trước khi dùng thật:** `docker compose exec backend python -m pipeline.demo_activity --remove`
+- Trạng thái «Cần xem lại» ở `/quan-tri/hieu-qua` chỉ xét dự án đã đăng ≥ 30 ngày. Để demo ngay, đặt `D3_PROJECT_REVIEW_DAYS=0` trong `backend/.env` rồi khởi động lại backend (bỏ đi khi dùng thật).
+- **Báo cáo tuần** tự chạy trong backend: thứ Hai từ 8:00 (UTC+7), kiểm tra 30 giây sau khi khởi động rồi 10 phút một lần. Lần khởi động đầu tiên sau khi cài sẽ gửi ngay báo cáo của tuần trước nếu đã qua 8:00 thứ Hai. Chưa có SMTP thì xem báo cáo trong `docker compose logs backend | grep d3.report` hoặc bấm «Xem trước» ở `/quan-tri/xu-huong`. Tắt hẳn bộ lập lịch: `D3_WEEKLY_REPORT=off` trong `backend/.env`.
+- **Thông tin studio** (trang `/lien-he`, `/ve-chung-toi`) nằm ở `src/data/studio.js`. Mỗi giá trị có `mau: true` hiện nhãn «Thông tin mẫu» và không thành link gọi / mail / Zalo / bản đồ. Khi có thông tin thật: sửa `gia_tri`, đặt `mau: false`. Sửa quy trình thì sửa cả mục «Quy trình làm việc với D3 Studio» ở `/quan-tri/tri-thuc` cho khớp.
 - Email báo lead mới cho sales: điền `D3_SMTP_*` và `D3_SALES_EMAIL` trong `backend/.env` (mẫu ở `.env.example`). Bỏ trống thì lead chỉ ghi log và hiện "mới" ở `/khach-hang`, demo vẫn chạy.
 - Cổng 8001 vẫn mở vì callback đăng nhập Google/Facebook đã đăng ký ở `localhost:8001`.
 - Cổng 8000 để trống cho việc khác (crawl).
@@ -168,14 +172,13 @@ npm ci && npm run dev                         # http://localhost:5173/prj1/ (pro
 
 ### 3.4 Tài khoản và quyền
 
-Tự đăng ký luôn được role `visitor`. Để nâng quyền:
+Tự đăng ký luôn được role `visitor`. **Quản trị viên đầu tiên** tạo một lần bằng lệnh (tài khoản phải đăng ký trước):
 
 ```bash
-cd backend
-.venv\Scripts\python set_role.py email@example.com admin
+docker compose exec backend python set_role.py email@example.com admin
 ```
 
-Khi đã có admin, có thể dùng `PATCH /users/{id}/role`.
+Sau đó mọi việc làm ở **`/quan-tri/tai-khoan`** (chỉ admin): đổi vai trò, khoá / mở khoá tài khoản (change `user-admin`). Không tự đổi vai trò hay tự khoá được, và luôn phải còn ít nhất một admin đang hoạt động.
 
 | Role | Được làm gì |
 | :-- | :-- |
@@ -256,19 +259,19 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-3-hoi-dap-tro-ly-rag` | UC09 | Có |
 | `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần: xem và lưu ảnh (`luu_anh`); tính khi mở bảng điều khiển, chưa có tiến trình hằng đêm |
 | `seq-5-gui-form-lien-he` | UC11 | Một phần (qua chat) |
-| `seq-6-duyet-va-xuat-ban` | UC14 | Có |
+| `seq-6-duyet-va-xuat-ban` | UC14 | Có; nhánh từ chối (bước 9–12) có từ change `review-return-reject`. Bước 18 (sitemap) chưa |
 | `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Có (change `saved-collection-brief`) |
 | `seq-8-tim-bang-anh-tai-len` | UC04 | Có |
 | `seq-9-uoc-tinh-chi-phi` | UC10 | Có (change `cost-estimate`), với đơn giá mẫu |
 | `seq-10-loc-portfolio-va-xem-chi-tiet` | UC01, UC02 | Có (đang bị ẩn, xem mục 9) |
 | `seq-11-tim-bang-mo-ta-tu-nhien` | UC05 | Có |
-| `seq-12-trac-nghiem-phong-cach` | UC06 | Chưa |
+| `seq-12-trac-nghiem-phong-cach` | UC06 | Có (change `style-quiz`); gợi ý **không gian**, chưa gợi ý dự án (bước 12) |
 | `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Có: trình duyệt khi chưa đăng nhập, gộp vào tài khoản khi đăng ký/đăng nhập |
 | `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
-| `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Một phần (API, chưa có UI) |
-| `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Một phần (CLI, chưa có UI) |
-| `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Bảng điều khiển: có (change `trend-dashboard`). Báo cáo email hằng tuần: chưa |
-| `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Một phần (API, chưa có UI) |
+| `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Có (change `taxonomy-admin`); bước 20–22 (làm mới chỉ mục vector) không cần: không embedding nào dựng từ nhãn |
+| `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Có (change `assistant-knowledge-admin`) |
+| `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Có: bảng điều khiển (change `trend-dashboard`), hiệu quả từng dự án (change `project-performance`), báo cáo email hằng tuần bước 1–7 (change `weekly-report`) |
+| `seq-19-quan-ly-tai-khoan-va-phan-quyen` | UC24 | Bước 16–19 có (change `user-admin`); bước 1–11 (admin tạo tài khoản, thư mời đặt mật khẩu) chưa |
 
 **Class** (`Class diagram/`): 7 file.
 
@@ -312,7 +315,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC03 | Tìm không gian tương tự | **Xong** | `GET /spaces/{id}/similar`, khối "tương tự" ở `/khong-gian/:id` | Chưa đo precision@5 (NFR-11). Luồng "món đồ → dịch vụ" (M3) chưa có |
 | UC04 | Tìm bằng ảnh tải lên | **Xong** | `POST /search/image`, nút "Tìm bằng ảnh" ở `/cong-trinh` | Hiện không truy cập được vì `/cong-trinh` bị ẩn |
 | UC05 | Tìm bằng mô tả tự nhiên | **Xong** | `GET /search?q=` (SigLIP2), ô tìm ở `/cong-trinh` | Như trên |
-| UC06 | Trắc nghiệm phong cách | **Chưa** | | Thiết kế ở `seq-12` |
+| UC06 | Trắc nghiệm phong cách | **Có** | `/trac-nghiem`: 4–6 cặp ảnh đã đăng ở hai phong cách khác nhau (cùng loại không gian khi có thể), khách chọn ảnh thích hơn hoặc bỏ qua; máy chủ chấm điểm (điểm = số lần chọn / số lần hiện), lấy 2 phong cách cao nhất; gợi ý 8 không gian của 2 phong cách đó, xếp theo khoảng cách embedding SigLIP2 tới trung bình các ảnh đã chọn (`pipeline/quiz.py`). Lưu tất cả vào bộ sưu tập; "Xem thêm phong cách" mở `/khong-gian` đã lọc sẵn; kết quả gần nhất giữ trong trình duyệt, đăng nhập thì lưu vào tài khoản (bảng `ket_qua_trac_nghiem`) | Gợi ý **dự án** (seq-12 bước 12) chờ `ingest_projects.py` nối ảnh dự án với không gian. Chỉ hỏi phong cách, chưa hỏi tông màu, vật liệu. Kết quả chưa đi kèm lead / brief |
 
 ### 5.2 Tương tác cá nhân
 
@@ -322,7 +325,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC08 | Gửi bộ sưu tập làm brief | **Có** | `BriefForm.vue` → `POST /briefs` (không cần tài khoản): bản sao cố định + link chỉ xem `/bo-suu-tap/xem/<mã>`, lead nguồn `brief` kèm loại nhà, diện tích, ngân sách, tóm tắt "Wabi-sabi 60% · tông Ấm · phòng khách"; email cho sales và khách kèm link | Chưa có chia sẻ bộ sưu tập đang lưu (chỉ bản đã gửi) |
 | UC09 | Hỏi trợ lý ảo | **Xong** | `POST /chat`, `ChatWidget.vue`. Trả lời từ kho tri thức, sau đó từ mô tả ảnh đã đăng; kèm ảnh nguồn; dưới ngưỡng thì chuyển KTS; chặn câu trả lời có số tiền hay cam kết | Kho tri thức đang là **dữ liệu mẫu** (`kb/sample.json`), cần bảng giá và FAQ thật. Chưa lưu lịch sử hội thoại riêng |
 | UC10 | Ước tính chi phí sơ bộ | **Có (đơn giá mẫu)** | `/uoc-tinh`: loại nhà, diện tích, số phòng ngủ, gói vật liệu → khoảng giá + bóc tách 4 hạng mục, công thức cố định trên bảng `don_gia` (`pipeline/estimate.py`); dự án cùng loại; "Nhận bản chi tiết qua email" → lead nguồn `estimate` + email bóc tách. KTS trưởng sửa giá ở `/quan-tri/don-gia` | **D3 chưa có bảng giá: 60 ô đang là giá MẪU tự đặt (`nguon='mau'`, trang ghi rõ "Đơn giá mẫu"). Phải thay bằng giá thật ở `/quan-tri/don-gia` trước khi dùng thật.** Chưa gợi ý dự án theo ngân sách (dự án chưa có khoảng đầu tư) |
-| UC11 | Gửi yêu cầu tư vấn | **Một phần** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án; chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Trang `/lien-he` chưa có (0.3): chỉ cần nhúng `<ContactForm />`. Chưa gửi SMS |
+| UC11 | Gửi yêu cầu tư vấn | **Có** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án và ở trang `/lien-he` (lead ghi trang `/lien-he`); chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Chưa gửi SMS |
 
 ### 5.3 Quản trị nội dung
 
@@ -330,19 +333,20 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | :-- | :-- | :-- | :-- | :-- |
 | UC12 | Tải ảnh hàng loạt | **Xong** | `/quan-tri` → "Tải ảnh dự án mới", `POST /spaces/ingest` | Xử lý tuần tự từng ảnh; trên CPU mất vài giây mỗi ảnh |
 | UC13 | Gắn nhãn không gian | **Xong** | `/quan-tri`: sửa loại phòng, phong cách, vật liệu; tag loại công trình và mức đầu tư theo ảnh hoặc cả dự án | |
-| UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log` | Chưa có nút trả về hay từ chối. Chưa theo dõi hiệu quả sau 30 ngày (QT-01 bước cuối, BFD 5.4) |
-| UC15 | Quản lý taxonomy | **Một phần** | Phân loại nằm trong DB. API thêm / đổi tên / gộp giá trị. AI đề xuất chiều mới, duyệt ở `/quan-tri/phan-loai` | **Chưa có giao diện** thêm, đổi tên, gộp giá trị. Chưa tạo chiều mới bằng tay. Đổi tên chưa cập nhật nhãn trong chỉ mục vector |
-| UC16 | Quản lý tri thức trợ lý | **Một phần** | file JSON + lệnh `python -m pipeline.assistant kb/...`; `generate_kb.py` sinh nháp | Chưa có giao diện CMS để NV nội dung thêm, sửa, xoá đoạn tri thức |
+| UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log`. KTS trưởng **trả về nháp**, **lưu nội bộ** (khách không đồng ý công bố) hoặc **mở lại**, luôn kèm lý do: lý do hiện trên thẻ ảnh đến khi ảnh được chuyển tiếp, lọc "Chỉ ảnh bị trả về", người tải ảnh lên nhận email (hoặc log) | Chưa gỡ được ảnh đã đăng. Bước cuối của QT-01 (theo dõi hiệu quả sau 30 ngày) có ở `/quan-tri/hieu-qua`, xem mục 5.4 |
+| UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). **Bộ phân loại AI vẫn dùng danh sách phong cách / không gian cố định** trong `pipeline/schemas.py`: giá trị mới thêm chỉ được gắn bởi người, AI chưa đề xuất được |
+| UC16 | Quản lý tri thức trợ lý | **Có** | `/quan-tri/tri-thuc` (NV nội dung, KTS trưởng, admin): tìm, thêm, sửa mục (loại, tiêu đề, cụm từ khớp, câu trả lời; lưu là tính lại embedding); trạng thái Nháp / Chờ duyệt / Đang dùng / Tắt, **trợ lý chỉ dùng mục Đang dùng**; mục có giá (loại `price` hoặc câu trả lời nêu số tiền) chỉ KTS trưởng bật được, NV nội dung sửa giá của mục đang dùng thì mục về Chờ duyệt; nháp AI (`kb/generated.json`, 8 mục) vào Chờ duyệt, duyệt thì bỏ dấu "[AI SINH - CHƯA DUYỆT]"; tab "Câu hỏi chưa trả lời" gom câu giống nhau, "Soạn đáp án" → mục mới, bật thì đóng câu hỏi; xoá (KTS trưởng); mục dịch vụ mà điểm nóng liên kết không đổi tên / xoá được; nhật ký `nhat_ky_tri_thuc`. File JSON + lệnh vẫn dùng được để nạp hàng loạt | 11 mục đang dùng vẫn là dữ liệu mẫu (việc 1.6). Chưa có lịch sử phiên bản của từng mục |
 | UC17 | Gắn hotspot món đồ | **Một phần** | YOLO gợi ý; ở `/quan-tri` sửa tên và xoá hotspot; hiển thị trên `/khong-gian/:id` | Chưa thêm hotspot mới bằng tay, chưa kéo vị trí, chưa liên kết tới **thư viện món đồ/vật liệu (M7)** và gói dịch vụ |
 
 ### 5.4 Phân tích và hệ thống
 
 | UC | Tên | Trạng thái | Đang ở đâu | Còn thiếu |
 | :-- | :-- | :-- | :-- | :-- |
-| UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian` và `luu_anh` (tim lưu ảnh, change `trend-dashboard`); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
+| UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian`, `luu_anh` (tim lưu ảnh, change `trend-dashboard`) và `chon_trac_nghiem` (ảnh chọn trong trắc nghiệm, change `style-quiz`; lưu nhưng **không** tính vào điểm quan tâm); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
 | UC22 | Bảng điều khiển xu hướng | **Có (v1)** | `/quan-tri/xu-huong` (sales, KTS trưởng, admin): điểm quan tâm = xem×1 + lưu×3 + ảnh gửi brief×5 theo từng giá trị phân loại, tỉ lệ trong chiều, xu hướng 7 ngày so với trung bình 4 tuần (tăng ≥ 50%, giảm ≤ 50%, mới nổi, cần ≥ 5 tín hiệu), cảnh báo, tổng lượt xem/lưu/brief/lead, lead theo tuần, top không gian (`pipeline/trends.py`, `GET /analytics/overview`) | Chưa có tiến trình hằng đêm và kho phân tích (tính khi mở trang), chưa phân cụm phiên, chưa có thời gian xem / độ sâu cuộn |
-| UC23 | Gửi báo cáo định kỳ | **Chưa** | | bộ lập lịch + gửi email hằng tuần |
-| UC24 | Quản lý tài khoản, phân quyền | **Một phần** | đăng ký, đăng nhập email / Google / Facebook, JWT tự gia hạn, 6 role, `PATCH /users/{id}/role`, `set_role.py` | Chưa có trang quản trị người dùng, chưa khoá hay xoá tài khoản, chưa quên mật khẩu |
+| BFD 5.4 | Hiệu quả từng dự án | **Có (v1)** | `/quan-tri/hieu-qua` (KTS, KTS trưởng, admin, sales; change `project-performance`): mỗi dự án (thư mục ảnh) có ảnh đã đăng một dòng trong 30 / 90 ngày: số ảnh, ngày đăng (từ `review_log`, "≈" khi chỉ có ngày tải lên), lượt xem và lượt lưu của khách đã đồng ý, tỉ lệ lưu, khách tiềm năng (lead nêu trang dự án, nêu một ảnh của dự án hoặc gửi ảnh của dự án trong brief; mỗi lead tính một lần cho mỗi dự án). Kiểm tra 30 ngày của act-1: dự án đăng ≥ 30 ngày có lượt xem 30 ngày gần nhất dưới ½ trung vị các dự án cùng đủ tuổi là «Cần xem lại» (cần ≥ 3 dự án để so), dự án mới hơn là «Đang theo dõi, còn n ngày». Mở một dự án: ảnh theo lượt xem, «chưa ai xem», gợi ý (thiếu nhãn Loại công trình / Mức đầu tư, phong cách «Khác» hoặc AI không chắc, ít ảnh, ảnh chưa ai xem, chú thích ngắn) có link tới đúng dự án ở `/quan-tri`. «Chỉ dự án tôi tải lên» cho KTS (`pipeline/project_stats.py`) | Dự án = thư mục ảnh trong DB, chưa nối với 64 dự án tĩnh ở `/du-an` (cần `ingest_projects.py`); chỉ đếm khách đã đồng ý; danh sách «Cần xem lại» gửi qua báo cáo tuần (UC23) |
+| UC23 | Gửi báo cáo định kỳ | **Có (v1)** | Báo cáo tuần (change `weekly-report`, `pipeline/weekly_report.py`): thứ Hai từ 8:00 (UTC+7) tự gửi email văn bản về tuần trước (thứ Hai – Chủ nhật): lượt xem, lưu, bộ sưu tập, lead theo nguồn so với tuần trước; tối đa 8 cảnh báo xu hướng; top 3 phong cách / loại không gian; dự án «Cần xem lại»; link tới hai bảng điều khiển. Gửi cho mọi tài khoản sales / KTS trưởng / admin không bị khoá và không tắt (ô «Nhận báo cáo tuần qua email» ở `/quan-tri/xu-huong`), mỗi người một email. Mỗi tuần chỉ một lần nhờ bảng `bao_cao_tuan` (giữ chỗ trước khi gửi); máy chủ tắt sáng thứ Hai thì gửi ở lần kiểm tra đầu tiên trong tuần. Không có SMTP: ghi vào log `d3.report`, kết quả «chỉ ghi log». KTS trưởng / admin xem 8 lần gửi gần nhất, xem trước, gửi thử cho mình | Email chỉ dạng văn bản; chưa chọn ngày / giờ trên giao diện; chưa có báo cáo tháng; tuần bị lỡ hẳn không gửi bù |
+| UC24 | Quản lý tài khoản, phân quyền | **Có (trừ mời / quên mật khẩu)** | đăng ký, đăng nhập email / Google / Facebook, JWT tự gia hạn, 6 role. `/quan-tri/tai-khoan` (admin): danh sách (tìm theo email, lọc vai trò, lọc bị khoá; không bao giờ gửi mật khẩu băm hay mã Google / Facebook), đổi vai trò có xác nhận (hiệu lực ngay, không đăng xuất), khoá kèm lý do (đăng xuất ngay các phiên đang mở nhờ `iat` của token và `phien_tu`; không đăng nhập lại được bằng mật khẩu, Google hay Facebook) / mở khoá (phiên cũ vẫn chết); không tự đổi / tự khoá, không hạ hay khoá admin cuối cùng; nhật ký `nhat_ky_tai_khoan` (cả `set_role.py`) | Chưa có mời tài khoản qua email, quên mật khẩu, xoá tài khoản, thời điểm hoạt động gần nhất |
 | UC25 | Gợi ý nhãn tự động | **Xong** | `pipeline/processor.py` (Gemini + màu + YOLO), `relabel.py` | Chưa đo được NFR-10 vì mới có 9 ảnh được duyệt (cần ≥ 30) |
 | UC26 | Sinh mô tả nháp | **Xong** | mô tả + alt text khi ingest; `generate_transcripts.py` (mô tả dài cho RAG) | |
 | UC27 | Lập chỉ mục vector | **Xong** | pgvector: embedding ảnh (SigLIP2) + embedding mô tả (Vertex) | Chưa có chỉ mục HNSW/IVFFlat (chỉ cần khi > ~10.000 ảnh) |
@@ -383,14 +387,14 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | NFR-02/03 | tìm vector trên 10.000 ảnh < 1 s; 50.000 ảnh, 100 người dùng | Ngoài phạm vi (chỉ demo local, không kiểm thử tải) |
 | NFR-04 | ảnh đúng màu, không méo | Gallery giữ tỉ lệ gốc; ảnh dự án nén 1600 px q75, cần KTS xác nhận chất lượng |
 | NFR-05 | giao diện tối giản, ≤ 2 font | Đã theo phong cách Elemental |
-| NFR-06 | mobile-first, Safari iOS, Chrome Android | Header co lại dưới 1024 px; **chưa thử trên điện thoại thật** (task 5.4, 5.5 của `responsive-stacked-navbar`) |
+| NFR-06 | mobile-first, Safari iOS, Chrome Android | Header xếp chồng dưới 1024 px; link nhân viên gom vào nút "Quản trị"; hover chỉ áp dụng khi thiết bị có chuột (`hover: hover`), đã thử bằng giả lập cảm ứng Chromium. **Chưa thử trên điện thoại thật** |
 | NFR-07 | SEO: SSR, schema.org, URL theo facet | Chưa (SPA thuần; SSR ngoài phạm vi demo) |
 | NFR-08 | phân quyền, chặn file độc hại, giới hạn gọi AI | Có: role, kiểm tra loại và kích thước ảnh (415/413), rate limit |
 | NFR-09 | banner đồng ý, ẩn danh hành vi | Có |
 | NFR-10 | gán nhãn ≥ 85% ở Phong cách và Không gian | Có công cụ `eval_labels.py`; chưa đủ ảnh đã duyệt để đo |
 | NFR-11 | precision@5 ≥ 0,7 cho gợi ý tương tự | Chưa đo |
 | NFR-12 | đăng 1 dự án 40 ảnh < 20 phút | Chưa đo (đã đi hết quy trình với dự án 9 ảnh) |
-| NFR-13 | thêm phong cách mới không sửa code | Đạt về dữ liệu (phân loại trong DB); còn thiếu giao diện (UC15) |
+| NFR-13 | thêm phong cách mới không sửa code | Đạt cho bộ lọc, gắn nhãn tay, trợ lý (UC15 có giao diện). Chưa đạt cho bộ phân loại AI: `pipeline/schemas.py` còn liệt kê cố định |
 
 **Dữ liệu ngày 2/11/2026:** 152 không gian trong DB, trong đó 9 ảnh đã đăng (dự án `indochine_chinosere_villa`) và 143 ảnh nháp. Frontend tĩnh có 64 dự án trong `src/assets/projects/`.
 
@@ -406,23 +410,23 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- | :-- | :-- |
 | 0.1 | **Thống nhất một nguồn dữ liệu dự án.** Hiện `/du-an` đọc 64 dự án tĩnh trong `src/data/projects.js`, còn tìm kiếm, lọc, chat và duyệt dùng 152 ảnh trong DB. Đề xuất: tạo bảng `du_an` (slug, tên, loại, năm, mô tả) và nạp 64 dự án vào DB qua `ingest`. Trang `/du-an` đọc API khi có backend, dùng file tĩnh khi chạy trên GitHub Pages | class-1, seq-10 | một dự án tải lên ở `/quan-tri` và được đăng sẽ hiện ở `/du-an` |
 | 0.2 | **Đưa trang lọc và tìm kiếm trở lại.** Bỏ redirect `/cong-trinh → /du-an`, thêm mục menu (vd "Không gian" hoặc "Tìm kiếm"). Có thể chỉ bật khi build có backend | seq-10, seq-11, seq-8 | vào được lọc 6 chiều, tìm bằng chữ, tìm bằng ảnh từ menu |
-| 0.3 | Tạo trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`). Menu đang trỏ tới nhưng chưa có route. Trang Liên hệ **không tự làm form**: `import ContactForm from '@/components/ContactForm.vue'` rồi đặt `<ContactForm />` (lead tự ghi trang `/lien-he`) | BFD 2, seq-5 | không còn link chết trên menu |
+| 0.3 | ✓ Trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`, change `studio-pages`): giới thiệu, con số, đội ngũ, quy trình 5 bước; form tư vấn, gọi / Zalo / email (`#zalo`), văn phòng (`#ban-do`). Thông tin studio ở `src/data/studio.js`, hiện là **thông tin mẫu** có nhãn và không thành link | BFD 2, seq-5 | còn: điền thông tin thật; `/dich-vu` để Tùng làm |
 | 0.4 | Duyệt và đăng thêm ảnh để có dữ liệu demo (mục tiêu ≥ 30 ảnh đã duyệt) | act-1 | `eval_labels.py` chạy được |
 | 0.5 | Duyệt 2 đề xuất phân loại đang chờ, đánh dấu thật/sai để làm task 4.1, archive change `discover-taxonomy-dimensions` | seq-15 | change được archive |
-| 0.6 | Archive 8 change frontend đã xong task; hoàn thành task 5.4, 5.5 của `responsive-stacked-navbar` | | `openspec list` chỉ còn change đang làm |
+| 0.6 | ✓ Archive các change đã xong; `responsive-stacked-navbar` xong và đã archive (14/11/2026) | | `openspec list` không còn change nào |
 
 ### Giai đoạn 1: Hoàn thiện nghiệp vụ nội bộ
 
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
-| 1.1 | **UI quản lý taxonomy** ở `/quan-tri/phan-loai`: liệt kê chiều và giá trị; thêm, đổi tên, gộp (API đã có); thêm chiều mới bằng tay; sửa từ đồng nghĩa | seq-15, class-2 | KTS trưởng làm được mọi thao tác không cần Swagger |
+| 1.1 | ✓ **UI quản lý taxonomy** (change `taxonomy-admin`): liệt kê chiều và giá trị; thêm, đổi tên, gộp; thêm chiều bằng tay; sửa từ đồng nghĩa; nhật ký | seq-15, class-2 | còn: dựng schema của bộ phân loại AI từ taxonomy để AI gắn được giá trị mới |
 | 1.2 | ~~Vòng đời lead (QT-02)~~ **Bỏ:** `usecase-0` và `usecase-4` ghi rõ liên hệ, phân công, theo dõi lead do đội tư vấn làm *ngoài hệ thống*; hệ thống chỉ lưu lead và báo kèm hồ sơ hành vi | act-2, usecase-0/4 | — |
 | 1.3 | ✓ **Hồ sơ hành vi trong lead** (change `lead-intake`): bản chụp không gian đã xem và giá trị phân loại nổi bật, chỉ khi khách đồng ý banner *và* tick ô trên form/chat. Chưa chấm điểm lead | act-2, seq-4 | `/khach-hang` hiện "Sở thích" kèm ảnh đã xem |
 | 1.4 | ✓ **Thông báo cho sales** khi có lead mới (change `lead-intake`): email qua SMTP nếu cấu hình, không thì ghi log | business-flow, seq-5 | có email kèm nguồn, liên hệ, ngữ cảnh, tóm tắt sở thích |
-| 1.5 | **UI quản lý tri thức trợ lý** cho NV nội dung: thêm, sửa, xoá đoạn `kb_chunk`, duyệt bản nháp AI sinh | seq-16, usecase-3 | không phải sửa JSON tay |
-| 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
-| 1.7 | **UI quản trị người dùng**: danh sách, đổi role, khoá tài khoản; quên mật khẩu | seq-19, usecase-5 | admin không phải dùng `set_role.py` |
-| 1.8 | Duyệt ảnh: nút **trả về / từ chối** kèm lý do | act-1, seq-6 | |
+| 1.5 | ✓ **UI quản lý tri thức trợ lý** (change `assistant-knowledge-admin`): thêm, sửa, xoá, duyệt nháp AI, duyệt giá, câu hỏi chưa trả lời | seq-16, usecase-3 | |
+| 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio: giờ làm được ngay ở `/quan-tri/tri-thuc` (sửa từng mục, xoá dấu mẫu; mục giá cần KTS trưởng bật) | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
+| 1.7 | ✓ **UI quản trị người dùng** (change `user-admin`): danh sách, đổi role, khoá / mở khoá, nhật ký | seq-19, usecase-5 | còn: mời qua email, quên mật khẩu (cần SMTP) |
+| 1.8 | ✓ Duyệt ảnh: **trả về nháp / lưu nội bộ / mở lại** kèm lý do (change `review-return-reject`) | act-1, seq-6 | còn: gỡ ảnh đã đăng |
 | 1.9 | Hotspot: thêm điểm bằng tay, kéo vị trí; bảng **MonDo** (thư viện món đồ/vật liệu) và liên kết hotspot → món đồ → gói dịch vụ | seq-14, class-1 | bấm hotspot sofa ra các không gian có sofa tương tự |
 
 ### Giai đoạn 2: Hoàn thiện trải nghiệm khách
@@ -431,9 +435,9 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- | :-- | :-- |
 | 2.1 | ✓ **Bộ sưu tập** (change `saved-collection-brief`): trình duyệt → tài khoản khi đăng nhập, trang `/bo-suu-tap`, ghi chú. Link chia sẻ chỉ cho bản đã gửi | seq-13, act-8, class-3 | đổi máy vẫn thấy |
 | 2.2 | ✓ **Gửi bộ sưu tập làm brief** (change `saved-collection-brief`): lead nguồn `brief` kèm ảnh, ghi chú, tóm tắt gu, link chỉ xem | seq-7, act-8 | sales thấy brief kèm ảnh ở `/khach-hang` |
-| 2.3 | **Form liên hệ:** đã có `ContactForm.vue` + `POST /leads` (change `lead-intake`), đặt ở trang dự án. Còn lại: nhúng `<ContactForm />` vào trang `/lien-he` của 0.3 | seq-5 | lead loại "form" xuất hiện |
+| 2.3 | ✓ **Form liên hệ** `ContactForm.vue` + `POST /leads` (change `lead-intake`) ở trang dự án và trang `/lien-he` (change `studio-pages`) | seq-5 | |
 | 2.4 | ✓ **Ước tính chi phí sơ bộ** (change `cost-estimate`): công thức trên bảng đơn giá, giá mẫu ghi rõ, nhân viên sửa giá không cần sửa code | seq-9, act-6 | còn lại: nhập giá thật của D3 |
-| 2.5 | **Trắc nghiệm phong cách**: chọn ảnh thích → gợi ý phong cách và không gian phù hợp (dùng embedding SigLIP2) | seq-12 | |
+| 2.5 | ✓ **Trắc nghiệm phong cách** (change `style-quiz`): chọn ảnh thích → gợi ý phong cách và không gian phù hợp (embedding SigLIP2), lưu kết quả vào tài khoản | seq-12 | còn: gợi ý dự án khi đã nối ảnh dự án ↔ không gian |
 | 2.6 | Trang chi tiết dự án đầy đủ: bảng thông số, thuyết minh, dải màu, vật liệu chính, before/after Concept ↔ Thực tế, "dự án tương tự" | seq-10, class-1 | đủ các mục của M2 |
 | 2.7 | Sắp xếp kết quả lọc (mới nhất, phổ biến) | BFD 1.2 | |
 | 2.8 | Trợ lý: lọc theo metadata (diện tích, loại công trình khách nói), lưu lịch sử hội thoại (bảng HoiThoai/TinNhan) | seq-3, class-4 | |
@@ -445,8 +449,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 3.1 | Thêm các loại sự kiện còn thiếu (danh sách ở UC21), vẫn chỉ ghi khi có đồng ý | seq-4, act-7, dfd-2-5 | |
 | 3.2 | ✓ **InterestScore** và **Trend** (change `trend-dashboard`): xem, lưu, ảnh gửi brief; so 7 ngày với trung bình 4 tuần | act-3, seq-4 | còn: thời gian xem, chia sẻ, lead phát sinh theo giá trị |
 | 3.3 | ✓ **Dashboard xu hướng** `/quan-tri/xu-huong` (v1) | seq-18, usecase-4 | còn: phân khúc mới (phân cụm phiên) |
-| 3.4 | **Báo cáo định kỳ** hằng tuần qua email (bộ lập lịch) | seq-18, usecase-5 | |
-| 3.5 | Hiệu quả từng dự án sau khi đăng (lượt xem, lưu, lead), cho KTS xem | BFD 5.4 | |
+| 3.4 | ✓ **Báo cáo tuần** qua email (change `weekly-report`): bộ lập lịch trong backend, mỗi tuần một lần, người nhận theo tài khoản, tự tắt được | seq-18, usecase-5 | còn: email HTML, báo cáo tháng |
+| 3.5 | ✓ **Hiệu quả từng dự án** `/quan-tri/hieu-qua` (change `project-performance`): lượt xem, lưu, lead, kiểm tra 30 ngày của act-1 và gợi ý sửa; danh sách «Cần xem lại» có trong báo cáo tuần | BFD 5.4, act-1 | |
 
 ### Giai đoạn 4: Chất lượng, đo lường, hoàn tất đồ án
 
@@ -466,17 +470,18 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 1. **Hai nguồn dữ liệu dự án.** Trang chủ và `/du-an` dùng 64 dự án tĩnh (ảnh trong `src/assets/projects/`). Backend dùng 152 ảnh trong `backend/image_d3/` và DB. Duyệt ảnh xong cũng không làm thay đổi `/du-an`. Xem việc 0.1.
 2. **Trang `/cong-trinh` bị ẩn** từ commit `c0fc9ee` (redirect sang `/du-an`), nên lọc 6 chiều, tìm bằng chữ, tìm bằng ảnh và link "Xem bộ lọc" ở trang Phân loại đều không truy cập được. File `CongTrinhView.vue` vẫn còn.
-3. **Link chết trên menu:** "Về chúng tôi" (`/ve-chung-toi`) và "Liên hệ" (`/lien-he`) chưa có trang. `SpaceCard.vue` có link `/cong-trinh-chi-tiet#…` cũng không có route.
+3. **Link chết còn lại:** "Dịch vụ và quy trình" (`/dich-vu`) ở chân trang chưa có trang (để Tùng làm; `App.vue` đã có sẵn key `dich-vu`). `SpaceCard.vue` có link `/cong-trinh-chi-tiet#…` cũng không có route.
 4. **`dist/`** có trong `.gitignore` nhưng vẫn bị git theo dõi. Sau mỗi `npm run build` phải `git restore dist`. Nên `git rm -r --cached dist` khi CI deploy Pages không cần nó nữa.
 5. **Rate limit lưu trong bộ nhớ** và tính theo IP. Khởi động lại là mất; phía sau proxy cần đọc `X-Forwarded-For` (`backend/ratelimit.py`).
 6. **`D3_JWT_SECRET`** phải được đặt trong `.env`. Nếu không, mỗi lần khởi động lại backend mọi người bị đăng xuất. Script chạy ngoài Docker (vd `set_role.py`) có in cảnh báo này nhưng không ảnh hưởng.
 7. **Backend Docker chạy CPU**: ingest chậm (vài giây mỗi ảnh). Muốn nhanh thì chạy backend ngoài Docker với GPU.
 8. **Hội thoại chỉ lưu trong `lead.conversation`**, không có bảng HoiThoai/TinNhan riêng như class diagram.
 9. **Hotspot chỉ có nhãn chữ**, chưa trỏ tới bản ghi món đồ.
-10. **Tài khoản thử `qt01-walk@example.com`** (lead_architect) tạo khi chạy thử quy trình duyệt. Tài khoản này được giữ vì `review_log` tham chiếu tới. Nên hạ xuống `visitor` khi demo thật.
+10. **Tài khoản thử `qt01-walk@example.com`** (lead_architect) tạo khi chạy thử quy trình duyệt. Tài khoản này được giữ vì `review_log` tham chiếu tới. Nên hạ xuống `visitor` khi demo thật: làm ở `/quan-tri/tai-khoan`.
 11. **Quyền công bố 9 ảnh đã đăng** được tick để demo (ảnh lấy từ Behance). Khi dùng thật phải xin quyền khách.
 12. **`openspec validate`** có lúc báo 0 delta với change đã xong. Đây là lỗi của công cụ, có thể bỏ qua.
 13. **Thiếu tài liệu 02–05** (bộ câu hỏi phỏng vấn, user story, mô hình hoá, taxonomy) mà BAD tham chiếu.
+14. **«Dự án» ở `/quan-tri/hieu-qua` là thư mục ảnh trong DB** (như trang Duyệt), không phải 64 dự án tĩnh ở `/du-an`. Lead gửi từ `/du-an/<slug>` chỉ được tính khi có thư mục trùng tên (slug đổi `-` thành `_`), cho tới khi chạy `ingest_projects.py`.
 
 ---
 
@@ -503,9 +508,10 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `/du-an/:slug` | mọi người | trang dự án: gallery, lightbox, dự án trước/tiếp |
 | `/cong-trinh` | mọi người | **đang chuyển sang `/du-an`** (trang lọc 6 chiều + tìm kiếm còn trong `CongTrinhView.vue`) |
 | `/khong-gian/:id` | mọi người | ảnh từ DB, hotspot, bảng màu, không gian tương tự |
+| `/trac-nghiem` | mọi người | trắc nghiệm phong cách: cặp ảnh → 2 phong cách + không gian gợi ý; lưu kết quả khi đăng nhập |
 | `/dang-nhap` | mọi người | email / Google / Facebook |
 | `/quan-tri` | architect, content, lead_architect, admin | duyệt và đăng ảnh |
-| `/quan-tri/phan-loai` | lead_architect, admin | duyệt chiều phân loại AI đề xuất |
+| `/quan-tri/phan-loai` | lead_architect, admin | tab "Danh mục": quản lý chiều và giá trị; tab "Đề xuất của AI" (`?tab=de-xuat`): duyệt chiều AI đề xuất |
 | `/khach-hang` | sales, lead_architect, admin | danh sách lead |
 
 ### 11.2 API backend (`http://localhost:8001`, Swagger ở `/docs`)
@@ -520,9 +526,16 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/spaces/ingest` | staff | tải ảnh + chạy pipeline AI |
 | PATCH | `/spaces/{id}` | staff / content | sửa nhãn, mô tả, hotspot, chuyển trạng thái |
 | POST | `/spaces/advance` | staff / approver | chuyển trạng thái hàng loạt |
+| POST | `/spaces/return`, `/spaces/keep-internal`, `/spaces/reopen` | approver | trả về nháp (từ chờ duyệt / đã duyệt / đã xác nhận quyền), lưu nội bộ (từ đã duyệt / đã xác nhận quyền), mở lại (từ lưu nội bộ); `{space_ids, ly_do}` lý do 5–500 ký tự, tất cả hoặc không; báo người tải ảnh lên qua email hoặc log |
 | PUT | `/spaces/tags` | staff | gắn tag theo ảnh hoặc cả dự án |
 | POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
 | POST | `/chat` | công khai, 20/phút | trợ lý |
+| GET / POST | `/knowledge` | content, approver | danh sách mục tri thức (`?q=&trang_thai=`, kèm `can_duyet_gia`, `mau`, `ai`, `lien_ket`) / tạo mục (nháp hoặc chờ duyệt) |
+| GET / PATCH | `/knowledge/{id}` | content, approver | xem / sửa (tính lại embedding; NV nội dung sửa giá mục đang dùng → chờ duyệt) |
+| POST | `/knowledge/{id}/status` | content, approver | đổi trạng thái; bật mục có giá chỉ approver (403); bật nháp AI thì bỏ dấu |
+| DELETE | `/knowledge/{id}` | approver | xoá (409 nếu điểm nóng liên kết tới) |
+| GET | `/knowledge/gaps` | content, approver | câu hỏi chưa trả lời đang mở, gom nhóm |
+| POST | `/knowledge/gaps/dismiss` | content, approver | bỏ qua các câu hỏi |
 | POST | `/leads` | công khai, 5/10 phút | form liên hệ tạo lead (nguồn `form`), kèm hồ sơ hành vi nếu khách đồng ý |
 | GET | `/leads` | sales, approver | lead mọi nguồn, lọc `?nguon=form\|brief\|chat`; lead brief kèm ảnh, ghi chú, mã chia sẻ |
 | GET | `/spaces?ids=1,2,3` | công khai | các không gian theo id (≤ 60), cho bộ sưu tập trong trình duyệt |
@@ -532,36 +545,54 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/briefs` | công khai, chung giới hạn 5/10 phút với `/leads` | gửi bộ sưu tập cho kiến trúc sư → lead nguồn `brief` |
 | POST | `/estimates` | công khai, 30/phút | ước tính từ bảng đơn giá, không lưu gì |
 | POST | `/estimates/send` | công khai, chung giới hạn với `/leads` | nhận bản chi tiết qua email → lead nguồn `estimate` (máy chủ tự tính lại) |
+| GET | `/quiz` | công khai, 30/phút | 4–6 cặp ảnh ngẫu nhiên; 409 `chua_du_anh` khi ảnh đã đăng không đủ 4 cặp |
+| POST | `/quiz/result` | công khai, chung giới hạn với `/quiz` | gửi các cặp đã hiện + ảnh đã chọn; máy chủ kiểm tra và chấm điểm, trả phong cách + không gian gợi ý |
+| GET / PUT | `/quiz/me` | đã đăng nhập | kết quả đã lưu của tài khoản (204 khi chưa có); PUT chấm lại rồi ghi đè, mỗi tài khoản một kết quả |
 | GET / PUT | `/prices`, `/prices/{id}` | approver | bảng đơn giá D8; lưu một ô thì ô đó thành `d3` (không còn là giá mẫu) |
 | GET | `/analytics/overview?days=7\|30\|90` | sales, approver | điểm quan tâm, xu hướng, cảnh báo, tổng, lead theo tuần, top không gian; chỉ số tổng hợp, không có dữ liệu cá nhân |
+| GET | `/analytics/projects?days=30\|90&cua_toi=` | staff, sales | mỗi dự án có ảnh đã đăng: số ảnh, ngày đăng, lượt xem, lưu, tỉ lệ lưu, khách tiềm năng, trạng thái (`can_xem_lai` / `dang_theo_doi` / `on`); `cua_toi=true` chỉ dự án người gọi tải lên; chỉ số đếm |
+| GET | `/analytics/projects/{folder}?days=` | staff, sales | ảnh của dự án theo lượt xem và các gợi ý (`goi_y`); 404 khi dự án không có ảnh đã đăng |
+| GET / PUT | `/me/weekly-report` | sales, approver | `{nhan}`: bật / tắt báo cáo tuần cho chính mình |
+| GET | `/reports/weekly` | approver | 8 lần gửi gần nhất: tuần, lúc gửi, số người nhận, số lỗi, kết quả (không có nội dung) |
+| GET | `/reports/weekly/preview` | approver | báo cáo của tuần trước dựng ngay lúc gọi: tiêu đề, nội dung, số người nhận; không gửi |
+| POST | `/reports/weekly/test` | approver | gửi thử cho chính người gọi, không tính là báo cáo của tuần; 409 khi chưa cấu hình SMTP |
 | GET | `/taxonomy` | công khai | các chiều và giá trị (cho bộ lọc) |
-| POST | `/taxonomy/{dim_id}/values` | lead_architect | thêm giá trị |
-| PATCH | `/taxonomy/values/{id}` | lead_architect | đổi tên giá trị |
-| POST | `/taxonomy/values/{id}/merge` | lead_architect | gộp giá trị |
+| GET | `/taxonomy/admin` | approver | cây chiều / giá trị kèm số không gian, đã đăng, dự án; 20 thay đổi gần nhất |
+| POST | `/taxonomy` | approver | thêm chiều (mã sinh từ tên) |
+| PATCH | `/taxonomy/{dim_id}` | approver | đổi tên, ẩn/hiện cho khách, `move: up/down` |
+| POST | `/taxonomy/{dim_id}/values` | approver | thêm giá trị (`ma_dinh_danh` tuỳ chọn, mặc định sinh từ tên; 409 nếu trùng, không phân biệt hoa thường) |
+| PATCH | `/taxonomy/values/{id}` | approver | đổi tên (giữ mã), mô tả, từ đồng nghĩa |
+| POST | `/taxonomy/values/{id}/merge` | approver | gộp vào giá trị cùng chiều; chuyển cả `design_style` / `space_type`; 422 khi khác chiều hoặc `tong_mau` |
 | GET | `/taxonomy/candidates` | approver | đề xuất chiều mới |
 | POST | `/taxonomy/candidates/{id}/accept` | approver | chấp nhận, AI gắn nhãn thư viện |
 | POST | `/taxonomy/candidates/{id}/reject` | approver | từ chối |
 | POST | `/auth/register`, `/auth/login`, `/auth/refresh` | công khai | tài khoản, JWT |
 | GET | `/auth/me` | đã đăng nhập | thông tin người dùng |
 | GET | `/auth/google/*`, `/auth/facebook/*` | công khai | OAuth |
-| PATCH | `/users/{id}/role` | admin | đổi role |
+| GET | `/users` | admin | danh sách tài khoản (`?q=&role=&khoa=`), kèm quyền đổi / khoá từng dòng và lý do nếu không được; `gan_day`: 20 thay đổi gần nhất |
+| PATCH | `/users/{id}/role` | admin | đổi role (409: tự đổi, hoặc hạ admin cuối cùng) |
+| POST | `/users/{id}/lock`, `/users/{id}/unlock` | admin | khoá kèm `ly_do` (3–300 ký tự; các phiên đang mở bị từ chối từ lần gọi tiếp theo) / mở khoá |
 
 ### 11.3 Bảng dữ liệu (`backend/schema.sql`)
 
 | Bảng | Nội dung |
 | :-- | :-- |
-| `space` | mỗi ảnh/không gian: đường dẫn, nhãn AI, màu, hotspot, embedding SigLIP2, `review_status` |
+| `space` | mỗi ảnh/không gian: đường dẫn, nhãn AI, màu, hotspot, embedding SigLIP2, `review_status` (`draft` → `in_review` → `approved` → `cleared` → `published`, hoặc `noi_bo`: khách không đồng ý công bố, không bao giờ hiện công khai), `ly_do_duyet` (lý do trả về / lưu nội bộ / mở lại đang hiện trên thẻ, chỉ nhân viên thấy) |
 | `space_text` | mô tả dài của ảnh + embedding Vertex (RAG) |
-| `app_user` | tài khoản, role |
+| `app_user` | tài khoản, role, `bi_khoa` + `ly_do_khoa`, `phien_tu` (token phát trước thời điểm này bị từ chối) |
+| `nhat_ky_tai_khoan` | nhật ký đổi vai trò / khoá / mở khoá: ai, tài khoản nào, trước → sau, lý do |
 | `review_log` | nhật ký duyệt, sửa, gán nhãn lại |
-| `kb_chunk` | đoạn tri thức trợ lý + embedding |
+| `kb_chunk` | mục tri thức trợ lý: loại, tiêu đề, `cum_tu_khop`, câu trả lời, embedding (tiêu đề + cụm từ khớp), `trang_thai` (nhap / cho_duyet / dang_dung / tat; trợ lý chỉ dùng dang_dung), `nguon` (mau / ai / nhan_vien / tep), `tu_cau_hoi` |
+| `nhat_ky_tri_thuc` | nhật ký sửa tri thức: ai, hành động, trước → sau (giữ cả mục đã xoá) |
 | `lead` | khách tiềm năng mọi nguồn (`nguon`: form, chat, brief, estimate): họ tên, SĐT, email, lời nhắn, ngữ cảnh trang/dự án, hồ sơ hành vi (bản chụp), và với chat thì ý định, yêu cầu, hội thoại |
 | `bo_suu_tap`, `bo_suu_tap_anh` | bộ sưu tập: `dang_luu` (một cái mỗi tài khoản) và `da_gui` (bản cố định của mỗi brief, có `ma_chia_se`); ảnh + ghi chú (≤ 300 ký tự) |
+| `ket_qua_trac_nghiem` | kết quả trắc nghiệm đã lưu, một dòng mỗi tài khoản: phong cách + tỉ lệ, id không gian gợi ý |
 | `don_gia` | bảng đơn giá D8: 5 loại nhà × 4 hạng mục × 3 gói, khoảng VND/m², `nguon` `mau` (giá mẫu) / `d3` (nhân viên đặt) |
 | `chieu_phan_loai`, `gia_tri_phan_loai`, `space_gia_tri` | phân loại và nhãn của từng không gian |
 | `ung_vien_phan_loai` | đề xuất chiều mới chờ duyệt |
-| `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được |
-| `phien_truy_cap`, `su_kien`, `su_kien_an_danh` | hành vi có đồng ý, bộ đếm ẩn danh |
+| `nhat_ky_phan_loai` | nhật ký sửa phân loại: ai, hành động, đối tượng, trước → sau |
+| `khoang_trong_tri_thuc` | câu hỏi trợ lý chưa trả lời được; `trang_thai` mo / da_xu_ly (có mục trả lời, `kb_chunk_id`) / bo_qua |
+| `phien_truy_cap`, `su_kien`, `su_kien_an_danh` | hành vi có đồng ý, bộ đếm ẩn danh; `su_kien.loai`: `xem_khong_gian`, `luu_anh`, `chon_trac_nghiem` |
 
 ### 11.4 Script backend (chạy trong `backend/`)
 
@@ -572,8 +603,8 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | `reembed.py` | tính lại embedding |
 | `generate_transcripts.py` | mô tả dài từng ảnh cho RAG |
 | `generate_kb.py` | sinh nháp mô tả dự án và câu hỏi đánh giá |
-| `python -m pipeline.assistant <file.json>` | nạp kho tri thức |
+| `python -m pipeline.assistant <file.json>` | nạp kho tri thức hàng loạt; mục nháp AI vào Chờ duyệt; nạp lại không đổi trạng thái mục đã có |
 | `python -m pipeline.discovery [--dry-run]` | chạy AI đề xuất chiều phân loại mới |
 | `seed_taxonomy.py` | nạp phân loại gốc từ `kb/taxonomy_seed.json` |
-| `set_role.py <email> <role>` | đổi role |
+| `set_role.py <email> <role>` | tạo admin đầu tiên (sau đó dùng `/quan-tri/tai-khoan`); có ghi nhật ký |
 | `eval_labels.py`, `eval_assistant.py`, `eval_photo_rag.py` | đo độ chính xác nhãn, truy hồi chatbot, RAG ảnh |

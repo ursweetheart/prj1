@@ -1,5 +1,5 @@
 <template>
-  <main class="wrap" style="padding-block:clamp(40px,6vw,96px);max-width:460px">
+  <main class="wrap page-top" style="padding-bottom:clamp(40px,6vw,96px);max-width:460px">
     <p class="eyebrow">Tài khoản</p>
     <h1 class="h-2" style="margin-top:10px">{{ isRegister ? 'Tạo tài khoản' : 'Đăng nhập' }}</h1>
 
@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { BACKEND, login, register } from '@/api'
 
@@ -42,6 +42,14 @@ const email = ref('')
 const password = ref('')
 const error = ref('')
 const busy = ref(false)
+
+// a locked account coming back from Google / Facebook (user-admin): the server sends #loi=tai_khoan_bi_khoa
+onMounted(() => {
+  if (location.hash === '#loi=tai_khoan_bi_khoa') {
+    error.value = 'Tài khoản đã bị khoá. Liên hệ quản trị viên.'
+    history.replaceState(null, '', location.pathname + location.search)
+  }
+})
 
 async function submit() {
   error.value = ''; busy.value = true

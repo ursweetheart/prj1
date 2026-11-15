@@ -1,3 +1,7 @@
+## Purpose
+
+The site header at every screen width: a stacked, burger-free layout on small screens and a one-row bar from 1024px, the brand's size and asset, lift-and-brighten feedback that never sticks on touch screens, legibility over the hero photo, and staff links grouped so the header never runs out of room.
+
 ## ADDED Requirements
 
 ### Requirement: Header items never overlap
@@ -57,3 +61,25 @@ Header text and the brand SHALL remain readable over bright areas of the hero im
 - **WHEN** the hero photo behind the header is bright (for example a lit ceiling)
 - **THEN** a darkening gradient and a soft dark shadow keep the white header text legible
 - **AND** the hover glow is layered on top of that shadow rather than replacing it
+
+### Requirement: Staff links grouped
+A signed-in user with one staff link SHALL see it in the header as a plain link. A user with two or more staff links SHALL see one "Quản trị" button instead, which opens a list of those links. The list SHALL close on Esc (returning focus to the button), on a click outside it and on navigation. The button SHALL state whether the list is open, and SHALL be marked while the user is on one of those pages.
+
+#### Scenario: Lead architect at 1280px
+- **WHEN** a lead architect (Duyệt, Phân loại, Đơn giá, Khách hàng, Xu hướng) opens any page in a 1280px window
+- **THEN** the header shows "Bộ sưu tập", "Quản trị", "Đăng xuất" and "Vi | En" in one row with no overlap and no horizontal scroll
+
+#### Scenario: Open and close the menu
+- **WHEN** they press "Quản trị", then press Esc
+- **THEN** the five links are listed, then the list closes and focus is back on "Quản trị"
+
+#### Scenario: Sales at 360px
+- **WHEN** a sales user opens a page on a 360px screen
+- **THEN** every header item is visible, nothing overlaps and the page does not scroll sideways
+
+### Requirement: No stuck hover on touch screens
+On devices without a hovering pointer, tapping a header item SHALL NOT leave it in the lifted, brightened state. Keyboard focus SHALL keep that state on every device.
+
+#### Scenario: Tap on a phone
+- **WHEN** a visitor taps "Dự án" on a touch screen and comes back to the previous page
+- **THEN** no header item is shown lifted or glowing

@@ -1,5 +1,5 @@
 <template>
-  <main class="wrap col-page">
+  <main class="wrap page-top col-page">
     <header class="projects-head">
       <div>
         <h1 class="projects-title">{{ shared ? 'Bộ sưu tập đã gửi' : 'Bộ sưu tập' }}</h1>

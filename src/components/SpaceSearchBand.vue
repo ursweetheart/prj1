@@ -3,7 +3,7 @@
     <div class="band-in">
       <div>
         <h2 id="band-title" class="band-title">Có một không gian bạn thích?</h2>
-        <p class="band-text">Tìm không gian tương tự trong các dự án của D3 Studio, bằng một bức ảnh hoặc vài lời mô tả.</p>
+        <p class="band-text">Tìm không gian tương tự trong các dự án của D3 Studio, bằng một bức ảnh hoặc vài lời mô tả, hoặc làm trắc nghiệm để tìm phong cách hợp với bạn.</p>
       </div>
       <div class="band-links">
         <button class="cta-link glow-hover" type="button" @click="photoInput.click()">
@@ -11,6 +11,9 @@
         </button>
         <router-link class="cta-link glow-hover" :to="{ path: '/khong-gian', query: { tim: 'mo-ta' } }">
           Mô tả bằng lời <span class="arrow" aria-hidden="true">→</span>
+        </router-link>
+        <router-link class="cta-link glow-hover" to="/trac-nghiem">
+          Trắc nghiệm phong cách <span class="arrow" aria-hidden="true">→</span>
         </router-link>
       </div>
       <input ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="pick">

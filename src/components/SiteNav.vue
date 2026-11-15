@@ -19,7 +19,19 @@
         <div class="nav-account">
           <router-link v-if="ai.state === 'on'" to="/bo-suu-tap" class="nav-saved"
                        :aria-label="'Bộ sưu tập, ' + savedCount + ' ảnh'">Bộ sưu tập<span v-if="savedCount" class="num"> ({{ savedCount }})</span></router-link>
-          <router-link v-for="l in roleLinks" :key="l.to" :to="l.to">{{ l.label }}</router-link>
+          <!-- staff links: one inline, two or more grouped so the header never runs out of room -->
+          <router-link v-if="roleLinks.length === 1" :to="roleLinks[0].to">{{ roleLinks[0].label }}</router-link>
+          <div v-else-if="roleLinks.length" ref="menuEl" class="nav-menu" @keydown.esc.stop="closeMenu(true)">
+            <button ref="menuBtn" type="button" class="nav-menu-btn" :class="{ 'is-here': onStaffPage }"
+                    aria-haspopup="true" :aria-expanded="String(menuOpen)" aria-controls="nav-staff"
+                    @click="menuOpen = !menuOpen">Quản trị <span class="nav-caret" aria-hidden="true">▾</span></button>
+            <ul v-show="menuOpen" id="nav-staff" class="nav-menu-list">
+              <li v-for="l in roleLinks" :key="l.to">
+                <router-link :to="l.to" :aria-current="route.path === l.to ? 'page' : undefined"
+                             @click="closeMenu(false)">{{ l.label }}</router-link>
+              </li>
+            </ul>
+          </div>
           <button v-if="session.user" type="button" @click="signOut">Đăng xuất</button>
           <router-link v-else to="/dang-nhap">Đăng nhập</router-link>
         </div>
@@ -35,9 +47,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { APPROVERS, EDITORS, SALES, hasRole, logout, session } from '@/api'
+import { APPROVERS, EDITORS, SALES, STAFF, hasRole, logout, session } from '@/api'
 import { ai, aiAvailable } from '@/lib/projectSpaces'
 import { collection } from '@/lib/collection'
 import BrandMark from './BrandMark.vue'
@@ -65,9 +77,28 @@ const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },
   hasRole(APPROVERS) && { to: '/quan-tri/phan-loai', label: 'Phân loại' },
   hasRole(APPROVERS) && { to: '/quan-tri/don-gia', label: 'Đơn giá' },
+  hasRole(['content', ...APPROVERS]) && { to: '/quan-tri/tri-thuc', label: 'Tri thức' },
+  hasRole(['admin']) && { to: '/quan-tri/tai-khoan', label: 'Tài khoản' },
   hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' },
-  hasRole(SALES) && { to: '/quan-tri/xu-huong', label: 'Xu hướng' }
+  hasRole(SALES) && { to: '/quan-tri/xu-huong', label: 'Xu hướng' },
+  hasRole([...STAFF, 'sales']) && { to: '/quan-tri/hieu-qua', label: 'Hiệu quả dự án' }
 ].filter(Boolean))
+
+const onStaffPage = computed(() => roleLinks.value.some(l => route.path === l.to))
+
+/* "Quản trị" menu: a disclosure button; closes on Esc (focus back to the button), outside click or navigation */
+const menuOpen = ref(false)
+const menuEl = ref(null)
+const menuBtn = ref(null)
+function closeMenu(refocus) {
+  if (!menuOpen.value) return
+  menuOpen.value = false
+  if (refocus) menuBtn.value?.focus()
+}
+function onOutside(e) { if (menuOpen.value && menuEl.value && !menuEl.value.contains(e.target)) closeMenu(false) }
+watch(() => route.fullPath, () => closeMenu(false))
+onMounted(() => document.addEventListener('pointerdown', onOutside))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside))
 
 function signOut() { logout(); router.push('/') }
 </script>

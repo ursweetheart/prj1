@@ -25,5 +25,6 @@
 - [x] 5.1 Measure the header boxes in the browser at 320, 360, 390, 414, 600, 768, 900, 1023, 1024, 1100, 1280 and 1440px: no overlap, document never wider than the viewport
 - [x] 5.2 Visual check at 360, 414, 768 and ~1280px; hovering "Về chúng tôi" computes `translateY(-3px)`, white, glow
 - [x] 5.3 `vite build` succeeds (built into a scratch directory so the tracked `dist/` is untouched)
-- [ ] 5.4 Check the signed-in header (editor / sales: "Duyệt", "Khách hàng", "Đăng xuất") at 360px and 1024px for overlap
-- [ ] 5.5 Check on a real phone (touch): the hover state must not stay stuck after a tap
+- [x] 5.4 Check the signed-in header (editor / sales: "Duyệt", "Khách hàng", "Đăng xuất") at 360px and 1024px for overlap
+- [x] 5.5 Touch: limit the `:hover` lift to `@media (hover: hover)` (keep `:focus-visible` everywhere). Verify with Chromium touch emulation (`hasTouch`, `isMobile`, so `(hover: none)`): after tapping a header item no item computes a transform. A check on a physical phone is still advised
+- [x] 5.6 Group the staff links: one link stays inline, two or more go under a "Quản trị" disclosure button in `SiteNav.vue` (Esc returns focus, outside click and navigation close it, `aria-expanded`, marked on a staff page); `.nav-account` wraps under 1024px. Verify in the browser for a lead architect and a sales user at 360, 1024 and 1280px: no overlap, no horizontal scroll, the menu opens, lists every role link and closes on Esc / outside click / navigation
