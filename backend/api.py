@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 import psycopg
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
@@ -23,10 +23,10 @@ from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
 from psycopg.errors import UniqueViolation
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       trends, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -411,11 +411,22 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
     return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
 
 
+PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem")  # about one published photo
+
+
 class Event(BaseModel):
-    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem"]  # view, heart save, photo chosen in the style quiz
+    # photo events (view, heart save, quiz pick) and the behaviour events of UC21 (change behaviour-events)
+    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
+                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc"]
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
+    trang: Optional[str] = Field(default=None, pattern=r"^/[a-z0-9/:_-]{0,99}$")  # route pattern, never a real path
+    doi_tuong: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_/-]{1,100}$")  # slug, photo id, CTA target, form
+    gia_tri: Optional[list[Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+:[A-Za-z0-9_]+$")]]] = Field(
+        default=None, max_length=20)                 # filter values of ap_dung_bo_loc
+    thoi_gian_dung_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
+    do_sau_cuon: Optional[float] = Field(default=None, ge=0, le=1)
 
     @field_validator("phien_id")
     @classmethod
@@ -436,6 +447,11 @@ def track(body: Event):
             return
         c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true) ON CONFLICT DO NOTHING",
                   (body.phien_id,))
+        if body.loai not in PHOTO_EVENTS:  # behaviour-events: no photo, so stored as sent (all fields validated)
+            c.execute("INSERT INTO su_kien (phien_id, loai, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, do_sau_cuon) "
+                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", (body.phien_id, body.loai, body.trang, body.doi_tuong,
+                                                        body.gia_tri or [], body.thoi_gian_dung_ms, body.do_sau_cuon))
+            return
         c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri) "
                   "SELECT %(p)s, %(l)s, s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
                   "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
@@ -940,6 +956,15 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
         return trends.overview(c, days)
 
 
+
+
+@app.get("/analytics/behaviour")
+def analytics_behaviour(days: int = 30, user=Depends(require("sales", *APPROVERS))):
+    """Pages (time, scroll), projects, CTAs, forms, chat, shares, filters (behaviour-events). Counts and averages only."""
+    if days not in (7, 30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return behaviour.overview(c, days)
 
 # ── Project results (BFD 5.4; act-1 30-day check; roadmap 3.5) ────────────────
 PROJECT_STATS_ROLES = ("sales", *STAFF)

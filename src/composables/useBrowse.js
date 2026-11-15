@@ -2,6 +2,16 @@
  * Lọc đa chiều + đếm kết quả thời gian thực + đồng bộ URL hash
  * ═══════════════════════════════════════════════════════════════════ */
 import { reactive, computed, watch } from 'vue'
+import { trackEvent } from '@/api'
+
+/* behaviour-events: a filter choice as stable 'dimension:value' items, only the ones the API accepts */
+export function filterValues(selected) {
+  return Object.entries(selected || {})
+    .filter(([k]) => /^[a-z0-9_]+$/.test(k))
+    .flatMap(([k, vals]) => (vals || []).filter(v => /^[A-Za-z0-9_]+$/.test(v)).map(v => k + ':' + v))
+    .sort()
+}
+const SETTLE_MS = 1500
 
 /* spaces, facets: getters. Facets come from /taxonomy (API) or data/index.js (demo). */
 export function useBrowse(spaces, facets) {
@@ -29,6 +39,22 @@ export function useBrowse(spaces, facets) {
 
   readHash()
   watch(selected, writeHash, { deep: true })
+
+  // ap_dung_bo_loc once the choice settles; the same choice is not sent twice in a row
+  let timer = null
+  let lastSent = filterValues(selected).join('|') // a choice opened from a link is not a new filter action
+  watch(selected, () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      const vals = filterValues(selected)
+      const key = vals.join('|')
+      if (!vals.length || key === lastSent) return
+      lastSent = key
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+      const path = base && location.pathname.startsWith(base) ? location.pathname.slice(base.length) || '/' : location.pathname
+      trackEvent('ap_dung_bo_loc', { gia_tri: vals.slice(0, 20), ...(/^\/[a-z0-9/_-]{0,99}$/.test(path) ? { trang: path } : {}) })
+    }, SETTLE_MS)
+  }, { deep: true })
 
   // API cards carry their taxonomy values in `tags`; demo cards carry them as plain fields
   const valueOf = (s, k) => (s.tags ? s.tags[k] : s[k])

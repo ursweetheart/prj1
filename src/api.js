@@ -185,6 +185,18 @@ function track(loai, spaceId) {
   request('POST', '/events', { body: { loai, dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
     .catch(() => {}) // errors are not the visitor's problem
 }
+/* behaviour-events (UC21): page views with time and scroll, CTA clicks, forms, chat, share, filters. Same consent rule as
+   track(): details only with consent, otherwise just the day's count. Never for staff (a signed-in account still loading
+   could be staff, so it waits). keepalive lets a page-leave event survive the tab closing. */
+export function trackEvent(loai, fields = {}) {
+  if (session.token && (!session.user || session.user.role !== 'visitor')) return
+  const id = consent.get() === 'yes' && visitId()
+  const body = id ? { loai, dong_y: true, phien_id: id, ...fields } : { loai, dong_y: false }
+  try {
+    fetch(API + '/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true })
+      .catch(() => {})
+  } catch { /* never the visitor's problem */ }
+}
 export const trackView = spaceId => track('xem_khong_gian', spaceId)
 export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
 export const trackQuizPick = spaceId => track('chon_trac_nghiem', spaceId) // style-quiz: not in the interest score
@@ -270,6 +282,7 @@ export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 /* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
 export const getOverview = (days = 30) => get('/analytics/overview', { days })
+export const getBehaviour = (days = 30) => get('/analytics/behaviour', { days }) // behaviour-events
 export const getProjectStats = (days = 30, cuaToi = false) => get('/analytics/projects', { days, ...(cuaToi ? { cua_toi: true } : {}) })
 export const getProjectDetail = (folder, days = 30) => get('/analytics/projects/' + encodeURIComponent(folder), { days })
 export const getWeeklyOptIn = () => get('/me/weekly-report')

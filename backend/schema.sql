@@ -251,7 +251,8 @@ CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, creat
 -- ── Style quiz (change: style-quiz; UC06, seq-12) ──────────────────────────────────────────────────────────
 -- A quiz answer is a consented behaviour event too; the interest score does not count it (trends.py reads views/saves).
 ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
-ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem'));
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem',
+  'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc'));  -- behaviour-events
 -- one saved result per account; re-scored by the server on save, suggestions re-read (unpublished ones dropped)
 CREATE TABLE IF NOT EXISTS ket_qua_trac_nghiem (
   nguoi_dung_id int PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
@@ -379,3 +380,10 @@ CREATE TABLE IF NOT EXISTS mon_do (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Behaviour events (change behaviour-events; UC21, class-4 SuKien): page / project views with time and scroll, CTA clicks,
+-- forms, chat, share, filters. Pages are stored as route patterns (/bo-suu-tap/xem/:ma), never the real path or query.
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS trang text;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS doi_tuong text;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS thoi_gian_dung_ms int;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS do_sau_cuon real;

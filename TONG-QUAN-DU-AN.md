@@ -258,7 +258,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-1-gan-nhan-tu-dong` | UC25, UC26 | Có |
 | `seq-2-tim-khong-gian-tuong-tu` | UC03 | Có |
 | `seq-3-hoi-dap-tro-ly-rag` | UC09 | Có; bước 18 (lưu hội thoại và thuộc tính khách nói) từ change `chat-history`. Bước 15 (chủ đề cấm) chưa |
-| `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần: xem và lưu ảnh (`luu_anh`); tính khi mở bảng điều khiển, chưa có tiến trình hằng đêm |
+| `seq-4-ghi-nhan-hanh-vi` | UC21 | Có: xem và lưu ảnh, xem trang / dự án (thời gian, độ sâu cuộn), CTA, form, chat, chia sẻ, bộ lọc (change `behaviour-events`); tính khi mở bảng điều khiển, chưa có tiến trình hằng đêm |
 | `seq-5-gui-form-lien-he` | UC11 | Một phần (qua chat) |
 | `seq-6-duyet-va-xuat-ban` | UC14 | Có; nhánh từ chối (bước 9–12) có từ change `review-return-reject`. Bước 18 (sitemap) chưa |
 | `seq-7-gui-bo-suu-tap-lam-brief` | UC08 | Có (change `saved-collection-brief`) |
@@ -343,7 +343,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 
 | UC | Tên | Trạng thái | Đang ở đâu | Còn thiếu |
 | :-- | :-- | :-- | :-- | :-- |
-| UC21 | Ghi nhận hành vi | **Một phần** | sự kiện `xem_khong_gian`, `luu_anh` (tim lưu ảnh, change `trend-dashboard`) và `chon_trac_nghiem` (ảnh chọn trong trắc nghiệm, change `style-quiz`; lưu nhưng **không** tính vào điểm quan tâm); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại | Chỉ có **1 loại sự kiện** (`xem_khong_gian`). Thiết kế cần thêm: `xem_trang`, `xem_du_an`, `phong_to_anh`, `chuyen_anh`, `ap_dung_bo_loc`, `bam_hotspot`, `luu_moodboard`, `chia_se`, `nhan_chatbot`, `bam_CTA`, `gui_form` |
+| UC21 | Ghi nhận hành vi | **Có (trừ 3 loại)** | sự kiện `xem_khong_gian`, `luu_anh` (tim lưu ảnh, change `trend-dashboard`) và `chon_trac_nghiem` (ảnh chọn trong trắc nghiệm, change `style-quiz`; lưu nhưng **không** tính vào điểm quan tâm); `POST /events`; banner đồng ý (`ConsentBanner.vue`); chỉ lưu khi khách đồng ý, nếu không thì chỉ đếm theo ngày; sự kiện kèm giá trị phân loại Thêm 7 loại (change `behaviour-events`): `xem_trang` / `xem_du_an` (theo mẫu route, kèm thời gian xem và độ sâu cuộn, ghi khi rời trang hoặc ẩn tab), `bam_CTA` (mọi link tới `/lien-he`, `/uoc-tinh`, `/trac-nghiem`), `gui_form` (liên hệ, bộ sưu tập, ước tính), `nhan_chatbot`, `chia_se`, `ap_dung_bo_loc`; không ghi trang quản trị và tài khoản nhân viên; không lưu đường dẫn thật, query, hash hay chữ khách gõ. Mục «Hành vi trên trang» ở `/quan-tri/xu-huong` | `phong_to_anh`, `chuyen_anh`, `bam_hotspot` cần sửa `Lightbox.vue` / `HotspotImage.vue` (của Tùng); `luu_moodboard` chính là `luu_anh` |
 | UC22 | Bảng điều khiển xu hướng | **Có (v1)** | `/quan-tri/xu-huong` (sales, KTS trưởng, admin): điểm quan tâm = xem×1 + lưu×3 + ảnh gửi brief×5 theo từng giá trị phân loại, tỉ lệ trong chiều, xu hướng 7 ngày so với trung bình 4 tuần (tăng ≥ 50%, giảm ≤ 50%, mới nổi, cần ≥ 5 tín hiệu), cảnh báo, tổng lượt xem/lưu/brief/lead, lead theo tuần, top không gian (`pipeline/trends.py`, `GET /analytics/overview`) | Chưa có tiến trình hằng đêm và kho phân tích (tính khi mở trang), chưa phân cụm phiên, chưa có thời gian xem / độ sâu cuộn |
 | BFD 5.4 | Hiệu quả từng dự án | **Có (v1)** | `/quan-tri/hieu-qua` (KTS, KTS trưởng, admin, sales; change `project-performance`): mỗi dự án (thư mục ảnh) có ảnh đã đăng một dòng trong 30 / 90 ngày: số ảnh, ngày đăng (từ `review_log`, "≈" khi chỉ có ngày tải lên), lượt xem và lượt lưu của khách đã đồng ý, tỉ lệ lưu, khách tiềm năng (lead nêu trang dự án, nêu một ảnh của dự án hoặc gửi ảnh của dự án trong brief; mỗi lead tính một lần cho mỗi dự án). Kiểm tra 30 ngày của act-1: dự án đăng ≥ 30 ngày có lượt xem 30 ngày gần nhất dưới ½ trung vị các dự án cùng đủ tuổi là «Cần xem lại» (cần ≥ 3 dự án để so), dự án mới hơn là «Đang theo dõi, còn n ngày». Mở một dự án: ảnh theo lượt xem, «chưa ai xem», gợi ý (thiếu nhãn Loại công trình / Mức đầu tư, phong cách «Khác» hoặc AI không chắc, ít ảnh, ảnh chưa ai xem, chú thích ngắn) có link tới đúng dự án ở `/quan-tri`. «Chỉ dự án tôi tải lên» cho KTS (`pipeline/project_stats.py`) | Dự án = thư mục ảnh trong DB, chưa nối với 64 dự án tĩnh ở `/du-an` (cần `ingest_projects.py`); chỉ đếm khách đã đồng ý; danh sách «Cần xem lại» gửi qua báo cáo tuần (UC23) |
 | UC23 | Gửi báo cáo định kỳ | **Có (v1)** | Báo cáo tuần (change `weekly-report`, `pipeline/weekly_report.py`): thứ Hai từ 8:00 (UTC+7) tự gửi email văn bản về tuần trước (thứ Hai – Chủ nhật): lượt xem, lưu, bộ sưu tập, lead theo nguồn so với tuần trước; tối đa 8 cảnh báo xu hướng; top 3 phong cách / loại không gian; dự án «Cần xem lại»; link tới hai bảng điều khiển. Gửi cho mọi tài khoản sales / KTS trưởng / admin không bị khoá và không tắt (ô «Nhận báo cáo tuần qua email» ở `/quan-tri/xu-huong`), mỗi người một email. Mỗi tuần chỉ một lần nhờ bảng `bao_cao_tuan` (giữ chỗ trước khi gửi); máy chủ tắt sáng thứ Hai thì gửi ở lần kiểm tra đầu tiên trong tuần. Không có SMTP: ghi vào log `d3.report`, kết quả «chỉ ghi log». KTS trưởng / admin xem 8 lần gửi gần nhất, xem trước, gửi thử cho mình | Email chỉ dạng văn bản; chưa chọn ngày / giờ trên giao diện; chưa có báo cáo tháng; tuần bị lỡ hẳn không gửi bù |
@@ -447,7 +447,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
-| 3.1 | Thêm các loại sự kiện còn thiếu (danh sách ở UC21), vẫn chỉ ghi khi có đồng ý | seq-4, act-7, dfd-2-5 | |
+| 3.1 | ✓ Thêm 7 loại sự kiện (change `behaviour-events`), chỉ ghi khi có đồng ý, kèm thời gian xem và độ sâu cuộn | seq-4, act-7, dfd-2-5 | còn: phóng to ảnh, chuyển ảnh, bấm hotspot (thành phần của Tùng) |
 | 3.2 | ✓ **InterestScore** và **Trend** (change `trend-dashboard`): xem, lưu, ảnh gửi brief; so 7 ngày với trung bình 4 tuần | act-3, seq-4 | còn: thời gian xem, chia sẻ, lead phát sinh theo giá trị |
 | 3.3 | ✓ **Dashboard xu hướng** `/quan-tri/xu-huong` (v1) | seq-18, usecase-4 | còn: phân khúc mới (phân cụm phiên) |
 | 3.4 | ✓ **Báo cáo tuần** qua email (change `weekly-report`): bộ lập lịch trong backend, mỗi tuần một lần, người nhận theo tài khoản, tự tắt được | seq-18, usecase-5 | còn: email HTML, báo cáo tháng |
@@ -533,7 +533,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | GET / POST | `/items` | staff | thư viện món đồ kèm số ảnh dùng (`q` tìm theo tên, loại, vật liệu) / tạo; 409 khi trùng tên (không phân biệt hoa thường, dấu) |
 | PATCH / DELETE | `/items/{id}` | staff | sửa / xoá; xoá bị từ chối (409, `so_anh`) khi còn ảnh dùng |
 | GET | `/items/{id}/spaces` | công khai | ảnh có hotspot gắn món đồ; khách chỉ thấy ảnh đã đăng, tên và loại món đồ |
-| POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
+| POST | `/events` | công khai, 120/phút | ghi sự kiện hành vi theo đồng ý: xem / lưu ảnh, trắc nghiệm, xem trang / dự án (`trang`, `doi_tuong`, `thoi_gian_dung_ms`, `do_sau_cuon`), CTA, form, chat, chia sẻ, bộ lọc (`gia_tri`); không đồng ý thì chỉ đếm theo ngày |
 | POST | `/chat` | công khai, 20/phút | trợ lý; nhận và trả `hoi_thoai_id`, lưu từng lượt (đã che liên hệ) |
 | GET / DELETE | `/chat/{id}` | ai có id | đọc lại / xoá hội thoại của mình (id ngẫu nhiên 32 ký tự) |
 | GET | `/conversations?loc=tat_ca\|chua_tra_loi\|lead&days=7\|30\|90` | content, sales, approver | danh sách hội thoại, 50 mỗi trang, không có phiên hay liên hệ |
@@ -558,6 +558,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | GET / PUT | `/quiz/me` | đã đăng nhập | kết quả đã lưu của tài khoản (204 khi chưa có); PUT chấm lại rồi ghi đè, mỗi tài khoản một kết quả |
 | GET / PUT | `/prices`, `/prices/{id}` | approver | bảng đơn giá D8; lưu một ô thì ô đó thành `d3` (không còn là giá mẫu) |
 | GET | `/analytics/overview?days=7\|30\|90` | sales, approver | điểm quan tâm, xu hướng, cảnh báo, tổng, lead theo tuần, top không gian; chỉ số tổng hợp, không có dữ liệu cá nhân |
+| GET | `/analytics/behaviour?days=7\|30\|90` | sales, approver | trang (lượt xem, thời gian, độ cuộn TB), dự án, CTA theo đích và trang, form, chat, chia sẻ, bộ lọc; số ẩn danh bên cạnh |
 | GET | `/analytics/projects?days=30\|90&cua_toi=` | staff, sales | mỗi dự án có ảnh đã đăng: số ảnh, ngày đăng, lượt xem, lưu, tỉ lệ lưu, khách tiềm năng, trạng thái (`can_xem_lai` / `dang_theo_doi` / `on`); `cua_toi=true` chỉ dự án người gọi tải lên; chỉ số đếm |
 | GET | `/analytics/projects/{folder}?days=` | staff, sales | ảnh của dự án theo lượt xem và các gợi ý (`goi_y`); 404 khi dự án không có ảnh đã đăng |
 | GET / PUT | `/me/weekly-report` | sales, approver | `{nhan}`: bật / tắt báo cáo tuần cho chính mình |

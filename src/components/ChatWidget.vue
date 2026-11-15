@@ -51,7 +51,7 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
-import { consent, deleteChat, getChat, imageUrl, sendChat } from '@/api'
+import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
 
 const open = ref(false)
 const turns = ref([])
@@ -110,6 +110,7 @@ async function send() {
     const r = await sendChat(text, history, contact.value, consented.value && sendViews.value, getId())
     if (r.hoi_thoai_id) setId(r.hoi_thoai_id)
     turns.value.push({ role: 'assistant', content: r.answer, images: r.images, sources: r.sources })
+    trackEvent('nhan_chatbot') // behaviour-events: a count only, never the text
   } catch (e) { error.value = e.message } finally {
     busy.value = false
     await nextTick(); log.value?.scrollTo(0, log.value.scrollHeight)

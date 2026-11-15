@@ -115,7 +115,7 @@
 /* Ước tính chi phí (UC10, seq-9, act-6): số học trên bảng đơn giá, không gọi AI, cùng đầu vào cho cùng kết quả. */
 import { computed, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { consent, estimate, sendEstimate } from '@/api'
+import { consent, estimate, sendEstimate, trackEvent } from '@/api'
 import { LOAI_NAME, PROJECTS_LIST } from '@/data/projects'
 import { formatRange } from '@/lib/money'
 
@@ -189,6 +189,7 @@ async function send() {
                                    email: c.email.trim(), trang: route.path, gui_ho_so: consented && c.gui_ho_so,
                                    website: c.website || null, t_ms: Date.now() - shownAt.value })
     sent.value = r.message
+    trackEvent('gui_form', { doi_tuong: 'uoc_tinh' }) // behaviour-events
   } catch (e) {
     if (e.status === 422 && Array.isArray(e.detail)) {
       for (const d of e.detail) { const k = d.loc?.[d.loc.length - 1]; if (k in MESSAGES) errors[k] = k === 'email' && c.email ? MESSAGES.email_sai : MESSAGES[k] }
