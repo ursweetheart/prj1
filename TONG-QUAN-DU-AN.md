@@ -154,6 +154,7 @@ docker compose down                 # tắt; dữ liệu vẫn còn trong volume
 - Dữ liệu MÔ PHỎNG cho bảng xu hướng (chỉ để demo): `docker compose exec backend python -m pipeline.demo_activity` tạo ~8 tuần hành vi giả (phiên `demo-…`, một phong cách tăng). Bảng điều khiển hiện cảnh báo "dữ liệu mô phỏng", phân loại tự động bỏ qua chúng. **Xóa trước khi dùng thật:** `docker compose exec backend python -m pipeline.demo_activity --remove`
 - Trạng thái «Cần xem lại» ở `/quan-tri/hieu-qua` chỉ xét dự án đã đăng ≥ 30 ngày. Để demo ngay, đặt `D3_PROJECT_REVIEW_DAYS=0` trong `backend/.env` rồi khởi động lại backend (bỏ đi khi dùng thật).
 - **Báo cáo tuần** tự chạy trong backend: thứ Hai từ 8:00 (UTC+7), kiểm tra 30 giây sau khi khởi động rồi 10 phút một lần. Lần khởi động đầu tiên sau khi cài sẽ gửi ngay báo cáo của tuần trước nếu đã qua 8:00 thứ Hai. Chưa có SMTP thì xem báo cáo trong `docker compose logs backend | grep d3.report` hoặc bấm «Xem trước» ở `/quan-tri/xu-huong`. Tắt hẳn bộ lập lịch: `D3_WEEKLY_REPORT=off` trong `backend/.env`.
+- **Thông tin studio** (trang `/lien-he`, `/ve-chung-toi`) nằm ở `src/data/studio.js`. Mỗi giá trị có `mau: true` hiện nhãn «Thông tin mẫu» và không thành link gọi / mail / Zalo / bản đồ. Khi có thông tin thật: sửa `gia_tri`, đặt `mau: false`. Sửa quy trình thì sửa cả mục «Quy trình làm việc với D3 Studio» ở `/quan-tri/tri-thuc` cho khớp.
 - Email báo lead mới cho sales: điền `D3_SMTP_*` và `D3_SALES_EMAIL` trong `backend/.env` (mẫu ở `.env.example`). Bỏ trống thì lead chỉ ghi log và hiện "mới" ở `/khach-hang`, demo vẫn chạy.
 - Cổng 8001 vẫn mở vì callback đăng nhập Google/Facebook đã đăng ký ở `localhost:8001`.
 - Cổng 8000 để trống cho việc khác (crawl).
@@ -324,7 +325,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC08 | Gửi bộ sưu tập làm brief | **Có** | `BriefForm.vue` → `POST /briefs` (không cần tài khoản): bản sao cố định + link chỉ xem `/bo-suu-tap/xem/<mã>`, lead nguồn `brief` kèm loại nhà, diện tích, ngân sách, tóm tắt "Wabi-sabi 60% · tông Ấm · phòng khách"; email cho sales và khách kèm link | Chưa có chia sẻ bộ sưu tập đang lưu (chỉ bản đã gửi) |
 | UC09 | Hỏi trợ lý ảo | **Xong** | `POST /chat`, `ChatWidget.vue`. Trả lời từ kho tri thức, sau đó từ mô tả ảnh đã đăng; kèm ảnh nguồn; dưới ngưỡng thì chuyển KTS; chặn câu trả lời có số tiền hay cam kết | Kho tri thức đang là **dữ liệu mẫu** (`kb/sample.json`), cần bảng giá và FAQ thật. Chưa lưu lịch sử hội thoại riêng |
 | UC10 | Ước tính chi phí sơ bộ | **Có (đơn giá mẫu)** | `/uoc-tinh`: loại nhà, diện tích, số phòng ngủ, gói vật liệu → khoảng giá + bóc tách 4 hạng mục, công thức cố định trên bảng `don_gia` (`pipeline/estimate.py`); dự án cùng loại; "Nhận bản chi tiết qua email" → lead nguồn `estimate` + email bóc tách. KTS trưởng sửa giá ở `/quan-tri/don-gia` | **D3 chưa có bảng giá: 60 ô đang là giá MẪU tự đặt (`nguon='mau'`, trang ghi rõ "Đơn giá mẫu"). Phải thay bằng giá thật ở `/quan-tri/don-gia` trước khi dùng thật.** Chưa gợi ý dự án theo ngân sách (dự án chưa có khoảng đầu tư) |
-| UC11 | Gửi yêu cầu tư vấn | **Một phần** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án; chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Trang `/lien-he` chưa có (0.3): chỉ cần nhúng `<ContactForm />`. Chưa gửi SMS |
+| UC11 | Gửi yêu cầu tư vấn | **Có** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án và ở trang `/lien-he` (lead ghi trang `/lien-he`); chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Chưa gửi SMS |
 
 ### 5.3 Quản trị nội dung
 
@@ -409,7 +410,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- | :-- | :-- |
 | 0.1 | **Thống nhất một nguồn dữ liệu dự án.** Hiện `/du-an` đọc 64 dự án tĩnh trong `src/data/projects.js`, còn tìm kiếm, lọc, chat và duyệt dùng 152 ảnh trong DB. Đề xuất: tạo bảng `du_an` (slug, tên, loại, năm, mô tả) và nạp 64 dự án vào DB qua `ingest`. Trang `/du-an` đọc API khi có backend, dùng file tĩnh khi chạy trên GitHub Pages | class-1, seq-10 | một dự án tải lên ở `/quan-tri` và được đăng sẽ hiện ở `/du-an` |
 | 0.2 | **Đưa trang lọc và tìm kiếm trở lại.** Bỏ redirect `/cong-trinh → /du-an`, thêm mục menu (vd "Không gian" hoặc "Tìm kiếm"). Có thể chỉ bật khi build có backend | seq-10, seq-11, seq-8 | vào được lọc 6 chiều, tìm bằng chữ, tìm bằng ảnh từ menu |
-| 0.3 | Tạo trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`). Menu đang trỏ tới nhưng chưa có route. Trang Liên hệ **không tự làm form**: `import ContactForm from '@/components/ContactForm.vue'` rồi đặt `<ContactForm />` (lead tự ghi trang `/lien-he`) | BFD 2, seq-5 | không còn link chết trên menu |
+| 0.3 | ✓ Trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`, change `studio-pages`): giới thiệu, con số, đội ngũ, quy trình 5 bước; form tư vấn, gọi / Zalo / email (`#zalo`), văn phòng (`#ban-do`). Thông tin studio ở `src/data/studio.js`, hiện là **thông tin mẫu** có nhãn và không thành link | BFD 2, seq-5 | còn: điền thông tin thật; `/dich-vu` để Tùng làm |
 | 0.4 | Duyệt và đăng thêm ảnh để có dữ liệu demo (mục tiêu ≥ 30 ảnh đã duyệt) | act-1 | `eval_labels.py` chạy được |
 | 0.5 | Duyệt 2 đề xuất phân loại đang chờ, đánh dấu thật/sai để làm task 4.1, archive change `discover-taxonomy-dimensions` | seq-15 | change được archive |
 | 0.6 | ✓ Archive các change đã xong; `responsive-stacked-navbar` xong và đã archive (14/11/2026) | | `openspec list` không còn change nào |
@@ -434,7 +435,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- | :-- | :-- |
 | 2.1 | ✓ **Bộ sưu tập** (change `saved-collection-brief`): trình duyệt → tài khoản khi đăng nhập, trang `/bo-suu-tap`, ghi chú. Link chia sẻ chỉ cho bản đã gửi | seq-13, act-8, class-3 | đổi máy vẫn thấy |
 | 2.2 | ✓ **Gửi bộ sưu tập làm brief** (change `saved-collection-brief`): lead nguồn `brief` kèm ảnh, ghi chú, tóm tắt gu, link chỉ xem | seq-7, act-8 | sales thấy brief kèm ảnh ở `/khach-hang` |
-| 2.3 | **Form liên hệ:** đã có `ContactForm.vue` + `POST /leads` (change `lead-intake`), đặt ở trang dự án. Còn lại: nhúng `<ContactForm />` vào trang `/lien-he` của 0.3 | seq-5 | lead loại "form" xuất hiện |
+| 2.3 | ✓ **Form liên hệ** `ContactForm.vue` + `POST /leads` (change `lead-intake`) ở trang dự án và trang `/lien-he` (change `studio-pages`) | seq-5 | |
 | 2.4 | ✓ **Ước tính chi phí sơ bộ** (change `cost-estimate`): công thức trên bảng đơn giá, giá mẫu ghi rõ, nhân viên sửa giá không cần sửa code | seq-9, act-6 | còn lại: nhập giá thật của D3 |
 | 2.5 | ✓ **Trắc nghiệm phong cách** (change `style-quiz`): chọn ảnh thích → gợi ý phong cách và không gian phù hợp (embedding SigLIP2), lưu kết quả vào tài khoản | seq-12 | còn: gợi ý dự án khi đã nối ảnh dự án ↔ không gian |
 | 2.6 | Trang chi tiết dự án đầy đủ: bảng thông số, thuyết minh, dải màu, vật liệu chính, before/after Concept ↔ Thực tế, "dự án tương tự" | seq-10, class-1 | đủ các mục của M2 |
@@ -469,7 +470,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 1. **Hai nguồn dữ liệu dự án.** Trang chủ và `/du-an` dùng 64 dự án tĩnh (ảnh trong `src/assets/projects/`). Backend dùng 152 ảnh trong `backend/image_d3/` và DB. Duyệt ảnh xong cũng không làm thay đổi `/du-an`. Xem việc 0.1.
 2. **Trang `/cong-trinh` bị ẩn** từ commit `c0fc9ee` (redirect sang `/du-an`), nên lọc 6 chiều, tìm bằng chữ, tìm bằng ảnh và link "Xem bộ lọc" ở trang Phân loại đều không truy cập được. File `CongTrinhView.vue` vẫn còn.
-3. **Link chết trên menu:** "Về chúng tôi" (`/ve-chung-toi`) và "Liên hệ" (`/lien-he`) chưa có trang. `SpaceCard.vue` có link `/cong-trinh-chi-tiet#…` cũng không có route.
+3. **Link chết còn lại:** "Dịch vụ và quy trình" (`/dich-vu`) ở chân trang chưa có trang (để Tùng làm; `App.vue` đã có sẵn key `dich-vu`). `SpaceCard.vue` có link `/cong-trinh-chi-tiet#…` cũng không có route.
 4. **`dist/`** có trong `.gitignore` nhưng vẫn bị git theo dõi. Sau mỗi `npm run build` phải `git restore dist`. Nên `git rm -r --cached dist` khi CI deploy Pages không cần nó nữa.
 5. **Rate limit lưu trong bộ nhớ** và tính theo IP. Khởi động lại là mất; phía sau proxy cần đọc `X-Forwarded-For` (`backend/ratelimit.py`).
 6. **`D3_JWT_SECRET`** phải được đặt trong `.env`. Nếu không, mỗi lần khởi động lại backend mọi người bị đăng xuất. Script chạy ngoài Docker (vd `set_role.py`) có in cảnh báo này nhưng không ảnh hưởng.
