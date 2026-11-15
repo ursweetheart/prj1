@@ -321,3 +321,16 @@ CREATE TABLE IF NOT EXISTS nhat_ky_tai_khoan (
   sau jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Weekly report (change weekly-report; UC23, seq-18). One row per week, claimed before sending so a restart never sends twice.
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS nhan_bao_cao_tuan boolean NOT NULL DEFAULT true;
+CREATE TABLE IF NOT EXISTS bao_cao_tuan (
+  tuan_bat_dau date PRIMARY KEY,  -- the Monday (UTC+7) of the week reported
+  gui_luc timestamptz NOT NULL DEFAULT now(),
+  so_nguoi_nhan int NOT NULL DEFAULT 0,
+  so_loi int NOT NULL DEFAULT 0,
+  ket_qua text NOT NULL DEFAULT 'dang_gui'
+    CHECK (ket_qua IN ('dang_gui', 'da_gui', 'loi_mot_phan', 'loi', 'chi_ghi_log')),
+  tieu_de text,
+  noi_dung text
+);

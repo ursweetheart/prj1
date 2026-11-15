@@ -1,10 +1,14 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
+import asyncio
 import io
 import os
 import random
 import re
 import shutil
+import sys
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
@@ -23,7 +27,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
 from pipeline import (bo_suu_tap, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
-                      trends, vertex)
+                      trends, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -45,7 +49,41 @@ NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "c
 SPACE_TYPES = SpaceClassificationResult.model_fields["space_type"].annotation.__args__
 STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__args__
 
-app = FastAPI(title="D3 Studio AI")
+# ── Weekly report scheduler (UC23; seq-18 b1): checks 30 s after start, then every 10 minutes ─────────────
+WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
+
+
+def _weekly_once():
+    now = datetime.now(timezone.utc)
+    if weekly_report.due(now):
+        with _db() as c:
+            weekly_report.send_week(c, now)
+
+
+async def _weekly_loop():
+    await asyncio.sleep(WEEKLY_FIRST)
+    while True:
+        try:
+            await asyncio.to_thread(_weekly_once)
+        except Exception:
+            weekly_report.log.exception("weekly report check failed")
+        await asyncio.sleep(WEEKLY_EVERY)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    task = None
+    if os.getenv("D3_WEEKLY_REPORT", "on").lower() in ("off", "0", "false", "no"):
+        weekly_report.log.info("weekly report scheduler: off (D3_WEEKLY_REPORT)")
+    elif "pytest" not in sys.modules:  # tests call the module directly and must never send
+        weekly_report.log.info("weekly report scheduler: on (Monday from 08:00 UTC+7)")
+        task = asyncio.create_task(_weekly_loop())
+    yield
+    if task:
+        task.cancel()
+
+
+app = FastAPI(title="D3 Studio AI", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=auth.SECRET)  # only holds the OAuth state during Google sign-in
 if origins := [o.strip() for o in os.getenv("D3_CORS_ORIGINS", "").split(",") if o.strip()]:
     # the site on GitHub Pages calls this API from another origin; tokens travel in the Authorization header, so no cookies
@@ -764,6 +802,56 @@ def analytics_project(folder: str, days: int = 30, user=Depends(require(*PROJECT
     if out is None:
         raise HTTPException(404, "no published photo in this project")
     return out
+
+
+# ── Weekly report (UC23; seq-18): opt-out, log, preview, test send ─────────────
+REPORT_ROLES = ("sales", *APPROVERS)
+
+
+class WeeklyOptIn(BaseModel):
+    nhan: bool
+
+
+@app.get("/me/weekly-report")
+def weekly_opt_in(user=Depends(require(*REPORT_ROLES))):
+    with _db() as c:
+        return {"nhan": c.execute("SELECT nhan_bao_cao_tuan FROM app_user WHERE id=%s", (user["id"],)).fetchone()["nhan_bao_cao_tuan"]}
+
+
+@app.put("/me/weekly-report")
+def set_weekly_opt_in(body: WeeklyOptIn, user=Depends(require(*REPORT_ROLES))):
+    with _db() as c:
+        c.execute("UPDATE app_user SET nhan_bao_cao_tuan=%s WHERE id=%s", (body.nhan, user["id"]))
+    return {"nhan": body.nhan}
+
+
+@app.get("/reports/weekly")
+def weekly_history(user=Depends(require(*APPROVERS))):
+    """The last 8 weekly reports, newest first, without their text."""
+    with _db() as c:
+        return weekly_report.history(c)
+
+
+@app.get("/reports/weekly/preview")
+def weekly_preview(user=Depends(require(*APPROVERS))):
+    """This week's report (the last full week), built now, not sent."""
+    with _db() as c:
+        r = weekly_report.build(c, datetime.now(timezone.utc))
+        return {"tuan_bat_dau": r["tuan_bat_dau"], "tieu_de": r["tieu_de"], "noi_dung": r["noi_dung"],
+                "nguoi_nhan": len(weekly_report.recipients(c))}
+
+
+@app.post("/reports/weekly/test")
+def weekly_test(user=Depends(require(*APPROVERS))):
+    """A copy to the caller only; it does not count as the week's report."""
+    if not notify._smtp_ready():
+        raise HTTPException(409, "Chưa cấu hình email (D3_SMTP_HOST)")
+    try:
+        with _db() as c:
+            return weekly_report.send_week(c, datetime.now(timezone.utc), force_to=user["email"])
+    except Exception:
+        weekly_report.log.exception("weekly report: test send failed")
+        raise HTTPException(502, "Không gửi được email thử")
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────
 @app.get("/taxonomy")

@@ -256,6 +256,11 @@ export const sendBrief = body => request('POST', '/briefs', { body: { ...body, .
 export const getOverview = (days = 30) => get('/analytics/overview', { days })
 export const getProjectStats = (days = 30, cuaToi = false) => get('/analytics/projects', { days, ...(cuaToi ? { cua_toi: true } : {}) })
 export const getProjectDetail = (folder, days = 30) => get('/analytics/projects/' + encodeURIComponent(folder), { days })
+export const getWeeklyOptIn = () => get('/me/weekly-report')
+export const setWeeklyOptIn = nhan => request('PUT', '/me/weekly-report', { body: { nhan } })
+export const listWeeklyReports = () => get('/reports/weekly')
+export const previewWeeklyReport = () => get('/reports/weekly/preview')
+export const testWeeklyReport = () => request('POST', '/reports/weekly/test')
 /* Cost estimate (UC10) and its price table D8 */
 export const estimate = body => request('POST', '/estimates', { body })
 export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
