@@ -5,6 +5,7 @@
     <p class="lead" style="margin-top:10px">
       Điểm quan tâm theo từng giá trị phân loại: lượt xem × 1, lượt lưu × 3, ảnh gửi trong bộ sưu tập × 5, chỉ từ khách
       đã đồng ý. Xu hướng so 7 ngày gần nhất với trung bình 4 tuần trước đó.
+      Kết quả của từng dự án: <router-link to="/quan-tri/hieu-qua">Hiệu quả dự án</router-link>.
     </p>
 
     <p v-if="data?.co_du_lieu_mo_phong" class="tr-demo" role="note">

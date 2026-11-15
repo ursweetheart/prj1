@@ -58,7 +58,7 @@
       <div class="row g10" style="flex-wrap:wrap;align-items:center">
         <label v-if="canAdvance" class="row g10"><input type="checkbox" :checked="g.rows.every(r => selected.has(r.id))"
                @change="selectProject(g, $event.target.checked)" :aria-label="'Chọn cả dự án ' + g.project"></label>
-        <h2 class="h-4" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
+        <h2 :id="'p-' + g.project" class="h-4 rv-anchor" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
         <template v-if="isStaff">
           <select v-for="d in humanDims" :key="d.id" :value="projectTags[g.project + d.id] || ''" :aria-label="d.label + ' cho cả dự án'"
                   @change="projectTags[g.project + d.id] = $event.target.value">
@@ -163,6 +163,7 @@
 
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   APPROVERS, NEXT_STATUS, RETURNABLE, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
   imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, uploadAll
@@ -170,7 +171,10 @@ import {
 
 const HUMAN = ['loai_cong_trinh', 'muc_dau_tu'] // the AI cannot see these; staff fill them per project
 
-const status = ref('draft')
+/* /quan-tri#p-<folder> (from the project results page): open the published tab and scroll to that project */
+const route = useRoute()
+const target = ref(route.hash.startsWith('#p-') ? decodeURIComponent(route.hash.slice(3)) : '')
+const status = ref(target.value ? 'published' : 'draft')
 const rows = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -195,6 +199,12 @@ async function load() {
       .map(r => ({ ...r, materialsText: (r.materials || []).join(', ') }))
   } catch (e) { error.value = e.message; rows.value = [] }
   finally { loading.value = false }
+  if (target.value) {
+    await nextTick()
+    const h = document.getElementById('p-' + target.value)
+    if (h) { h.scrollIntoView({ block: 'start' }); h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }) }
+    target.value = ''
+  }
 }
 
 async function run(fn) {
@@ -321,6 +331,8 @@ getTaxonomy()
 </script>
 
 <style scoped>
+.rv-anchor { scroll-margin-top: 232px } /* below the fixed header, as .page-top */
+@media (min-width: 1024px) { .rv-anchor { scroll-margin-top: 128px } }
 select, .txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
   padding: 10px 12px; min-height: 42px; max-width: 100%; color-scheme: dark }
 select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }

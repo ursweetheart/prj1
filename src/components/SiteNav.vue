@@ -49,7 +49,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { APPROVERS, EDITORS, SALES, hasRole, logout, session } from '@/api'
+import { APPROVERS, EDITORS, SALES, STAFF, hasRole, logout, session } from '@/api'
 import { ai, aiAvailable } from '@/lib/projectSpaces'
 import { collection } from '@/lib/collection'
 import BrandMark from './BrandMark.vue'
@@ -80,7 +80,8 @@ const roleLinks = computed(() => [
   hasRole(['content', ...APPROVERS]) && { to: '/quan-tri/tri-thuc', label: 'Tri thức' },
   hasRole(['admin']) && { to: '/quan-tri/tai-khoan', label: 'Tài khoản' },
   hasRole(SALES) && { to: '/khach-hang', label: 'Khách hàng' },
-  hasRole(SALES) && { to: '/quan-tri/xu-huong', label: 'Xu hướng' }
+  hasRole(SALES) && { to: '/quan-tri/xu-huong', label: 'Xu hướng' },
+  hasRole([...STAFF, 'sales']) && { to: '/quan-tri/hieu-qua', label: 'Hiệu quả dự án' }
 ].filter(Boolean))
 
 const onStaffPage = computed(() => roleLinks.value.some(l => route.path === l.to))

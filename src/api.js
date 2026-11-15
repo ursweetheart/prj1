@@ -254,6 +254,8 @@ export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 /* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
 export const getOverview = (days = 30) => get('/analytics/overview', { days })
+export const getProjectStats = (days = 30, cuaToi = false) => get('/analytics/projects', { days, ...(cuaToi ? { cua_toi: true } : {}) })
+export const getProjectDetail = (folder, days = 30) => get('/analytics/projects/' + encodeURIComponent(folder), { days })
 /* Cost estimate (UC10) and its price table D8 */
 export const estimate = body => request('POST', '/estimates', { body })
 export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })

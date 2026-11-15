@@ -22,7 +22,8 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import bo_suu_tap, discovery, estimate, knowledge, leads, notify, quiz, taxonomy, taxonomy_admin, trends, vertex
+from pipeline import (bo_suu_tap, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+                      trends, vertex)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -735,6 +736,34 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
     with _db() as c:
         return trends.overview(c, days)
 
+
+
+# ── Project results (BFD 5.4; act-1 30-day check; roadmap 3.5) ────────────────
+PROJECT_STATS_ROLES = ("sales", *STAFF)
+
+
+def _stats_days(days: int) -> int:
+    if days not in (30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 30 or 90", "type": "value_error"}])
+    return days
+
+
+@app.get("/analytics/projects")
+def analytics_projects(days: int = 30, cua_toi: bool = False, user=Depends(require(*PROJECT_STATS_ROLES))):
+    """One row per project with published photos: views, saves, leads and the 30-day status. Counts only."""
+    with _db() as c:
+        return project_stats.overview(c, _stats_days(days), user["id"] if cua_toi else None)
+
+
+@app.get("/analytics/projects/{folder}")
+def analytics_project(folder: str, days: int = 30, user=Depends(require(*PROJECT_STATS_ROLES))):
+    """One project's photos (most viewed first) and the suggestions that apply."""
+    days = _stats_days(days)
+    with _db() as c:
+        out = project_stats.detail(c, folder, days)
+    if out is None:
+        raise HTTPException(404, "no published photo in this project")
+    return out
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────
 @app.get("/taxonomy")
