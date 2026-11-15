@@ -182,3 +182,43 @@ def notify_returned(items, by: str):
                             to or "không rõ người tải lên", "; ".join(f"{KIND_VI.get(r[2], r[2])}: {r[3]}" for r in rows))
     except Exception:
         review_log.exception("could not notify about returned photos")
+
+
+# ── Password links (change account-invites-reset; UC24, seq-19 b7, b10) ─────────────────────────────────
+auth_log = logging.getLogger("d3.auth")
+auth_log.setLevel(logging.INFO)
+if not auth_log.handlers:
+    _ah = logging.StreamHandler()
+    _ah.setFormatter(logging.Formatter("%(levelname)s:     %(name)s %(message)s"))
+    auth_log.addHandler(_ah)
+ROLE_VI = {"visitor": "Khách", "architect": "Kiến trúc sư", "content": "Nội dung", "sales": "Kinh doanh",
+           "lead_architect": "KTS trưởng", "admin": "Quản trị viên"}
+
+
+def send_invitation(email: str, role: str, link: str, by: str) -> bool:
+    """True when emailed. Without SMTP the caller shows the link to the admin instead (never logged)."""
+    if not _smtp_ready():
+        auth_log.info("invitation for %s created by %s; email not configured, link shown to the admin", email, by)
+        return False
+    try:
+        _send(email, "D3 Studio mời bạn tham gia",
+              f"Chào bạn,\n\n{by} mời bạn tham gia trang quản trị D3 Studio với vai trò {ROLE_VI.get(role, role)}.\n\n"
+              f"Đặt mật khẩu để kích hoạt tài khoản (liên kết dùng được một lần, trong 72 giờ):\n{link}\n\n"
+              "Nếu bạn không chờ lời mời này, hãy bỏ qua thư.\n\nD3 Studio")
+    except Exception:  # the account exists already: the admin gets the link to pass on instead
+        auth_log.exception("invitation for %s: could not send", email)
+        return False
+    return True
+
+
+def send_reset(user_id: int, email: str, link: str):
+    """Background task; never raises. Without SMTP the link goes to the server log (dev / demo only)."""
+    try:
+        if not _smtp_ready():
+            auth_log.info("password reset for account #%s (email not configured): %s", user_id, link)
+            return
+        _send(email, "Đặt lại mật khẩu D3 Studio",
+              f"Chào bạn,\n\nĐặt lại mật khẩu tại liên kết dưới đây (dùng được một lần, trong 1 giờ):\n{link}\n\n"
+              "Nếu không phải bạn yêu cầu, hãy bỏ qua thư này; mật khẩu hiện tại vẫn giữ nguyên.\n\nD3 Studio")
+    except Exception:
+        auth_log.exception("password reset for account #%s: could not send", user_id)

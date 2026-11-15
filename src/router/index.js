@@ -41,6 +41,8 @@ const router = createRouter({
       component: () => import('@/views/SpaceView.vue')
     },
     { path: '/dang-nhap', name: 'dang-nhap', component: () => import('@/views/LoginView.vue') },
+    { path: '/quen-mat-khau', name: 'quen-mat-khau', component: () => import('@/views/ForgotPasswordView.vue') },
+    { path: '/dat-mat-khau', name: 'dat-mat-khau', component: () => import('@/views/SetPasswordView.vue') },
     { path: '/quan-tri', name: 'quan-tri', meta: { roles: EDITORS }, component: () => import('@/views/ReviewView.vue') },
     { path: '/quan-tri/phan-loai', name: 'phan-loai', meta: { roles: APPROVERS }, component: () => import('@/views/TaxonomyView.vue') },
     { path: '/khach-hang', name: 'khach-hang', meta: { roles: SALES }, component: () => import('@/views/LeadsView.vue') }

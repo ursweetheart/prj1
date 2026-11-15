@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from psycopg.errors import UniqueViolation
@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr, Field
 
-from pipeline import accounts
+from pipeline import accounts, notify, password_links
 from pipeline.store import DSN
 from ratelimit import limit
 
@@ -163,6 +163,91 @@ def lock_user(user_id: int, body: LockBody, me=Depends(require("admin"))):
 @router.post("/users/{user_id}/unlock")
 def unlock_user(user_id: int, me=Depends(require("admin"))):
     return _accounts(lambda c: accounts.unlock(c, me, user_id))
+
+
+# ---- Invitations and password links (account-invites-reset; UC24, seq-19 b1-14) ----
+class InviteBody(BaseModel):
+    email: EmailStr
+    role: str
+
+
+def _invited(me, user, code) -> dict:
+    """Email the link; without SMTP give it to the admin to pass on (it is never logged)."""
+    link = password_links.link_url(code)
+    sent = notify.send_invitation(user["email"], user["role"], link, me["email"])
+    return {"user": user, "gui_email": sent, **({} if sent else {"link": link})}
+
+
+@router.post("/users/invite", status_code=201)
+def invite_user(body: InviteBody, me=Depends(require("admin"))):
+    """Create the account with its role and no password, and send it an invitation link (72 h, single use)."""
+    user, code = _accounts(lambda c: accounts.invite(c, me, body.email, body.role))
+    return _invited(me, user, code)
+
+
+@router.post("/users/{user_id}/invite/resend")
+def resend_invite(user_id: int, me=Depends(require("admin"))):
+    user, code = _accounts(lambda c: accounts.resend(c, me, user_id))
+    return _invited(me, user, code)
+
+
+@router.post("/users/{user_id}/invite/cancel")
+def cancel_invite(user_id: int, me=Depends(require("admin"))):
+    """Every link stops working and the account is locked with the reason "Huỷ lời mời" (kept for the log)."""
+    return {"user": _accounts(lambda c: accounts.cancel(c, me, user_id))}
+
+
+class ForgotBody(BaseModel):
+    email: EmailStr
+
+
+FORGOT_MSG = "Nếu email này có tài khoản, một liên kết đặt lại mật khẩu đã được gửi. Liên kết dùng được trong 1 giờ."
+
+
+@router.post("/auth/forgot", status_code=202, dependencies=[Depends(limit("forgot", 5, 600))])
+def forgot(body: ForgotBody, tasks: BackgroundTasks):
+    """Always the same answer, so it never tells whether an account exists; the mail goes out in the background."""
+    email = body.email.lower()
+    with _conn() as c:
+        u = c.execute("SELECT id FROM app_user WHERE email = %s AND NOT bi_khoa", (email,)).fetchone()
+        if u and not email.endswith(".invalid"):
+            code = password_links.issue(c, u["id"], "dat_lai")
+            tasks.add_task(notify.send_reset, u["id"], email, password_links.link_url(code))
+    return {"message": FORGOT_MSG}
+
+
+class LinkBody(BaseModel):
+    ma: str = Field(max_length=200)
+
+
+class SetPasswordBody(LinkBody):
+    mat_khau: str = Field(min_length=8, max_length=128)
+
+
+def _gone(e: password_links.LinkError):
+    return HTTPException(410, {"ly_do": e.reason, "msg": str(e)})
+
+
+@router.post("/auth/link-info", dependencies=[Depends(limit("link_info", 20, 60))])
+def link_info(body: LinkBody):
+    """What a link is for (invitation or reset) and whose it is, the email partly hidden; 410 with the reason if unusable."""
+    try:
+        with _conn() as c:
+            link = password_links.check(c, body.ma)
+    except password_links.LinkError as e:
+        raise _gone(e)
+    return {"loai": link["loai"], "email_an": password_links.mask(link["email"])}
+
+
+@router.post("/auth/set-password", dependencies=[Depends(limit("set_password", 10, 60))])
+def set_password(body: SetPasswordBody):
+    """Set the password from a link and sign in; a reset ends the account's other sessions."""
+    try:
+        with _conn() as c:
+            link = password_links.use(c, body.ma, _hasher.hash(body.mat_khau))
+    except password_links.LinkError as e:
+        raise _gone(e)
+    return {"access_token": make_token(link["user_id"]), "token_type": "bearer"}
 
 
 # ---- Google sign-in (authorization-code flow with OIDC) ----

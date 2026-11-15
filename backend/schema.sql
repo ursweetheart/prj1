@@ -387,3 +387,18 @@ ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS trang text;
 ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS doi_tuong text;
 ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS thoi_gian_dung_ms int;
 ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS do_sau_cuon real;
+
+-- Password links (change account-invites-reset; UC24, seq-19 b7-11): invitation (72 h) and reset (1 h) links, single use.
+-- Only a sha256 of the random code is stored; issuing a link voids the account's earlier active links.
+CREATE TABLE IF NOT EXISTS ma_dat_mat_khau (
+  id serial PRIMARY KEY,
+  tai_khoan_id int NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  loai text NOT NULL CHECK (loai IN ('moi', 'dat_lai')),
+  ma_bam text NOT NULL UNIQUE,
+  het_han timestamptz NOT NULL,
+  da_dung timestamptz,
+  da_huy timestamptz,
+  tao_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ma_dat_mat_khau_tai_khoan ON ma_dat_mat_khau (tai_khoan_id);

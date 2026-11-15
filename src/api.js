@@ -91,6 +91,18 @@ export function adoptTokenFromHash() {
   setToken(m[1])
   history.replaceState(null, '', location.pathname + location.search)
 }
+/* account-invites-reset: invitations (admin) and password links (public). The link code travels in the body, never the URL */
+export const inviteUser = (email, role) => request('POST', '/users/invite', { body: { email, role } })
+export const resendInvite = id => request('POST', '/users/' + id + '/invite/resend')
+export const cancelInvite = id => request('POST', '/users/' + id + '/invite/cancel')
+export const forgotPassword = email => request('POST', '/auth/forgot', { body: { email } })
+export const linkInfo = ma => request('POST', '/auth/link-info', { body: { ma } })
+export async function setPasswordFromLink(ma, matKhau) {
+  const r = await request('POST', '/auth/set-password', { body: { ma, mat_khau: matKhau } })
+  setToken(r.access_token)
+  return loadUser()
+}
+
 export async function login(email, password) {
   const res = await fetch(API + '/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
   if (!res.ok) {
