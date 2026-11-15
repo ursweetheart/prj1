@@ -141,7 +141,8 @@ def confirm_to_visitor(lead_id: int):
 
 
 # ── Review: photos sent back (change review-return-reject; seq-6 b12) ───────────────────────────────────
-KIND_VI = {"tra_ve": "Trả về nháp", "noi_bo": "Lưu nội bộ (không xuất bản)", "mo_lai": "Mở lại"}
+KIND_VI = {"tra_ve": "Trả về nháp", "noi_bo": "Lưu nội bộ (không xuất bản)", "mo_lai": "Mở lại",
+           "go_xuong": "Gỡ khỏi website, về nháp để sửa", "go_noi_bo": "Gỡ khỏi website, lưu nội bộ"}
 review_log = logging.getLogger("d3.review")
 review_log.setLevel(logging.INFO)
 if not review_log.handlers:

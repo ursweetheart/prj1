@@ -213,6 +213,8 @@ export const RETURNABLE = ['in_review', 'approved', 'cleared']
 export const returnSpaces = (ids, lyDo) => request('POST', '/spaces/return', { body: { space_ids: ids, ly_do: lyDo } })
 export const keepInternal = (ids, lyDo) => request('POST', '/spaces/keep-internal', { body: { space_ids: ids, ly_do: lyDo } })
 export const reopenSpaces = (ids, lyDo) => request('POST', '/spaces/reopen', { body: { space_ids: ids, ly_do: lyDo } })
+/* unpublish-photos: published -> draft (to fix) or noi_bo (the client withdrew consent), always with a reason */
+export const unpublishSpaces = (ids, lyDo, giuNoiBo = false) => request('POST', '/spaces/unpublish', { body: { space_ids: ids, ly_do: lyDo, giu_noi_bo: giuNoiBo } })
 export const EDITORS = [...STAFF, 'content'] // content may only edit caption / alt text of spaces in review
 
 export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })

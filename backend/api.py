@@ -144,7 +144,7 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
             f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
             + (", ly_do_duyet" if staff else "") + " "  # the review reason is staff-only
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
-            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai')) "
+            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
             {"t": space_type, "s": design_style, "r": review_status, "i": id_list, "rv": tra_ve and staff,
@@ -317,6 +317,9 @@ BACK = {  # action: (allowed source statuses, target status, reason kind, log ac
     "return": (RETURNABLE, "draft", "tra_ve", "return"),
     "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
     "reopen": ({"noi_bo"}, "draft", "mo_lai", "reopen"),
+    # unpublish-photos: a published photo taken down, to fix it (draft) or because the client withdrew consent (noi_bo)
+    "unpublish": ({"published"}, "draft", "go_xuong", "unpublish"),
+    "unpublish_internal": ({"published"}, "noi_bo", "go_noi_bo", "unpublish"),
 }
 STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
              "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
@@ -369,6 +372,16 @@ def keep_internal(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*
 def reopen_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
     """"Mở lại": noi_bo -> draft."""
     return _move_back("reopen", body, user, tasks)
+
+
+class Unpublish(MoveBack):
+    giu_noi_bo: bool = False  # True: the client withdrew consent -> "Lưu nội bộ"; False: back to draft to fix
+
+
+@app.post("/spaces/unpublish")
+def unpublish_spaces(body: Unpublish, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Gỡ khỏi website": published -> draft or noi_bo, with a reason; separate from "Trả về nháp" on purpose."""
+    return _move_back("unpublish_internal" if body.giu_noi_bo else "unpublish", body, user, tasks)
 
 
 AI_DIMS = {"khong_gian", "phong_cach", "tong_mau", "vat_lieu"}  # mirrored from space columns by sync_ai_tags
