@@ -298,7 +298,23 @@ async function dismiss(g) {
   if (await act(() => dismissGaps(g.ids))) { note.value = `Đã bỏ qua “${g.cau_hoi}”.`; await load() }
 }
 
-onMounted(load)
+/* /quan-tri/tri-thuc#soan=<question> (from a conversation, chat-history): answer the matching open group, so its
+   questions close when the entry goes live; otherwise a plain new entry from the question */
+const words = t => ((t || '').toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .match(/[a-z0-9]+/g) || []).join(' ')
+async function answerFromHash() {
+  if (!route.hash.startsWith('#soan=')) return
+  let question = ''
+  try { question = decodeURIComponent(route.hash.slice(6)).trim() } catch { /* malformed: ignore */ }
+  await router.replace({ query: route.query, hash: '' })
+  if (!question) return
+  const group = gaps.value.find(g => words(g.cau_hoi) === words(question))
+  if (group) return answerGap(group)
+  await select('muc')
+  startNew({ title: question.slice(0, 200), cum_tu_khop: question.slice(0, 500) })
+}
+
+onMounted(async () => { await load(); await answerFromHash() })
 </script>
 
 <style scoped>

@@ -26,7 +26,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import (bo_suu_tap, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (bo_suu_tap, conversations, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       trends, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -53,8 +53,19 @@ STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__arg
 WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
 
 
+_last_purge = None
+
+
 def _weekly_once():
+    """The maintenance check: the weekly report when due, and once a day the 90-day conversation purge."""
+    global _last_purge
     now = datetime.now(timezone.utc)
+    if _last_purge is None or (now - _last_purge).total_seconds() >= 86400:
+        with _db() as c:
+            n = conversations.purge(c)
+        _last_purge = now
+        if n:
+            weekly_report.log.info("purged %d conversations older than %d days", n, conversations.KEEP_DAYS)
     if weekly_report.due(now):
         with _db() as c:
             weekly_report.send_week(c, now)
@@ -442,16 +453,71 @@ class Chat(BaseModel):
     contact: Optional[str] = Field(default=None, max_length=200)
     phien_id: Optional[str] = Field(default=None, pattern=PHIEN)
     gui_ho_so: bool = False                          # "gửi kèm những không gian tôi đã xem", ticked in the chat
+    hoi_thoai_id: Optional[str] = Field(default=None, max_length=64)  # the stored conversation (chat-history)
 
 
 @app.post("/chat", dependencies=[Depends(limit("chat", 20, 60))])
 def chat(body: Chat, tasks: BackgroundTasks):
-    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
-    out = respond(body.message, body.history, body.contact, body.phien_id, body.gui_ho_so)
+    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect.
+    Every turn is stored (masked, anonymous unless the session is a consented one) and the constraints the visitor
+    gave earlier in the conversation carry over (chat-history)."""
+    with _db() as c:
+        hid, rang_buoc, stored = conversations.start_or_get(c, body.hoi_thoai_id, body.phien_id)
+        # the server's own turns once there are any; the lead keeps what the visitor saw, unmasked
+        out = respond(body.message, stored or body.history, body.contact, body.phien_id, body.gui_ho_so,
+                      rang_buoc=rang_buoc, lead_history=body.history or stored)
+        conversations.add_turn(c, hid, body.message, out["answer"], out["sources"], out.get("diem_cao_nhat"),
+                               out["answered"], out["rang_buoc"])
+        if out.get("lead_id"):
+            conversations.link_lead(c, hid, out["lead_id"], handoff=not out["answered"])
     if out.get("lead_id"):
         tasks.add_task(notify.notify_new_lead, out["lead_id"])
+    return {**out, "hoi_thoai_id": hid}
+
+
+@app.get("/chat/{hid}", dependencies=[Depends(limit("chat", 20, 60))])
+def chat_read(hid: str):
+    """A visitor's own conversation; the random id is the only key. Masked text, no photos."""
+    with _db() as c:
+        out = conversations.read(c, hid)
+    if out is None:
+        raise HTTPException(404, "no such conversation")
     return out
 
+
+@app.delete("/chat/{hid}", status_code=204, dependencies=[Depends(limit("chat", 20, 60))])
+def chat_delete(hid: str):
+    """"Bắt đầu cuộc mới": the old conversation is removed from the server."""
+    with _db() as c:
+        conversations.delete(c, hid)
+    return Response(status_code=204)
+
+
+
+# ── Conversations for staff (chat-history): how the assistant answers ─────────
+CONVERSATION_ROLES = ("content", "sales", *APPROVERS)
+
+
+@app.get("/conversations")
+def conversations_list(loc: str = "tat_ca", days: int = 30, offset: int = Query(0, ge=0),
+                       user=Depends(require(*CONVERSATION_ROLES))):
+    """Newest first, 50 a page. loc: tat_ca | chua_tra_loi | lead. Masked text, no session id, no contact."""
+    if loc not in conversations.FILTERS:
+        raise HTTPException(422, [{"loc": ["query", "loc"], "msg": "loc must be tat_ca, chua_tra_loi or lead", "type": "value_error"}])
+    if days not in (7, 30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return conversations.list_for_staff(c, loc, days, offset)
+
+
+@app.get("/conversations/{hid}")
+def conversation_detail(hid: str, user=Depends(require(*CONVERSATION_ROLES))):
+    """Messages with each answer's sources and score, the collected constraints, the handoff flag and the lead id."""
+    with _db() as c:
+        out = conversations.detail_for_staff(c, hid)
+    if out is None:
+        raise HTTPException(404, "no such conversation")
+    return out
 
 # ── Lead intake (UC11, seq-5, dfd-2-4) ─────────────────────────────────────────
 PHONE_SEPARATORS = re.compile(r"[\s.\-()]")

@@ -155,6 +155,7 @@ docker compose down                 # tắt; dữ liệu vẫn còn trong volume
 - Trạng thái «Cần xem lại» ở `/quan-tri/hieu-qua` chỉ xét dự án đã đăng ≥ 30 ngày. Để demo ngay, đặt `D3_PROJECT_REVIEW_DAYS=0` trong `backend/.env` rồi khởi động lại backend (bỏ đi khi dùng thật).
 - **Báo cáo tuần** tự chạy trong backend: thứ Hai từ 8:00 (UTC+7), kiểm tra 30 giây sau khi khởi động rồi 10 phút một lần. Lần khởi động đầu tiên sau khi cài sẽ gửi ngay báo cáo của tuần trước nếu đã qua 8:00 thứ Hai. Chưa có SMTP thì xem báo cáo trong `docker compose logs backend | grep d3.report` hoặc bấm «Xem trước» ở `/quan-tri/xu-huong`. Tắt hẳn bộ lập lịch: `D3_WEEKLY_REPORT=off` trong `backend/.env`.
 - **Thông tin studio** (trang `/lien-he`, `/ve-chung-toi`) nằm ở `src/data/studio.js`. Mỗi giá trị có `mau: true` hiện nhãn «Thông tin mẫu» và không thành link gọi / mail / Zalo / bản đồ. Khi có thông tin thật: sửa `gia_tri`, đặt `mau: false`. Sửa quy trình thì sửa cả mục «Quy trình làm việc với D3 Studio» ở `/quan-tri/tri-thuc` cho khớp.
+- **Hội thoại trợ lý** lưu ẩn danh, tự xoá sau 90 ngày không có tin nhắn mới (kiểm tra mỗi ngày trong vòng lặp bảo trì của backend). Số điện thoại và email khách gõ vào chat được che trước khi lưu; khách tiềm năng vẫn giữ liên hệ thật như trước.
 - Email báo lead mới cho sales: điền `D3_SMTP_*` và `D3_SALES_EMAIL` trong `backend/.env` (mẫu ở `.env.example`). Bỏ trống thì lead chỉ ghi log và hiện "mới" ở `/khach-hang`, demo vẫn chạy.
 - Cổng 8001 vẫn mở vì callback đăng nhập Google/Facebook đã đăng ký ở `localhost:8001`.
 - Cổng 8000 để trống cho việc khác (crawl).
@@ -256,7 +257,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | :-- | :-- | :-- |
 | `seq-1-gan-nhan-tu-dong` | UC25, UC26 | Có |
 | `seq-2-tim-khong-gian-tuong-tu` | UC03 | Có |
-| `seq-3-hoi-dap-tro-ly-rag` | UC09 | Có |
+| `seq-3-hoi-dap-tro-ly-rag` | UC09 | Có; bước 18 (lưu hội thoại và thuộc tính khách nói) từ change `chat-history`. Bước 15 (chủ đề cấm) chưa |
 | `seq-4-ghi-nhan-hanh-vi` | UC21 | Một phần: xem và lưu ảnh (`luu_anh`); tính khi mở bảng điều khiển, chưa có tiến trình hằng đêm |
 | `seq-5-gui-form-lien-he` | UC11 | Một phần (qua chat) |
 | `seq-6-duyet-va-xuat-ban` | UC14 | Có; nhánh từ chối (bước 9–12) có từ change `review-return-reject`. Bước 18 (sitemap) chưa |
@@ -323,7 +324,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | :-- | :-- | :-- | :-- | :-- |
 | UC07 | Lưu ảnh vào bộ sưu tập | **Có** | tim trên thẻ `/khong-gian` và trang không gian (`SaveHeart.vue`), `lib/collection.js`: chưa đăng nhập giữ trong trình duyệt, đăng nhập thì lưu ở bảng `bo_suu_tap` và gộp bản trình duyệt; trang `/bo-suu-tap` có ghi chú từng ảnh, tối đa 60 ảnh. **Tùng lưu ý:** tim nằm trên `SpaceTile.vue` (bọc thêm một `div`, link giữ nguyên) và hàng tiêu đề `SpaceView.vue` | Chưa có tim trong Lightbox trang dự án (chờ ảnh dự án được nạp thành không gian). `useMoodboard.js` + `SpaceCard.vue` là code cũ không còn trang nào dùng |
 | UC08 | Gửi bộ sưu tập làm brief | **Có** | `BriefForm.vue` → `POST /briefs` (không cần tài khoản): bản sao cố định + link chỉ xem `/bo-suu-tap/xem/<mã>`, lead nguồn `brief` kèm loại nhà, diện tích, ngân sách, tóm tắt "Wabi-sabi 60% · tông Ấm · phòng khách"; email cho sales và khách kèm link | Chưa có chia sẻ bộ sưu tập đang lưu (chỉ bản đã gửi) |
-| UC09 | Hỏi trợ lý ảo | **Xong** | `POST /chat`, `ChatWidget.vue`. Trả lời từ kho tri thức, sau đó từ mô tả ảnh đã đăng; kèm ảnh nguồn; dưới ngưỡng thì chuyển KTS; chặn câu trả lời có số tiền hay cam kết | Kho tri thức đang là **dữ liệu mẫu** (`kb/sample.json`), cần bảng giá và FAQ thật. Chưa lưu lịch sử hội thoại riêng |
+| UC09 | Hỏi trợ lý ảo | **Xong** | `POST /chat`, `ChatWidget.vue`. Trả lời từ kho tri thức, sau đó từ mô tả ảnh đã đăng; kèm ảnh nguồn; dưới ngưỡng thì chuyển KTS; chặn câu trả lời có số tiền hay cam kết. **Lịch sử hội thoại** (change `chat-history`): mọi hội thoại lưu ẩn danh 90 ngày (bảng `hoi_thoai`, `tin_nhan`; số điện thoại và email trong tin nhắn được che; chỉ gắn phiên khi khách đồng ý), khung chat khôi phục khi tải lại (đồng ý: cả lần sau), «Bắt đầu cuộc mới» xoá hội thoại cũ; trợ lý nhớ loại công trình, không gian, diện tích, phong cách khách đã nói trong cả cuộc trò chuyện. Nhân viên xem ở `/quan-tri/hoi-thoai` | Kho tri thức đang là **dữ liệu mẫu** (`kb/sample.json`), cần bảng giá và FAQ thật. Chưa có kiểm tra chủ đề cấm (seq-3 bước 15) |
 | UC10 | Ước tính chi phí sơ bộ | **Có (đơn giá mẫu)** | `/uoc-tinh`: loại nhà, diện tích, số phòng ngủ, gói vật liệu → khoảng giá + bóc tách 4 hạng mục, công thức cố định trên bảng `don_gia` (`pipeline/estimate.py`); dự án cùng loại; "Nhận bản chi tiết qua email" → lead nguồn `estimate` + email bóc tách. KTS trưởng sửa giá ở `/quan-tri/don-gia` | **D3 chưa có bảng giá: 60 ô đang là giá MẪU tự đặt (`nguon='mau'`, trang ghi rõ "Đơn giá mẫu"). Phải thay bằng giá thật ở `/quan-tri/don-gia` trước khi dùng thật.** Chưa gợi ý dự án theo ngân sách (dự án chưa có khoảng đầu tư) |
 | UC11 | Gửi yêu cầu tư vấn | **Có** | `POST /leads` + `ContactForm.vue` (≤ 5 trường, chống spam, hồ sơ hành vi khi khách đồng ý 2 lần) ở cuối trang dự án và ở trang `/lien-he` (lead ghi trang `/lien-he`); chat chuyển tiếp dùng chung luồng; email cho sales khi có SMTP | Chưa gửi SMS |
 
@@ -440,7 +441,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 2.5 | ✓ **Trắc nghiệm phong cách** (change `style-quiz`): chọn ảnh thích → gợi ý phong cách và không gian phù hợp (embedding SigLIP2), lưu kết quả vào tài khoản | seq-12 | còn: gợi ý dự án khi đã nối ảnh dự án ↔ không gian |
 | 2.6 | Trang chi tiết dự án đầy đủ: bảng thông số, thuyết minh, dải màu, vật liệu chính, before/after Concept ↔ Thực tế, "dự án tương tự" | seq-10, class-1 | đủ các mục của M2 |
 | 2.7 | Sắp xếp kết quả lọc (mới nhất, phổ biến) | BFD 1.2 | |
-| 2.8 | Trợ lý: lọc theo metadata (diện tích, loại công trình khách nói), lưu lịch sử hội thoại (bảng HoiThoai/TinNhan) | seq-3, class-4 | |
+| 2.8 | ✓ Trợ lý **nhớ ràng buộc** (loại công trình, không gian, diện tích, phong cách) trong cả hội thoại và **lưu lịch sử hội thoại** (bảng `hoi_thoai` / `tin_nhan`, change `chat-history`), trang nhân viên `/quan-tri/hoi-thoai` | seq-3, class-4 | còn: hội thoại theo tài khoản trên nhiều thiết bị |
 
 ### Giai đoạn 3: Vòng lặp phản hồi (trục 3)
 
@@ -475,7 +476,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 5. **Rate limit lưu trong bộ nhớ** và tính theo IP. Khởi động lại là mất; phía sau proxy cần đọc `X-Forwarded-For` (`backend/ratelimit.py`).
 6. **`D3_JWT_SECRET`** phải được đặt trong `.env`. Nếu không, mỗi lần khởi động lại backend mọi người bị đăng xuất. Script chạy ngoài Docker (vd `set_role.py`) có in cảnh báo này nhưng không ảnh hưởng.
 7. **Backend Docker chạy CPU**: ingest chậm (vài giây mỗi ảnh). Muốn nhanh thì chạy backend ngoài Docker với GPU.
-8. **Hội thoại chỉ lưu trong `lead.conversation`**, không có bảng HoiThoai/TinNhan riêng như class diagram.
+8. **Câu hỏi chưa trả lời được** ghi vào `khoang_trong_tri_thuc` nguyên văn (chưa che số điện thoại / email như `tin_nhan`).
 9. **Hotspot chỉ có nhãn chữ**, chưa trỏ tới bản ghi món đồ.
 10. **Tài khoản thử `qt01-walk@example.com`** (lead_architect) tạo khi chạy thử quy trình duyệt. Tài khoản này được giữ vì `review_log` tham chiếu tới. Nên hạ xuống `visitor` khi demo thật: làm ở `/quan-tri/tai-khoan`.
 11. **Quyền công bố 9 ảnh đã đăng** được tick để demo (ảnh lấy từ Behance). Khi dùng thật phải xin quyền khách.
@@ -529,7 +530,10 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/spaces/return`, `/spaces/keep-internal`, `/spaces/reopen` | approver | trả về nháp (từ chờ duyệt / đã duyệt / đã xác nhận quyền), lưu nội bộ (từ đã duyệt / đã xác nhận quyền), mở lại (từ lưu nội bộ); `{space_ids, ly_do}` lý do 5–500 ký tự, tất cả hoặc không; báo người tải ảnh lên qua email hoặc log |
 | PUT | `/spaces/tags` | staff | gắn tag theo ảnh hoặc cả dự án |
 | POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
-| POST | `/chat` | công khai, 20/phút | trợ lý |
+| POST | `/chat` | công khai, 20/phút | trợ lý; nhận và trả `hoi_thoai_id`, lưu từng lượt (đã che liên hệ) |
+| GET / DELETE | `/chat/{id}` | ai có id | đọc lại / xoá hội thoại của mình (id ngẫu nhiên 32 ký tự) |
+| GET | `/conversations?loc=tat_ca\|chua_tra_loi\|lead&days=7\|30\|90` | content, sales, approver | danh sách hội thoại, 50 mỗi trang, không có phiên hay liên hệ |
+| GET | `/conversations/{id}` | content, sales, approver | tin nhắn, nguồn và điểm từng câu trả lời, ràng buộc, lead |
 | GET / POST | `/knowledge` | content, approver | danh sách mục tri thức (`?q=&trang_thai=`, kèm `can_duyet_gia`, `mau`, `ai`, `lien_ket`) / tạo mục (nháp hoặc chờ duyệt) |
 | GET / PATCH | `/knowledge/{id}` | content, approver | xem / sửa (tính lại embedding; NV nội dung sửa giá mục đang dùng → chờ duyệt) |
 | POST | `/knowledge/{id}/status` | content, approver | đổi trạng thái; bật mục có giá chỉ approver (403); bật nháp AI thì bỏ dấu |

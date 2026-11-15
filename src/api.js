@@ -235,8 +235,17 @@ export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o 
 }))
 export const listLeads = (params = {}) => get('/leads', params)
 /* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
-export const sendChat = (message, history, contact, sendViews = false) =>
-  request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}), ...viewsConsent(sendViews) } })
+/* chat-history: the conversation id goes with every message; the session id goes whenever the banner was accepted
+   (as /events does) so the conversation is linked, while a lead still attaches views only when the box is ticked */
+export const sendChat = (message, history, contact, sendViews = false, hoiThoaiId = null) => {
+  const phien = consent.get() === 'yes' && visitId()
+  return request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}),
+    ...(hoiThoaiId ? { hoi_thoai_id: hoiThoaiId } : {}), ...(phien ? { phien_id: phien } : {}), gui_ho_so: !!(phien && sendViews) } })
+}
+export const getChat = id => get('/chat/' + encodeURIComponent(id))
+export const deleteChat = id => request('DELETE', '/chat/' + encodeURIComponent(id))
+export const listConversations = (params = {}) => get('/conversations', params)
+export const getConversation = id => get('/conversations/' + encodeURIComponent(id))
 /* Saved collection (UC07) and design brief (UC08). The browser-or-account switch lives in lib/collection.js */
 export const getMyCollection = () => get('/collections/me')
 export const saveToCollection = (spaceId, ghiChu = null) =>

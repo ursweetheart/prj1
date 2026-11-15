@@ -334,3 +334,30 @@ CREATE TABLE IF NOT EXISTS bao_cao_tuan (
   tieu_de text,
   noi_dung text
 );
+
+-- Chat conversations (change chat-history; seq-3 b18, class-4 HoiThoai / TinNhan). Kept anonymously 90 days after the
+-- last message; linked to a session only when it exists in phien_truy_cap (= the visitor accepted collection).
+-- Phone numbers and emails in visitor messages are masked before storing.
+CREATE TABLE IF NOT EXISTS hoi_thoai (
+  id text PRIMARY KEY,                -- 32 hex chars, random: holding it is what lets a visitor read or delete it
+  phien_id text REFERENCES phien_truy_cap(id) ON DELETE SET NULL,
+  rang_buoc jsonb NOT NULL DEFAULT '{}',   -- project_type, space_type, area_m2, design_style collected so far
+  da_chuyen_nguoi_that boolean NOT NULL DEFAULT false,
+  bat_dau timestamptz NOT NULL DEFAULT now(),
+  cap_nhat timestamptz NOT NULL DEFAULT now(),
+  so_tin_nhan int NOT NULL DEFAULT 0,
+  chua_tra_loi int NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS hoi_thoai_cap_nhat ON hoi_thoai (cap_nhat DESC);
+CREATE TABLE IF NOT EXISTS tin_nhan (
+  id serial PRIMARY KEY,
+  hoi_thoai_id text NOT NULL REFERENCES hoi_thoai(id) ON DELETE CASCADE,
+  vai_tro text NOT NULL CHECK (vai_tro IN ('khach', 'tro_ly')),
+  noi_dung text NOT NULL,
+  nguon jsonb,
+  diem_cao_nhat real,
+  tra_loi_duoc boolean,
+  thoi_diem timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS tin_nhan_hoi_thoai ON tin_nhan (hoi_thoai_id, id);
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS hoi_thoai_id text REFERENCES hoi_thoai(id) ON DELETE SET NULL;

@@ -12,7 +12,7 @@ import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
 
-from pipeline import leads, taxonomy, vertex
+from pipeline import conversations, leads, taxonomy, vertex
 from pipeline.search import _embedder, by_text
 from pipeline.store import DSN
 
@@ -39,7 +39,7 @@ def _has(text: str, words) -> bool:
 
 
 def parse_request(message: str) -> dict:
-    t = _fold(message)
+    t = _fold(message).replace("-", " ")  # "wabi-sabi" is how visitors write "Wabi sabi"
     area = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:m2|m²|met vuong)", t)
     styles = taxonomy.synonym_map("phong_cach")
     style = next((v for k, v in styles.items() if k in t), None) or next(
@@ -185,11 +185,16 @@ def _log_gap(question: str, best: float | None):
 
 
 def respond(message: str, history: list | None = None, contact: str | None = None,
-            phien_id: str | None = None, gui_ho_so: bool = False) -> dict:
+            phien_id: str | None = None, gui_ho_so: bool = False, rang_buoc: dict | None = None,
+            lead_history: list | None = None) -> dict:
+    """history: earlier turns for the model. rang_buoc: constraints collected earlier in the conversation (chat-history);
+    lead_history: the turns a lead stores, when they differ from `history` (the visitor's own, unmasked)."""
     req = parse_request(message)
+    merged = conversations.merge(rang_buoc, req)  # what the visitor said earlier still applies
+    req = {**req, **merged}
     hits = retrieve(message)
     known = bool(hits) and hits[0][4] >= MIN_SCORE
-    conversation = (history or []) + [{"role": "user", "content": message}]
+    conversation = (lead_history if lead_history is not None else history or []) + [{"role": "user", "content": message}]
 
     photos = None  # the knowledge base has no answer: try the descriptions of the published photos
     best = float(hits[0][4]) if hits else None  # best cosine seen, for the knowledge-gap log
@@ -203,7 +208,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
             logging.getLogger(__name__).exception("photo RAG failed; answering from the knowledge base only")
     answered = known or photos is not None
 
-    out = {"request": req, "answered": answered, "sources": [], "images": [], "lead_id": None}
+    out = {"request": req, "answered": answered, "sources": [], "images": [], "lead_id": None, "rang_buoc": merged,
+           "diem_cao_nhat": round(best, 3) if best is not None else None}
     if known:
         top = hits[0]
         out["answer"] = top[3]
