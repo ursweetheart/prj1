@@ -26,7 +26,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import auth
-from pipeline import (bo_suu_tap, conversations, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       trends, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -829,6 +829,105 @@ def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
         raise HTTPException(404, "no such price")
     return row
 
+
+
+# ── Hotspots by hand and the item library (seq-14; class-1 Hotspot / MonDo; roadmap 1.9) ──────────────
+class HotspotIn(BaseModel):
+    index: Optional[int] = None          # position of the detected object it comes from; None = made by hand
+    x: float
+    y: float
+    label_vi: str = Field(max_length=120)
+    mon_do_id: Optional[int] = None
+
+
+class HotspotsIn(BaseModel):
+    hotspots: list[HotspotIn] = Field(max_length=items.MAX_POINTS + 1)  # the exact limit is checked with a row-free message
+
+
+def _item_error(e):
+    if isinstance(e, items.Invalid):
+        loc = ["body", "hotspots", e.row] if e.row is not None else ["body"]
+        return HTTPException(422, [{"loc": loc, "msg": e.msg, "type": "value_error"}])
+    if isinstance(e, items.Conflict):
+        return HTTPException(409, {"msg": str(e), "existing": e.existing})
+    if isinstance(e, items.InUse):
+        return HTTPException(409, {"msg": str(e), "so_anh": e.n})
+    return HTTPException(404, "no such item")
+
+
+@app.put("/spaces/{space_id}/hotspots")
+def save_hotspots(space_id: int, body: HotspotsIn, user=Depends(require(*STAFF))):
+    """Replace a photo's hotspots with the editor's list: add, move, delete, rename, link to an item (seq-14 b13-14)."""
+    with _db() as c:
+        row = c.execute("SELECT hotspots FROM space WHERE id = %s FOR UPDATE", (space_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such space")
+        try:
+            doc = items.validate_hotspots(c, row["hotspots"], [h.model_dump() for h in body.hotspots])
+        except items.Invalid as e:
+            raise _item_error(e)
+        c.execute("UPDATE space SET hotspots = %s WHERE id = %s", (Jsonb(doc), space_id))
+        objs = doc["objects"]
+        _log(c, space_id, user, "hotspots", {"truoc": len((row["hotspots"] or {}).get("objects", [])), "sau": len(objs),
+                                             "thu_cong": sum(o.get("nguon_tao") == "thu_cong" for o in objs),
+                                             "lien_ket": sum(o.get("mon_do_id") is not None for o in objs)})
+    return {"hotspots": with_services(doc)}
+
+
+class ItemIn(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=120)
+    phan_loai: Optional[str] = Field(default=None, max_length=60)
+    kieu_dang: Optional[str] = Field(default=None, max_length=60)
+    vat_lieu: Optional[str] = Field(default=None, max_length=60)
+    mau_sac: Optional[str] = Field(default=None, max_length=40)
+    nha_cung_cap: Optional[str] = Field(default=None, max_length=120)
+    ghi_chu: Optional[str] = Field(default=None, max_length=500)
+
+
+@app.get("/items")
+def items_list(q: str = "", limit: int = Query(200, ge=1, le=500), user=Depends(require(*STAFF))):
+    """The library with how many photos use each item; q searches name, type and material."""
+    with _db() as c:
+        return items.search(c, q, limit)
+
+
+@app.post("/items", status_code=201)
+def items_create(body: ItemIn, user=Depends(require(*STAFF))):
+    try:
+        with _db() as c:
+            return items.create(c, body.model_dump(exclude_unset=True), user["id"])
+    except (items.Invalid, items.Conflict) as e:
+        raise _item_error(e)
+
+
+@app.patch("/items/{item_id}")
+def items_update(item_id: int, body: ItemIn, user=Depends(require(*STAFF))):
+    try:
+        with _db() as c:
+            return items.update(c, item_id, body.model_dump(exclude_unset=True), user["id"])
+    except (items.Invalid, items.Conflict, items.NotFound) as e:
+        raise _item_error(e)
+
+
+@app.delete("/items/{item_id}", status_code=204)
+def items_delete(item_id: int, user=Depends(require(*STAFF))):
+    """Refused while any photo links to the item (409 with the photo count)."""
+    try:
+        with _db() as c:
+            items.delete(c, item_id)
+    except (items.InUse, items.NotFound) as e:
+        raise _item_error(e)
+    return Response(status_code=204)
+
+
+@app.get("/items/{item_id}/spaces")
+def items_spaces(item_id: int, user=Depends(optional_user)):
+    """Photos whose hotspots link to the item. Visitors: published photos, the item's name and type only."""
+    with _db() as c:
+        out = items.spaces_for(c, item_id, staff=bool(user) and user["role"] in STAFF)
+    if out is None:
+        raise HTTPException(404, "no such item")
+    return out
 
 # ── Trend dashboard (UC22; act-3, seq-18) ──────────────────────────────────────
 @app.get("/analytics/overview")

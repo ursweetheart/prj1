@@ -361,3 +361,21 @@ CREATE TABLE IF NOT EXISTS tin_nhan (
 );
 CREATE INDEX IF NOT EXISTS tin_nhan_hoi_thoai ON tin_nhan (hoi_thoai_id, id);
 ALTER TABLE lead ADD COLUMN IF NOT EXISTS hoi_thoai_id text REFERENCES hoi_thoai(id) ON DELETE SET NULL;
+
+-- Item library for hotspots (change hotspot-items; seq-14, class-1 MonDo). Hotspots stay in space.hotspots.objects;
+-- an object may carry nguon_tao ('ai' | 'thu_cong') and mon_do_id. Supplier and note are never sent to visitors.
+CREATE TABLE IF NOT EXISTS mon_do (
+  id serial PRIMARY KEY,
+  ten text NOT NULL CHECK (length(ten) BETWEEN 1 AND 120),
+  ten_khoa text NOT NULL UNIQUE,      -- folded name: the duplicate check (case and accents ignored)
+  phan_loai text CHECK (length(phan_loai) <= 60),
+  kieu_dang text CHECK (length(kieu_dang) <= 60),
+  vat_lieu text CHECK (length(vat_lieu) <= 60),
+  mau_sac text CHECK (length(mau_sac) <= 40),
+  nha_cung_cap text CHECK (length(nha_cung_cap) <= 120),
+  ghi_chu text CHECK (length(ghi_chu) <= 500),
+  tao_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  cap_nhat_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);

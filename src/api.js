@@ -205,6 +205,13 @@ export const EDITORS = [...STAFF, 'content'] // content may only edit caption / 
 
 export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })
 export const reviewSpace = (id, body) => request('PATCH', '/spaces/' + id, { body })
+/* hotspot-items: hotspots edited by hand and the item library (seq-14) */
+export const saveHotspots = (id, hotspots) => request('PUT', '/spaces/' + id + '/hotspots', { body: { hotspots } })
+export const searchItems = (q = '', limit = 200) => get('/items', { q, limit })
+export const createItem = body => request('POST', '/items', { body })
+export const updateItem = (id, body) => request('PATCH', '/items/' + id, { body })
+export const deleteItem = id => request('DELETE', '/items/' + id)
+export const itemSpaces = id => get('/items/' + id + '/spaces')
 export const advanceSpaces = (ids, rightsConfirmed = false) =>
   request('POST', '/spaces/advance', { body: { space_ids: ids, rights_confirmed: rightsConfirmed } })
 export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}

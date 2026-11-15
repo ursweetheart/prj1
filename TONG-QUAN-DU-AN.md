@@ -268,7 +268,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | `seq-11-tim-bang-mo-ta-tu-nhien` | UC05 | Có |
 | `seq-12-trac-nghiem-phong-cach` | UC06 | Có (change `style-quiz`); gợi ý **không gian**, chưa gợi ý dự án (bước 12) |
 | `seq-13-luu-anh-va-dang-ky-giu-bo-suu-tap` | UC07 | Có: trình duyệt khi chưa đăng nhập, gộp vào tài khoản khi đăng ký/đăng nhập |
-| `seq-14-gan-hotspot-mon-do` | UC17 | Một phần |
+| `seq-14-gan-hotspot-mon-do` | UC17 | Có (change `hotspot-items`): bước 1–5 và 10–17; gợi ý vị trí AI (bước 6–9) là điểm YOLO lúc tải ảnh, chưa chạy lại được từ giao diện |
 | `seq-15-quan-ly-taxonomy-gop-gia-tri` | UC15 | Có (change `taxonomy-admin`); bước 20–22 (làm mới chỉ mục vector) không cần: không embedding nào dựng từ nhãn |
 | `seq-16-quan-ly-tri-thuc-tro-ly` | UC16 | Có (change `assistant-knowledge-admin`) |
 | `seq-18-bao-cao-dinh-ky-va-bang-dieu-khien` | UC22, UC23 | Có: bảng điều khiển (change `trend-dashboard`), hiệu quả từng dự án (change `project-performance`), báo cáo email hằng tuần bước 1–7 (change `weekly-report`) |
@@ -279,7 +279,7 @@ Tài liệu BAD tham chiếu thêm các file `02-Bo-cau-hoi-phong-van.md`, `03-U
 | File | Nhóm lớp |
 | :-- | :-- |
 | `class-0-tong-quan` | 16 lớp và quan hệ |
-| `class-1-noi-dung-portfolio` | DuAn, KhongGian, Anh, Hotspot, MonDo |
+| `class-1-noi-dung-portfolio` | DuAn, KhongGian, Anh, Hotspot, MonDo. Hotspot lưu trong `space.hotspots.objects` (mỗi đối tượng: `hotspot_anchor` = tọa độ, `nguon_tao` ai / thu_cong, `confidence` = độ tin cậy, `mon_do_id`); MonDo là bảng `mon_do` |
 | `class-2-taxonomy` | ChieuPhanLoai, GiaTriPhanLoai |
 | `class-3-khach-hang-va-ban-hang` | KhachTiemNang, BoSuuTap |
 | `class-4-hoi-thoai-va-hanh-vi` | PhienTruyCap, SuKien, HoiThoai, TinNhan |
@@ -337,7 +337,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log`. KTS trưởng **trả về nháp**, **lưu nội bộ** (khách không đồng ý công bố) hoặc **mở lại**, luôn kèm lý do: lý do hiện trên thẻ ảnh đến khi ảnh được chuyển tiếp, lọc "Chỉ ảnh bị trả về", người tải ảnh lên nhận email (hoặc log) | Chưa gỡ được ảnh đã đăng. Bước cuối của QT-01 (theo dõi hiệu quả sau 30 ngày) có ở `/quan-tri/hieu-qua`, xem mục 5.4 |
 | UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). **Bộ phân loại AI vẫn dùng danh sách phong cách / không gian cố định** trong `pipeline/schemas.py`: giá trị mới thêm chỉ được gắn bởi người, AI chưa đề xuất được |
 | UC16 | Quản lý tri thức trợ lý | **Có** | `/quan-tri/tri-thuc` (NV nội dung, KTS trưởng, admin): tìm, thêm, sửa mục (loại, tiêu đề, cụm từ khớp, câu trả lời; lưu là tính lại embedding); trạng thái Nháp / Chờ duyệt / Đang dùng / Tắt, **trợ lý chỉ dùng mục Đang dùng**; mục có giá (loại `price` hoặc câu trả lời nêu số tiền) chỉ KTS trưởng bật được, NV nội dung sửa giá của mục đang dùng thì mục về Chờ duyệt; nháp AI (`kb/generated.json`, 8 mục) vào Chờ duyệt, duyệt thì bỏ dấu "[AI SINH - CHƯA DUYỆT]"; tab "Câu hỏi chưa trả lời" gom câu giống nhau, "Soạn đáp án" → mục mới, bật thì đóng câu hỏi; xoá (KTS trưởng); mục dịch vụ mà điểm nóng liên kết không đổi tên / xoá được; nhật ký `nhat_ky_tri_thuc`. File JSON + lệnh vẫn dùng được để nạp hàng loạt | 11 mục đang dùng vẫn là dữ liệu mẫu (việc 1.6). Chưa có lịch sử phiên bản của từng mục |
-| UC17 | Gắn hotspot món đồ | **Một phần** | YOLO gợi ý; ở `/quan-tri` sửa tên và xoá hotspot; hiển thị trên `/khong-gian/:id` | Chưa thêm hotspot mới bằng tay, chưa kéo vị trí, chưa liên kết tới **thư viện món đồ/vật liệu (M7)** và gói dịch vụ |
+| UC17 | Gắn hotspot món đồ | **Có** | YOLO gợi ý lúc tải ảnh. Ở `/quan-tri` (KTS, KTS trưởng, admin; change `hotspot-items`): bấm vào ảnh để thêm điểm, kéo hoặc dùng phím mũi tên để dời, xoá, đặt tên khách thấy, gắn món đồ trong **thư viện món đồ** (tìm hoặc tạo ngay; tên, loại, kiểu dáng, vật liệu, màu, nhà cung cấp, ghi chú); điểm ghi nguồn tạo AI / Thủ công, mỗi lần lưu ghi `review_log`. `/quan-tri/mon-do`: danh sách, số ảnh dùng, sửa, xoá khi không còn ảnh nào dùng. Trang khách `/khong-gian/:id` vẫn chỉ hiện tên điểm | Chưa chạy lại YOLO từ giao diện; khách chưa bấm hotspot ra «không gian có món đồ này» (API `GET /items/{id}/spaces` đã có, phần giao diện khách là của Tùng); chưa liên kết món đồ → gói dịch vụ |
 
 ### 5.4 Phân tích và hệ thống
 
@@ -428,7 +428,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio: giờ làm được ngay ở `/quan-tri/tri-thuc` (sửa từng mục, xoá dấu mẫu; mục giá cần KTS trưởng bật) | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
 | 1.7 | ✓ **UI quản trị người dùng** (change `user-admin`): danh sách, đổi role, khoá / mở khoá, nhật ký | seq-19, usecase-5 | còn: mời qua email, quên mật khẩu (cần SMTP) |
 | 1.8 | ✓ Duyệt ảnh: **trả về nháp / lưu nội bộ / mở lại** kèm lý do (change `review-return-reject`) | act-1, seq-6 | còn: gỡ ảnh đã đăng |
-| 1.9 | Hotspot: thêm điểm bằng tay, kéo vị trí; bảng **MonDo** (thư viện món đồ/vật liệu) và liên kết hotspot → món đồ → gói dịch vụ | seq-14, class-1 | bấm hotspot sofa ra các không gian có sofa tương tự |
+| 1.9 | ✓ Hotspot **thêm bằng tay, kéo vị trí**, bảng **MonDo** (thư viện món đồ, change `hotspot-items`), API không gian theo món đồ | seq-14, class-1 | còn: giao diện khách «không gian có món đồ này» (trang của Tùng), món đồ → gói dịch vụ |
 
 ### Giai đoạn 2: Hoàn thiện trải nghiệm khách
 
@@ -477,7 +477,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 6. **`D3_JWT_SECRET`** phải được đặt trong `.env`. Nếu không, mỗi lần khởi động lại backend mọi người bị đăng xuất. Script chạy ngoài Docker (vd `set_role.py`) có in cảnh báo này nhưng không ảnh hưởng.
 7. **Backend Docker chạy CPU**: ingest chậm (vài giây mỗi ảnh). Muốn nhanh thì chạy backend ngoài Docker với GPU.
 8. **Câu hỏi chưa trả lời được** ghi vào `khoang_trong_tri_thuc` nguyên văn (chưa che số điện thoại / email như `tin_nhan`).
-9. **Hotspot chỉ có nhãn chữ**, chưa trỏ tới bản ghi món đồ.
+9. **Nhà cung cấp và ghi chú món đồ chỉ nội bộ**: không API công khai nào trả về. Hotspot làm tay không có nhãn YOLO nên không gắn được dịch vụ (sofa / TV / giường) như điểm AI.
 10. **Tài khoản thử `qt01-walk@example.com`** (lead_architect) tạo khi chạy thử quy trình duyệt. Tài khoản này được giữ vì `review_log` tham chiếu tới. Nên hạ xuống `visitor` khi demo thật: làm ở `/quan-tri/tai-khoan`.
 11. **Quyền công bố 9 ảnh đã đăng** được tick để demo (ảnh lấy từ Behance). Khi dùng thật phải xin quyền khách.
 12. **`openspec validate`** có lúc báo 0 delta với change đã xong. Đây là lỗi của công cụ, có thể bỏ qua.
@@ -529,6 +529,10 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/spaces/advance` | staff / approver | chuyển trạng thái hàng loạt |
 | POST | `/spaces/return`, `/spaces/keep-internal`, `/spaces/reopen` | approver | trả về nháp (từ chờ duyệt / đã duyệt / đã xác nhận quyền), lưu nội bộ (từ đã duyệt / đã xác nhận quyền), mở lại (từ lưu nội bộ); `{space_ids, ly_do}` lý do 5–500 ký tự, tất cả hoặc không; báo người tải ảnh lên qua email hoặc log |
 | PUT | `/spaces/tags` | staff | gắn tag theo ảnh hoặc cả dự án |
+| PUT | `/spaces/{id}/hotspots` | staff | thay toàn bộ hotspot của ảnh: thêm, dời, xoá, đặt tên, gắn `mon_do_id`; 422 kèm số dòng khi sai |
+| GET / POST | `/items` | staff | thư viện món đồ kèm số ảnh dùng (`q` tìm theo tên, loại, vật liệu) / tạo; 409 khi trùng tên (không phân biệt hoa thường, dấu) |
+| PATCH / DELETE | `/items/{id}` | staff | sửa / xoá; xoá bị từ chối (409, `so_anh`) khi còn ảnh dùng |
+| GET | `/items/{id}/spaces` | công khai | ảnh có hotspot gắn món đồ; khách chỉ thấy ảnh đã đăng, tên và loại món đồ |
 | POST | `/events` | công khai, 120/phút | ghi lượt xem (theo đồng ý) |
 | POST | `/chat` | công khai, 20/phút | trợ lý; nhận và trả `hoi_thoai_id`, lưu từng lượt (đã che liên hệ) |
 | GET / DELETE | `/chat/{id}` | ai có id | đọc lại / xoá hội thoại của mình (id ngẫu nhiên 32 ký tự) |

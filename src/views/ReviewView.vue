@@ -105,23 +105,8 @@
             <div v-if="isStaff" class="field"><label :for="'mat' + r.id">Vật liệu (cách nhau bằng dấu phẩy)</label>
               <input :id="'mat' + r.id" v-model="r.materialsText"></div>
 
-            <div v-if="hs.id === r.id" class="stack" style="gap:8px">
-              <div class="hs-edit">
-                <img :src="imageUrl(r.relative_path)" alt="">
-                <span v-for="(o, i) in hs.objects" :key="o.index" class="dot"
-                      :style="{ left: o.hotspot_anchor[0] * 100 + '%', top: o.hotspot_anchor[1] * 100 + '%' }">{{ i + 1 }}</span>
-              </div>
-              <p v-if="!hs.objects.length" class="small">Không còn điểm nóng nào.</p>
-              <div v-for="(o, i) in hs.objects" :key="o.index" class="row g10">
-                <span class="num small">{{ i + 1 }}</span>
-                <input v-model="o.label_vi" class="txt" style="flex:1" :aria-label="'Tên món đồ ' + (i + 1)">
-                <button class="btn btn-ghost" type="button" @click="hs.objects.splice(i, 1)">Xoá</button>
-              </div>
-              <div class="row g10">
-                <button class="btn btn-secondary" type="button" @click="saveHotspots(r)">Lưu điểm nóng</button>
-                <button class="btn btn-ghost" type="button" @click="hs.id = null">Đóng</button>
-              </div>
-            </div>
+            <HotspotEditor v-if="hs.id === r.id" :space-id="r.id" :src="imageUrl(r.relative_path)" :objects="hs.objects"
+                           @saved="hs.id = null; saved = r.id" @close="hs.id = null" />
 
             <div class="row g10" style="flex-wrap:wrap">
               <button v-if="canEditText || isStaff" class="btn btn-secondary" type="button" @click="save(r)">Lưu</button>
@@ -168,6 +153,7 @@ import {
   APPROVERS, NEXT_STATUS, RETURNABLE, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
   imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, uploadAll
 } from '@/api'
+import HotspotEditor from '@/components/HotspotEditor.vue'
 
 const HUMAN = ['loai_cong_trinh', 'muc_dau_tu'] // the AI cannot see these; staff fill them per project
 
@@ -258,13 +244,8 @@ const hs = reactive({ id: null, objects: [] })
 
 const openHotspots = r => run(async () => {
   const s = await getSpace(r.id)
-  hs.objects = ((s.hotspots && s.hotspots.objects) || []).map((o, index) => ({ ...o, index, label_vi: o.label_vi || o.label }))
+  hs.objects = (s.hotspots && s.hotspots.objects) || [] // HotspotEditor saves through PUT /spaces/{id}/hotspots
   hs.id = r.id
-})
-
-const saveHotspots = r => run(async () => {
-  await reviewSpace(r.id, { hotspots: hs.objects.map(o => ({ index: o.index, label_vi: o.label_vi })) })
-  hs.id = null; saved.value = r.id
 })
 
 /* ── advance ────────────────────────────────────────────────────────── */
@@ -340,8 +321,6 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .thumb { padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden }
 .thumb img { width: 140px; height: 100px; object-fit: cover; display: block }
 .thumb:disabled { cursor: default }
-.hs-edit { position: relative; max-width: 520px }
-.hs-edit img { width: 100%; display: block; border-radius: var(--radius-sm) }
 .rv-reason { margin: 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--panel); font-size: 14px;
   color: var(--ink); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; overflow-wrap: anywhere }
 .rv-reason.is-noi_bo { border-left-color: var(--danger) }
@@ -352,6 +331,4 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .rv-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
 .rv-dialog textarea { width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
   border-radius: var(--radius-md); padding: 10px 12px; font: inherit; color-scheme: dark }
-.dot { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%;
-  background: var(--accent); color: var(--accent-on); font-size: 12px; display: grid; place-items: center }
 </style>

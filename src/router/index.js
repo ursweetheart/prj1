@@ -24,6 +24,7 @@ const router = createRouter({
     { path: '/quan-tri/hieu-qua', name: 'hieu-qua', meta: { roles: [...STAFF, 'sales'] }, component: () => import('@/views/ProjectStatsView.vue') },
     { path: '/quan-tri/tai-khoan', name: 'tai-khoan', meta: { roles: ['admin'] }, component: () => import('@/views/UsersView.vue') },
     { path: '/quan-tri/hoi-thoai', name: 'hoi-thoai', meta: { roles: ['content', ...SALES] }, component: () => import('@/views/ConversationsView.vue') },
+    { path: '/quan-tri/mon-do', name: 'mon-do', meta: { roles: STAFF }, component: () => import('@/views/ItemsView.vue') },
     { path: '/quan-tri/tri-thuc', name: 'tri-thuc', meta: { roles: ['content', ...APPROVERS] }, component: () => import('@/views/KnowledgeView.vue') },
     { path: '/quan-tri/don-gia', name: 'don-gia', meta: { roles: APPROVERS }, component: () => import('@/views/PricesView.vue') },
     { path: '/bo-suu-tap', name: 'bo-suu-tap', component: () => import('@/views/CollectionView.vue') },
