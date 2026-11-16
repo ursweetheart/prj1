@@ -62,7 +62,7 @@
 <script setup>
 import { reactive, ref, useId } from 'vue'
 import { useRoute } from 'vue-router'
-import { consent, createLead } from '@/api'
+import { consent, createLead, trackEvent } from '@/api'
 
 const props = defineProps({
   project: { type: String, default: null },   // project slug, when embedded on /du-an/<slug>
@@ -112,6 +112,7 @@ async function submit() {
       gui_ho_so: consented && f.gui_ho_so, website: f.website || null, t_ms: Date.now() - shownAt
     })
     done.value = r.message
+    trackEvent('gui_form', { doi_tuong: 'lien_he' }) // behaviour-events: which form, never its fields
   } catch (e) {
     if (e.status === 422 && Array.isArray(e.detail)) {
       for (const d of e.detail) { const k = d.loc?.[d.loc.length - 1]; if (MESSAGES[k]) errors[k] = MESSAGES[k] }

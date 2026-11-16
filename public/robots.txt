@@ -1,0 +1,11 @@
+# D3 Studio. When deploying, change the Sitemap host below to the real site address (it cannot follow D3_FRONTEND_URL).
+User-agent: *
+Allow: /
+Disallow: /prj1/quan-tri
+Disallow: /prj1/khach-hang
+Disallow: /prj1/dang-nhap
+Disallow: /prj1/dat-mat-khau
+Disallow: /prj1/quen-mat-khau
+Disallow: /prj1/bo-suu-tap/xem
+
+Sitemap: http://localhost:8080/prj1/sitemap.xml

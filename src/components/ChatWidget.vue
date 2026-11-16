@@ -30,10 +30,13 @@
           <input v-model="sendViews" type="checkbox">
           <span>Gửi kèm những không gian tôi đã xem cho kiến trúc sư</span>
         </label>
+        <button v-if="turns.length" class="chat-new small" type="button" :disabled="busy" @click="startOver">
+          Bắt đầu cuộc mới</button>
         <div class="row g6">
-          <input v-model="message" type="text" maxlength="1000" placeholder="Nhập câu hỏi…" aria-label="Câu hỏi" required style="flex:1">
+          <input ref="input" v-model="message" type="text" maxlength="1000" placeholder="Nhập câu hỏi…" aria-label="Câu hỏi" required style="flex:1">
           <button class="btn btn-primary" :disabled="busy">Gửi</button>
         </div>
+        <p class="chat-note">Hội thoại được lưu ẩn danh 90 ngày để cải thiện trợ lý. Đừng gửi thông tin nhạy cảm.</p>
       </form>
     </section>
 
@@ -48,7 +51,7 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
-import { consent, imageUrl, sendChat } from '@/api'
+import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
 
 const open = ref(false)
 const turns = ref([])
@@ -59,7 +62,43 @@ const error = ref('')
 const log = ref(null)
 const sendViews = ref(false)
 const consented = ref(false)
-watch(open, o => { if (o) consented.value = consent.get() === 'yes' }) // the banner may be answered meanwhile
+const input = ref(null)
+watch(open, o => {
+  if (!o) return
+  consented.value = consent.get() === 'yes' // the banner may be answered meanwhile
+  restore()
+})
+
+/* chat-history: the conversation id lives in localStorage with consent (restored on a later visit), otherwise in
+   sessionStorage (this tab only, survives a reload). Holding the id is what opens the conversation. */
+const KEY = 'd3_hoi_thoai'
+const store = () => (consent.get() === 'yes' ? localStorage : sessionStorage)
+const getId = () => { try { return store().getItem(KEY) || sessionStorage.getItem(KEY) } catch { return null } }
+function setId(id) {
+  try {
+    for (const s of [localStorage, sessionStorage]) s.removeItem(KEY)
+    if (id) store().setItem(KEY, id)
+  } catch { /* private mode: the conversation just isn't remembered */ }
+}
+let restored = false
+async function restore() {
+  if (restored || turns.value.length) return
+  restored = true
+  const id = getId()
+  if (!id) return
+  try {
+    const r = await getChat(id)
+    turns.value = r.tin_nhan.map(m => ({ role: m.vai_tro === 'khach' ? 'user' : 'assistant', content: m.noi_dung, sources: m.nguon }))
+    setId(id) // move it to localStorage if the visitor accepted the banner since
+    await nextTick(); log.value?.scrollTo(0, log.value.scrollHeight)
+  } catch (e) { if (e.status === 404) setId(null) }
+}
+async function startOver() {
+  const id = getId()
+  turns.value = []; error.value = ''; setId(null)
+  if (id) deleteChat(id).catch(() => {}) // gone from the server; a failure leaves it to the 90-day purge
+  await nextTick(); input.value?.focus()
+}
 
 async function send() {
   const text = message.value
@@ -68,8 +107,10 @@ async function send() {
   const history = turns.value.map(({ role, content }) => ({ role, content }))
   turns.value.push({ role: 'user', content: text })
   try {
-    const r = await sendChat(text, history, contact.value, consented.value && sendViews.value)
+    const r = await sendChat(text, history, contact.value, consented.value && sendViews.value, getId())
+    if (r.hoi_thoai_id) setId(r.hoi_thoai_id)
     turns.value.push({ role: 'assistant', content: r.answer, images: r.images, sources: r.sources })
+    trackEvent('nhan_chatbot') // behaviour-events: a count only, never the text
   } catch (e) { error.value = e.message } finally {
     busy.value = false
     await nextTick(); log.value?.scrollTo(0, log.value.scrollHeight)
@@ -91,6 +132,10 @@ async function send() {
 .chat-form input { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; min-height: 42px; min-width: 0 }
 .chat-form input::placeholder { color: var(--faint) }
 .chat-form input:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
+.chat-new { justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--dim); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; font: inherit; font-size: 13px }
+.chat-new:hover, .chat-new:focus-visible { color: var(--ink) }
+.chat-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint) }
 /* Nút mở trợ lý: viên tối trong mờ, viền mảnh; hover giống topbar (.glow-hover) */
 .chat-fab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; cursor: pointer;
   font: inherit; font-size: 14px; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.88);

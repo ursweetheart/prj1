@@ -8,6 +8,8 @@ unlocking keeps phien_tu, so those tokens stay dead. A role change needs no sign
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from pipeline import password_links
+
 ROLES = ("visitor", "architect", "content", "sales", "lead_architect", "admin")
 LIMIT, LOG_SHOWN = 500, 20
 SELF = "Không tự đổi vai trò hoặc tự khoá tài khoản của chính mình."
@@ -61,7 +63,9 @@ def _guard(conn, admin, target, removes_admin: bool):
 def list_accounts(conn, me, q=None, role=None, khoa=None) -> list:
     rows = _cur(conn).execute(
         "SELECT id, email, role, created_at, bi_khoa, ly_do_khoa, password_hash IS NOT NULL AS mk, "
-        "google_sub IS NOT NULL AS gg, facebook_id IS NOT NULL AS fb FROM app_user "
+        "google_sub IS NOT NULL AS gg, facebook_id IS NOT NULL AS fb, "
+        "(SELECT max(created_at) FROM ma_dat_mat_khau m WHERE m.tai_khoan_id = app_user.id AND m.loai = 'moi') AS moi_luc "
+        "FROM app_user "
         "WHERE (%(q)s::text IS NULL OR email ILIKE '%%' || %(q)s || '%%') AND (%(r)s::text IS NULL OR role = %(r)s) "
         "AND (%(k)s::boolean IS NULL OR bi_khoa = %(k)s) ORDER BY created_at DESC, id DESC LIMIT %(n)s",
         {"q": (q or "").strip() or None, "r": role, "k": khoa, "n": LIMIT}).fetchall()
@@ -74,7 +78,9 @@ def list_accounts(conn, me, q=None, role=None, khoa=None) -> list:
                     "dang_nhap": [m for m, on in (("mat_khau", r["mk"]), ("google", r["gg"]), ("facebook", r["fb"])) if on],
                     "bi_khoa": r["bi_khoa"], "ly_do_khoa": r["ly_do_khoa"], "la_toi": bool(me and r["id"] == me["id"]),
                     "doi_vai_tro_duoc": reason is None, "khoa_duoc": reason is None and not r["bi_khoa"],
-                    "ly_do_khong": reason})
+                    "ly_do_khong": reason, "moi_luc": r["moi_luc"],
+                    # invited, and no password / Google / Facebook yet (account-invites-reset)
+                    "chua_kich_hoat": bool(r["moi_luc"]) and not (r["mk"] or r["gg"] or r["fb"])})
     return out
 
 
@@ -121,3 +127,51 @@ def unlock(conn, admin, user_id) -> dict:
     conn.execute("UPDATE app_user SET bi_khoa = false, ly_do_khoa = NULL WHERE id = %s", (user_id,))  # phien_tu stays
     _log(conn, admin, user_id, "mo_khoa", {"bi_khoa": True, "ly_do": t["ly_do_khoa"]}, {"bi_khoa": False})
     return {"id": t["id"], "email": t["email"], "bi_khoa": False}
+
+
+# ── invitations (change account-invites-reset; seq-19 b1-8) ───────────────────
+CANCELLED = "Huỷ lời mời"
+
+
+def _pending(conn, user_id) -> dict:
+    t = _cur(conn).execute(
+        "SELECT id, email, role, bi_khoa, password_hash IS NULL AND google_sub IS NULL AND facebook_id IS NULL AS chua, "
+        "EXISTS (SELECT 1 FROM ma_dat_mat_khau m WHERE m.tai_khoan_id = app_user.id AND m.loai = 'moi') AS da_moi "
+        "FROM app_user WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+    if not t:
+        raise NotFound("user not found")
+    if not (t["chua"] and t["da_moi"]):
+        raise Conflict("tài khoản đã kích hoạt hoặc không được mời")
+    return t
+
+
+def invite(conn, admin, email: str, role: str) -> tuple[dict, str]:
+    """Create the account with its role and no password, and an invitation link code (seq-19 b5-7)."""
+    email = (email or "").strip().lower()
+    if role not in ROLES:
+        raise Invalid(f"role must be one of {ROLES}")
+    if _cur(conn).execute("SELECT 1 FROM app_user WHERE email = %s", (email,)).fetchone():
+        raise Conflict("Email này đã có tài khoản; đổi vai trò ở danh sách bên dưới.")
+    user = _cur(conn).execute("INSERT INTO app_user (email, role) VALUES (%s, %s) RETURNING id, email, role",
+                              (email, role)).fetchone()
+    code = password_links.issue(conn, user["id"], "moi", admin["id"] if admin else None)
+    _log(conn, admin, user["id"], "moi", None, {"role": role})
+    return user, code
+
+
+def resend(conn, admin, user_id) -> tuple[dict, str]:
+    t = _pending(conn, user_id)
+    if t["bi_khoa"]:  # a cancelled invitation is reopened by unlocking first
+        raise Conflict("Lời mời đã bị huỷ; mở khoá tài khoản rồi gửi lại.")
+    code = password_links.issue(conn, user_id, "moi", admin["id"] if admin else None)
+    _log(conn, admin, user_id, "gui_lai_moi", None, {"role": t["role"]})
+    return {"id": t["id"], "email": t["email"], "role": t["role"]}, code
+
+
+def cancel(conn, admin, user_id) -> dict:
+    t = _pending(conn, user_id)
+    password_links.void(conn, user_id)
+    conn.execute("UPDATE app_user SET bi_khoa = true, ly_do_khoa = %s, phien_tu = clock_timestamp() WHERE id = %s",
+                 (CANCELLED, user_id))
+    _log(conn, admin, user_id, "huy_moi", {"bi_khoa": t["bi_khoa"]}, {"bi_khoa": True, "ly_do": CANCELLED})
+    return {"id": t["id"], "email": t["email"], "role": t["role"], "bi_khoa": True, "ly_do_khoa": CANCELLED}

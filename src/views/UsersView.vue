@@ -6,6 +6,30 @@
       Đổi vai trò có hiệu lực ngay ở lần thao tác tiếp theo của người đó. Khoá tài khoản thì người đó bị đăng xuất và không đăng nhập lại được.
     </p>
 
+    <!-- seq-19 b1-8: the account is created with its role; the person sets a password from the emailed link -->
+    <form class="us-invite" aria-labelledby="us-inv-h" @submit.prevent="invite">
+      <h2 id="us-inv-h" class="h-4">Mời tài khoản</h2>
+      <div class="us-inv-row">
+        <label class="sr-only" for="us-inv-email">Email người được mời</label>
+        <input id="us-inv-email" v-model.trim="inv.email" class="txt us-inv-email" type="email" placeholder="email@congty.vn"
+               required :aria-invalid="!!inv.error" :aria-describedby="inv.error ? 'us-inv-err' : null">
+        <label class="sr-only" for="us-inv-role">Vai trò</label>
+        <select id="us-inv-role" v-model="inv.role" class="txt">
+          <option v-for="(label, r) in ROLE_VI" :key="r" :value="r">{{ label }}</option>
+        </select>
+        <button class="btn btn-primary" :disabled="busy">Gửi lời mời</button>
+      </div>
+      <p v-if="inv.error" id="us-inv-err" class="field-err" role="alert">{{ inv.error }}</p>
+    </form>
+    <div v-if="link" class="us-link" role="status">
+      <p class="small" style="margin:0">Chưa cấu hình email: gửi liên kết này cho <strong>{{ link.email }}</strong> (dùng một lần, trong 72 giờ).</p>
+      <div class="us-inv-row">
+        <label class="sr-only" for="us-link-val">Liên kết mời</label>
+        <input id="us-link-val" class="txt us-inv-email" :value="link.url" readonly @focus="$event.target.select()">
+        <button class="btn btn-secondary" type="button" @click="copyLink">{{ link.copied ? 'Đã sao chép' : 'Sao chép' }}</button>
+      </div>
+    </div>
+
     <div class="us-bar">
       <label class="sr-only" for="us-q">Tìm theo email</label>
       <input id="us-q" v-model="q" class="txt us-search" type="search" placeholder="Tìm theo email" @input="reloadSoon">
@@ -43,13 +67,18 @@
           </select>
         </div>
         <div class="us-state">
-          <span v-if="u.bi_khoa" class="us-tag is-locked-tag">Bị khoá</span>
+          <span v-if="u.chua_kich_hoat && !u.bi_khoa" class="us-tag is-pending">Chưa kích hoạt · mời {{ when(u.moi_luc) }}</span>
+          <span v-else-if="u.bi_khoa" class="us-tag is-locked-tag">Bị khoá</span>
           <span v-else class="us-tag is-active">Đang hoạt động</span>
           <span v-if="u.bi_khoa && u.ly_do_khoa" class="small us-reason">{{ u.ly_do_khoa }}</span>
         </div>
         <div class="us-act">
-          <button v-if="u.bi_khoa" class="btn btn-secondary btn-sm" type="button" :disabled="busy" @click="unlock(u)">Mở khoá</button>
-          <button v-else class="btn btn-ghost btn-sm us-danger" type="button" :disabled="!u.khoa_duoc || busy"
+          <template v-if="u.chua_kich_hoat && !u.bi_khoa">
+            <button class="btn btn-secondary btn-sm" type="button" :disabled="busy" @click="resend(u)">Gửi lại lời mời</button>
+            <button class="btn btn-ghost btn-sm us-danger" type="button" :disabled="busy" @click="cancel(u)">Huỷ lời mời</button>
+          </template>
+          <button v-else-if="u.bi_khoa" class="btn btn-secondary btn-sm" type="button" :disabled="busy" @click="unlock(u)">Mở khoá</button>
+          <button v-if="!u.bi_khoa && !u.chua_kich_hoat" class="btn btn-ghost btn-sm us-danger" type="button" :disabled="!u.khoa_duoc || busy"
                   :aria-describedby="u.ly_do_khong ? 'why-' + u.id : null" @click="askLock(u, $event)">Khoá…</button>
         </div>
         <p v-if="u.ly_do_khong" :id="'why-' + u.id" class="small us-why">{{ u.ly_do_khong }}</p>
@@ -107,12 +136,12 @@
 <script setup>
 /* /quan-tri/tai-khoan (admin): accounts, roles, lock / unlock (UC24, seq-19 b16-19). The server enforces the guards
  * (never yourself, never the last active admin) and sends why a control is unavailable; the page only shows it. */
-import { nextTick, onMounted, ref } from 'vue'
-import { ROLE_VI, listUsers, lockUser, setUserRole, unlockUser } from '@/api'
+import { nextTick, onMounted, reactive, ref } from 'vue'
+import { ROLE_VI, cancelInvite, inviteUser, listUsers, lockUser, resendInvite, setUserRole, unlockUser } from '@/api'
 
 const METHOD = { mat_khau: 'Mật khẩu', google: 'Google', facebook: 'Facebook' }
 const STATES = [{ id: '', label: 'Tất cả' }, { id: 'false', label: 'Đang hoạt động' }, { id: 'true', label: 'Bị khoá' }]
-const ACTION = { doi_vai_tro: 'Đổi vai trò', khoa: 'Khoá', mo_khoa: 'Mở khoá' }
+const ACTION = { doi_vai_tro: 'Đổi vai trò', khoa: 'Khoá', mo_khoa: 'Mở khoá', moi: 'Mời', gui_lai_moi: 'Gửi lại lời mời', huy_moi: 'Huỷ lời mời' }
 
 const items = ref([])
 const log = ref([])
@@ -139,6 +168,39 @@ function describe(l) {
   if (l.hanh_dong === 'doi_vai_tro') return `${head}: ${ROLE_VI[l.truoc?.role] || l.truoc?.role} → ${ROLE_VI[l.sau?.role] || l.sau?.role}`
   if (l.hanh_dong === 'khoa') return `${head}: ${l.sau?.ly_do || ''}`
   return head
+}
+
+/* invitations (account-invites-reset) */
+const inv = reactive({ email: '', role: 'architect', error: '' })
+const link = ref(null) // shown only when email is not configured: the admin passes the link on
+const sentNote = (r, verb) => {
+  link.value = r.link ? { email: r.user.email, url: r.link, copied: false } : null
+  note.value = r.gui_email ? `Đã ${verb} lời mời tới ${r.user.email}.` : `Đã tạo lời mời cho ${r.user.email}, sao chép liên kết bên trên.`
+}
+async function invite() {
+  inv.error = ''; note.value = ''
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email)) { inv.error = 'Nhập một địa chỉ email hợp lệ.'; return }
+  busy.value = true
+  try {
+    sentNote(await inviteUser(inv.email, inv.role), 'gửi')
+    inv.email = ''
+    await load()
+  } catch (e) { inv.error = typeof e.detail === 'string' ? e.detail : e.message } finally { busy.value = false }
+}
+async function resend(u) {
+  busy.value = true; error.value = ''
+  try { sentNote(await resendInvite(u.id), 'gửi lại'); await load() } catch (e) { error.value = e.message } finally { busy.value = false }
+}
+async function cancel(u) {
+  if (!window.confirm(`Huỷ lời mời của ${u.email}? Liên kết sẽ không dùng được nữa.`)) return
+  busy.value = true; error.value = ''
+  try {
+    await cancelInvite(u.id); link.value = null
+    await load(); note.value = `Đã huỷ lời mời của ${u.email}.`
+  } catch (e) { error.value = e.message } finally { busy.value = false }
+}
+async function copyLink() {
+  try { await navigator.clipboard.writeText(link.value.url); link.value.copied = true } catch { /* the field is selectable */ }
 }
 
 async function load() {
@@ -241,6 +303,13 @@ onMounted(load)
 .us-tag.is-me { color: var(--accent); border-color: currentColor }
 .us-tag.is-active { color: var(--success); border-color: currentColor }
 .us-tag.is-locked-tag { color: var(--danger); border-color: currentColor }
+.us-tag.is-pending { color: var(--warn); border-color: currentColor }
+.us-invite { margin-top: 24px; display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--panel) }
+.us-invite .h-4 { margin: 0 }
+.us-inv-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+.us-inv-email { flex: 1 1 240px; min-width: 0 }
+.us-link { margin-top: 12px; display: grid; gap: 8px; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: var(--radius-md) }
 .us-since { color: var(--dim); width: 100% }
 .us-role-cell select { width: 100% }
 .us-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px }

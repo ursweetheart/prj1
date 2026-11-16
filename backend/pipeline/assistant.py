@@ -11,8 +11,9 @@ import sys
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
+from psycopg.rows import tuple_row
 
-from pipeline import leads, taxonomy, vertex
+from pipeline import conversations, leads, taxonomy, topic_guard, vertex
 from pipeline.search import _embedder, by_text
 from pipeline.store import DSN
 
@@ -39,7 +40,7 @@ def _has(text: str, words) -> bool:
 
 
 def parse_request(message: str) -> dict:
-    t = _fold(message)
+    t = _fold(message).replace("-", " ")  # "wabi-sabi" is how visitors write "Wabi sabi"
     area = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:m2|m²|met vuong)", t)
     styles = taxonomy.synonym_map("phong_cach")
     style = next((v for k, v in styles.items() if k in t), None) or next(
@@ -184,16 +185,29 @@ def _log_gap(question: str, best: float | None):
                      (question, unmapped_terms(question), best))
 
 
+def _forbidden(text: str, where: str):
+    """{id, ten, o} when text hits a switched-on forbidden topic (seq-3 b15), else None."""
+    with psycopg.connect(DSN) as conn:
+        hit = topic_guard.check(conn, text)
+    return {"id": hit["id"], "ten": hit["ten"], "o": where} if hit else None
+
+
 def respond(message: str, history: list | None = None, contact: str | None = None,
-            phien_id: str | None = None, gui_ho_so: bool = False) -> dict:
+            phien_id: str | None = None, gui_ho_so: bool = False, rang_buoc: dict | None = None,
+            lead_history: list | None = None) -> dict:
+    """history: earlier turns for the model. rang_buoc: constraints collected earlier in the conversation (chat-history);
+    lead_history: the turns a lead stores, when they differ from `history` (the visitor's own, unmasked)."""
     req = parse_request(message)
-    hits = retrieve(message)
+    merged = conversations.merge(rang_buoc, req)  # what the visitor said earlier still applies
+    req = {**req, **merged}
+    blocked = _forbidden(message, "cau_hoi")  # a forbidden question is not looked up at all
+    hits = [] if blocked else retrieve(message)
     known = bool(hits) and hits[0][4] >= MIN_SCORE
-    conversation = (history or []) + [{"role": "user", "content": message}]
+    conversation = (lead_history if lead_history is not None else history or []) + [{"role": "user", "content": message}]
 
     photos = None  # the knowledge base has no answer: try the descriptions of the published photos
     best = float(hits[0][4]) if hits else None  # best cosine seen, for the knowledge-gap log
-    if not known and vertex.available():
+    if not known and not blocked and vertex.available():
         try:
             photo_hits = retrieve_photos(message)
             if photo_hits:
@@ -203,7 +217,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
             logging.getLogger(__name__).exception("photo RAG failed; answering from the knowledge base only")
     answered = known or photos is not None
 
-    out = {"request": req, "answered": answered, "sources": [], "images": [], "lead_id": None}
+    out = {"request": req, "answered": answered, "sources": [], "images": [], "lead_id": None, "rang_buoc": merged,
+           "diem_cao_nhat": round(best, 3) if best is not None else None}
     if known:
         top = hits[0]
         out["answer"] = top[3]
@@ -214,18 +229,23 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
         out["images"] = [{"id": h[0], "relative_path": h[1], "space_type": h[2], "design_style": h[3]} for h in photos["hits"]]
     else:
         out["answer"] = FALLBACK
+    if answered:  # the draft is checked whichever source wrote it
+        blocked = _forbidden(out["answer"], "tra_loi")
+    if blocked:  # handed to a person; the visitor is not told which topic
+        answered = False
+        out.update(answer=FALLBACK, answered=False, sources=[], images=[], chu_de_cam=blocked)
     if answered and (req["price_intent"] or req["appointment_intent"]):
         out["answer"] += "\n\nĐể kiến trúc sư báo giá/xác nhận lịch chính xác, bạn vui lòng để lại số điện thoại hoặc email."
     if req["price_intent"]:  # cost-estimate: a quick range from the price table, without waiting for a call
         out["answer"] += "\n\nƯớc tính nhanh theo diện tích và gói vật liệu: /uoc-tinh"
 
     # Three published projects matching the request (never drafts: this endpoint is public)
-    if known and (req["space_type"] or req["design_style"] or req["project_type"]):
+    if known and answered and (req["space_type"] or req["design_style"] or req["project_type"]):
         q = " ".join(filter(None, [req["space_type"] and message, req["design_style"] and req["design_style"].replace("_", " ")])) or message
         out["images"] = [{"id": r[4], "relative_path": r[0], "space_type": r[1], "design_style": r[2]}
                          for r in by_text(q, req["space_type"], 3, published_only=True)]
 
-    if not answered:
+    if not answered and not blocked:
         _log_gap(message, best)  # a discovery signal, kept besides the handoff lead
     intent = "handoff" if not answered else "appointment" if req["appointment_intent"] else "price" if req["price_intent"] else None
     if intent:
@@ -244,12 +264,26 @@ SERVICE_BY_LABEL = {
 }
 
 
-def with_services(hotspots):
-    """Add `service` (a kb_chunk title) to each detected object; non-furniture detections get None."""
+ITEM_SERVICE = ("SELECT m.id, k.title FROM mon_do m JOIN kb_chunk k ON k.id = m.dich_vu_id "
+                "WHERE m.id = ANY(%s) AND k.kind = 'service' AND k.trang_thai = 'dang_dung'")
+
+
+def with_services(hotspots, conn=None):
+    """Add `service` (a kb_chunk title) to each object: the linked item's service when it has one in use, else the
+    detected label's mapping (couch -> living room), else None."""
     if not hotspots:
         return hotspots
-    for o in hotspots.get("objects", []):
-        o["service"] = SERVICE_BY_LABEL.get(o.get("label"))
+    objs = hotspots.get("objects", [])
+    ids = list({o["mon_do_id"] for o in objs if isinstance(o.get("mon_do_id"), int)})
+    by_item = {}
+    if ids:
+        if conn is None:
+            with psycopg.connect(DSN) as own:
+                by_item = dict(own.execute(ITEM_SERVICE, (ids,)).fetchall())
+        else:
+            by_item = {r[0]: r[1] for r in conn.cursor(row_factory=tuple_row).execute(ITEM_SERVICE, (ids,)).fetchall()}
+    for o in objs:
+        o["service"] = by_item.get(o.get("mon_do_id")) or SERVICE_BY_LABEL.get(o.get("label"))
     return hotspots
 
 

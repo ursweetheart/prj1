@@ -251,7 +251,8 @@ CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, creat
 -- ── Style quiz (change: style-quiz; UC06, seq-12) ──────────────────────────────────────────────────────────
 -- A quiz answer is a consented behaviour event too; the interest score does not count it (trends.py reads views/saves).
 ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
-ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem'));
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem',
+  'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc'));  -- behaviour-events
 -- one saved result per account; re-scored by the server on save, suggestions re-read (unpublished ones dropped)
 CREATE TABLE IF NOT EXISTS ket_qua_trac_nghiem (
   nguoi_dung_id int PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
@@ -334,3 +335,89 @@ CREATE TABLE IF NOT EXISTS bao_cao_tuan (
   tieu_de text,
   noi_dung text
 );
+
+-- Chat conversations (change chat-history; seq-3 b18, class-4 HoiThoai / TinNhan). Kept anonymously 90 days after the
+-- last message; linked to a session only when it exists in phien_truy_cap (= the visitor accepted collection).
+-- Phone numbers and emails in visitor messages are masked before storing.
+CREATE TABLE IF NOT EXISTS hoi_thoai (
+  id text PRIMARY KEY,                -- 32 hex chars, random: holding it is what lets a visitor read or delete it
+  phien_id text REFERENCES phien_truy_cap(id) ON DELETE SET NULL,
+  rang_buoc jsonb NOT NULL DEFAULT '{}',   -- project_type, space_type, area_m2, design_style collected so far
+  da_chuyen_nguoi_that boolean NOT NULL DEFAULT false,
+  bat_dau timestamptz NOT NULL DEFAULT now(),
+  cap_nhat timestamptz NOT NULL DEFAULT now(),
+  so_tin_nhan int NOT NULL DEFAULT 0,
+  chua_tra_loi int NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS hoi_thoai_cap_nhat ON hoi_thoai (cap_nhat DESC);
+CREATE TABLE IF NOT EXISTS tin_nhan (
+  id serial PRIMARY KEY,
+  hoi_thoai_id text NOT NULL REFERENCES hoi_thoai(id) ON DELETE CASCADE,
+  vai_tro text NOT NULL CHECK (vai_tro IN ('khach', 'tro_ly')),
+  noi_dung text NOT NULL,
+  nguon jsonb,
+  diem_cao_nhat real,
+  tra_loi_duoc boolean,
+  thoi_diem timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS tin_nhan_hoi_thoai ON tin_nhan (hoi_thoai_id, id);
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS hoi_thoai_id text REFERENCES hoi_thoai(id) ON DELETE SET NULL;
+
+-- Item library for hotspots (change hotspot-items; seq-14, class-1 MonDo). Hotspots stay in space.hotspots.objects;
+-- an object may carry nguon_tao ('ai' | 'thu_cong') and mon_do_id. Supplier and note are never sent to visitors.
+CREATE TABLE IF NOT EXISTS mon_do (
+  id serial PRIMARY KEY,
+  ten text NOT NULL CHECK (length(ten) BETWEEN 1 AND 120),
+  ten_khoa text NOT NULL UNIQUE,      -- folded name: the duplicate check (case and accents ignored)
+  phan_loai text CHECK (length(phan_loai) <= 60),
+  kieu_dang text CHECK (length(kieu_dang) <= 60),
+  vat_lieu text CHECK (length(vat_lieu) <= 60),
+  mau_sac text CHECK (length(mau_sac) <= 40),
+  nha_cung_cap text CHECK (length(nha_cung_cap) <= 120),
+  ghi_chu text CHECK (length(ghi_chu) <= 500),
+  tao_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  cap_nhat_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Behaviour events (change behaviour-events; UC21, class-4 SuKien): page / project views with time and scroll, CTA clicks,
+-- forms, chat, share, filters. Pages are stored as route patterns (/bo-suu-tap/xem/:ma), never the real path or query.
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS trang text;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS doi_tuong text;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS thoi_gian_dung_ms int;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS do_sau_cuon real;
+
+-- Password links (change account-invites-reset; UC24, seq-19 b7-11): invitation (72 h) and reset (1 h) links, single use.
+-- Only a sha256 of the random code is stored; issuing a link voids the account's earlier active links.
+CREATE TABLE IF NOT EXISTS ma_dat_mat_khau (
+  id serial PRIMARY KEY,
+  tai_khoan_id int NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  loai text NOT NULL CHECK (loai IN ('moi', 'dat_lai')),
+  ma_bam text NOT NULL UNIQUE,
+  het_han timestamptz NOT NULL,
+  da_dung timestamptz,
+  da_huy timestamptz,
+  tao_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ma_dat_mat_khau_tai_khoan ON ma_dat_mat_khau (tai_khoan_id);
+
+-- Forbidden topics (change topic-guard-sitemap-item-services; seq-3 b15): keywords the assistant must not discuss.
+-- A question or answer that hits a switched-on topic is replaced by the handoff message; the hit is kept on the reply.
+CREATE TABLE IF NOT EXISTS chu_de_cam (
+  id serial PRIMARY KEY,
+  ten text NOT NULL CHECK (length(ten) BETWEEN 1 AND 80),
+  ten_khoa text NOT NULL UNIQUE,      -- folded name: the duplicate check (case and accents ignored)
+  tu_khoa text[] NOT NULL CHECK (cardinality(tu_khoa) BETWEEN 1 AND 30),
+  ghi_chu text CHECK (length(ghi_chu) <= 300),
+  bat boolean NOT NULL DEFAULT true,
+  tao_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  cap_nhat_boi int REFERENCES app_user(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE tin_nhan ADD COLUMN IF NOT EXISTS chu_de_cam jsonb;  -- {id, ten, o: cau_hoi | tra_loi}; staff only
+
+-- Item -> service package (same change; roadmap 1.9): the visitor's hotspot card shows it, over the label mapping.
+ALTER TABLE mon_do ADD COLUMN IF NOT EXISTS dich_vu_id int REFERENCES kb_chunk(id) ON DELETE SET NULL;

@@ -17,6 +17,17 @@ def _fresh_rate_limits():
     ratelimit.reset()  # tests share one client IP
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _drop_test_conversations():
+    """Every POST /chat now stores a conversation (chat-history). Tests that chat without cleaning up would leave them
+    behind: remove the anonymous ones started while the suite ran. A visitor's consented conversation has a session."""
+    with psycopg.connect(DSN) as c:
+        started = c.execute("SELECT now()").fetchone()[0]
+    yield
+    with psycopg.connect(DSN) as c:
+        c.execute("DELETE FROM hoi_thoai WHERE bat_dau >= %s AND phien_id IS NULL", (started,))
+
+
 @pytest.fixture(scope="session")
 def as_role():
     """as_role('admin') -> Authorization headers for a throw-away account with that role."""

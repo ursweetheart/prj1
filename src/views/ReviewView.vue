@@ -46,6 +46,12 @@
       <button v-if="canReturn" class="btn btn-secondary" type="button" :disabled="!selected.size"
               @click="ask('return', [...selected], $event)">Trả về nháp {{ selected.size }} mục</button>
     </div>
+    <!-- unpublish-photos: on "Đã đăng", the lead architect / admin can take photos down (with a reason) -->
+    <div v-if="canUnpublish && rows.length" class="row g10" style="margin-top:16px;flex-wrap:wrap;align-items:center">
+      <label class="row g10 small"><input type="checkbox" :checked="selected.size === rows.length" @change="selectAll($event.target.checked)"> Chọn tất cả</label>
+      <button class="btn btn-secondary" type="button" :disabled="!selected.size"
+              @click="ask('unpublish', [...selected], $event)">Gỡ khỏi website {{ selected.size }} mục</button>
+    </div>
     <label v-if="status === 'draft'" class="row g10 small" style="margin-top:14px">
       <input v-model="onlyReturned" type="checkbox"> Chỉ ảnh bị trả về
     </label>
@@ -56,7 +62,7 @@
 
     <section v-for="g in groups" :key="g.project" style="margin-top:28px">
       <div class="row g10" style="flex-wrap:wrap;align-items:center">
-        <label v-if="canAdvance" class="row g10"><input type="checkbox" :checked="g.rows.every(r => selected.has(r.id))"
+        <label v-if="canSelect" class="row g10"><input type="checkbox" :checked="g.rows.every(r => selected.has(r.id))"
                @change="selectProject(g, $event.target.checked)" :aria-label="'Chọn cả dự án ' + g.project"></label>
         <h2 :id="'p-' + g.project" class="h-4 rv-anchor" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
         <template v-if="isStaff">
@@ -71,7 +77,7 @@
 
       <ul class="stack" style="margin-top:12px;gap:14px;list-style:none;padding:0">
         <li v-for="r in g.rows" :key="r.id" class="form-ok" style="gap:16px;flex-wrap:wrap;align-items:flex-start">
-          <input v-if="canAdvance" type="checkbox" :checked="selected.has(r.id)" @change="toggle(r.id)" :aria-label="'Chọn ' + r.relative_path">
+          <input v-if="canSelect" type="checkbox" :checked="selected.has(r.id)" @change="toggle(r.id)" :aria-label="'Chọn ' + r.relative_path">
           <button type="button" class="thumb" :aria-label="'Sửa điểm nóng của ' + r.relative_path" :disabled="!isStaff" @click="openHotspots(r)">
             <img :src="imageUrl(r.relative_path)" :alt="r.alt_text" loading="lazy">
           </button>
@@ -105,23 +111,8 @@
             <div v-if="isStaff" class="field"><label :for="'mat' + r.id">Vật liệu (cách nhau bằng dấu phẩy)</label>
               <input :id="'mat' + r.id" v-model="r.materialsText"></div>
 
-            <div v-if="hs.id === r.id" class="stack" style="gap:8px">
-              <div class="hs-edit">
-                <img :src="imageUrl(r.relative_path)" alt="">
-                <span v-for="(o, i) in hs.objects" :key="o.index" class="dot"
-                      :style="{ left: o.hotspot_anchor[0] * 100 + '%', top: o.hotspot_anchor[1] * 100 + '%' }">{{ i + 1 }}</span>
-              </div>
-              <p v-if="!hs.objects.length" class="small">Không còn điểm nóng nào.</p>
-              <div v-for="(o, i) in hs.objects" :key="o.index" class="row g10">
-                <span class="num small">{{ i + 1 }}</span>
-                <input v-model="o.label_vi" class="txt" style="flex:1" :aria-label="'Tên món đồ ' + (i + 1)">
-                <button class="btn btn-ghost" type="button" @click="hs.objects.splice(i, 1)">Xoá</button>
-              </div>
-              <div class="row g10">
-                <button class="btn btn-secondary" type="button" @click="saveHotspots(r)">Lưu điểm nóng</button>
-                <button class="btn btn-ghost" type="button" @click="hs.id = null">Đóng</button>
-              </div>
-            </div>
+            <HotspotEditor v-if="hs.id === r.id" :space-id="r.id" :src="imageUrl(r.relative_path)" :objects="hs.objects"
+                           @saved="hs.id = null; saved = r.id" @close="hs.id = null" />
 
             <div class="row g10" style="flex-wrap:wrap">
               <button v-if="canEditText || isStaff" class="btn btn-secondary" type="button" @click="save(r)">Lưu</button>
@@ -133,6 +124,7 @@
                 <button v-if="status === 'approved' || status === 'cleared'" class="btn btn-ghost" type="button"
                         @click="ask('keep_internal', [r.id], $event)">Lưu nội bộ</button>
                 <button v-if="status === 'noi_bo'" class="btn btn-secondary" type="button" @click="ask('reopen', [r.id], $event)">Mở lại</button>
+                <button v-if="status === 'published'" class="btn btn-ghost" type="button" @click="ask('unpublish', [r.id], $event)">Gỡ khỏi website</button>
               </template>
               <span v-if="saved === r.id" class="small" aria-live="polite">Đã lưu</span>
             </div>
@@ -145,6 +137,11 @@
     <dialog ref="dlgEl" class="rv-dialog" aria-labelledby="rv-dlg-h" @close="onDialogClose">
       <form v-if="dlg.action" class="stack" style="gap:12px" @submit.prevent="confirmMove">
         <h2 id="rv-dlg-h" class="h-4" style="margin:0">{{ ACTION_VI[dlg.action] }} · {{ dlg.ids.length }} ảnh</h2>
+        <fieldset v-if="dlg.action === 'unpublish'" class="rv-outcome">
+          <legend class="small">Sau khi gỡ</legend>
+          <label class="row g10"><input v-model="dlg.internal" type="radio" name="rv-outcome" :value="false"> Gỡ xuống để sửa (về Nháp)</label>
+          <label class="row g10"><input v-model="dlg.internal" type="radio" name="rv-outcome" :value="true"> Gỡ và lưu nội bộ (khách rút lại đồng ý)</label>
+        </fieldset>
         <div class="field">
           <label for="rv-reason">Lý do <span class="small">(bắt buộc, người tải ảnh lên sẽ nhận được)</span></label>
           <textarea id="rv-reason" v-model="dlg.reason" rows="3" maxlength="500" required
@@ -166,8 +163,10 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   APPROVERS, NEXT_STATUS, RETURNABLE, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
-  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, uploadAll
+  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, unpublishSpaces,
+  uploadAll
 } from '@/api'
+import HotspotEditor from '@/components/HotspotEditor.vue'
 
 const HUMAN = ['loai_cong_trinh', 'muc_dau_tu'] // the AI cannot see these; staff fill them per project
 
@@ -258,13 +257,8 @@ const hs = reactive({ id: null, objects: [] })
 
 const openHotspots = r => run(async () => {
   const s = await getSpace(r.id)
-  hs.objects = ((s.hotspots && s.hotspots.objects) || []).map((o, index) => ({ ...o, index, label_vi: o.label_vi || o.label }))
+  hs.objects = (s.hotspots && s.hotspots.objects) || [] // HotspotEditor saves through PUT /spaces/{id}/hotspots
   hs.id = r.id
-})
-
-const saveHotspots = r => run(async () => {
-  await reviewSpace(r.id, { hotspots: hs.objects.map(o => ({ index: o.index, label_vi: o.label_vi })) })
-  hs.id = null; saved.value = r.id
 })
 
 /* ── advance ────────────────────────────────────────────────────────── */
@@ -288,17 +282,22 @@ const advanceSelected = () => run(async () => {
 /* ── backward paths: return to draft, keep internal, reopen (review-return-reject) ── */
 const isApprover = computed(() => hasRole(APPROVERS))
 const canReturn = computed(() => isApprover.value && RETURNABLE.includes(status.value))
+const canUnpublish = computed(() => isApprover.value && status.value === 'published')
+const canSelect = computed(() => canAdvance.value || canUnpublish.value)
 const onlyReturned = ref(false)
 const moved = ref('')
-const REASON_VI = { tra_ve: 'Bị trả về', noi_bo: 'Lưu nội bộ', mo_lai: 'Mở lại' }
-const ACTION_VI = { return: 'Trả về nháp', keep_internal: 'Lưu nội bộ, không xuất bản', reopen: 'Mở lại về nháp' }
-const CALL = { return: returnSpaces, keep_internal: keepInternal, reopen: reopenSpaces }
+const REASON_VI = { tra_ve: 'Bị trả về', noi_bo: 'Lưu nội bộ', mo_lai: 'Mở lại', go_xuong: 'Đã gỡ khỏi website',
+  go_noi_bo: 'Gỡ khỏi website, lưu nội bộ' }
+const ACTION_VI = { return: 'Trả về nháp', keep_internal: 'Lưu nội bộ, không xuất bản', reopen: 'Mở lại về nháp',
+  unpublish: 'Gỡ khỏi website' }
+const CALL = { return: returnSpaces, keep_internal: keepInternal, reopen: reopenSpaces,
+  unpublish: (ids, reason) => unpublishSpaces(ids, reason, dlg.internal) }
 const when = t => (t ? new Date(t).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : '')
 const dlgEl = ref(null)
-const dlg = reactive({ action: '', ids: [], reason: '', error: '', busy: false, opener: null })
+const dlg = reactive({ action: '', ids: [], reason: '', error: '', busy: false, opener: null, internal: false })
 
 function ask(action, ids, e) {
-  Object.assign(dlg, { action, ids, reason: '', error: '', busy: false, opener: e?.currentTarget || null })
+  Object.assign(dlg, { action, ids, reason: '', error: '', busy: false, opener: e?.currentTarget || null, internal: false })
   nextTick(() => { dlgEl.value.showModal(); document.getElementById('rv-reason')?.focus() })
 }
 function onDialogClose() {
@@ -340,11 +339,12 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .thumb { padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden }
 .thumb img { width: 140px; height: 100px; object-fit: cover; display: block }
 .thumb:disabled { cursor: default }
-.hs-edit { position: relative; max-width: 520px }
-.hs-edit img { width: 100%; display: block; border-radius: var(--radius-sm) }
 .rv-reason { margin: 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--panel); font-size: 14px;
   color: var(--ink); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; overflow-wrap: anywhere }
-.rv-reason.is-noi_bo { border-left-color: var(--danger) }
+.rv-reason.is-noi_bo, .rv-reason.is-go_noi_bo { border-left-color: var(--danger) }
+.rv-outcome { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; margin: 0; display: grid; gap: 6px }
+.rv-outcome legend { padding: 0 4px; color: var(--dim) }
+.rv-outcome input { accent-color: var(--accent) }
 .rv-reason.is-mo_lai { border-left-color: var(--success) }
 .rv-by { color: var(--dim); font-size: 13px }
 .rv-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); color: var(--ink);
@@ -352,6 +352,4 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .rv-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
 .rv-dialog textarea { width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
   border-radius: var(--radius-md); padding: 10px 12px; font: inherit; color-scheme: dark }
-.dot { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%;
-  background: var(--accent); color: var(--accent-on); font-size: 12px; display: grid; place-items: center }
 </style>

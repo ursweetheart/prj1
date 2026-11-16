@@ -91,6 +91,18 @@ export function adoptTokenFromHash() {
   setToken(m[1])
   history.replaceState(null, '', location.pathname + location.search)
 }
+/* account-invites-reset: invitations (admin) and password links (public). The link code travels in the body, never the URL */
+export const inviteUser = (email, role) => request('POST', '/users/invite', { body: { email, role } })
+export const resendInvite = id => request('POST', '/users/' + id + '/invite/resend')
+export const cancelInvite = id => request('POST', '/users/' + id + '/invite/cancel')
+export const forgotPassword = email => request('POST', '/auth/forgot', { body: { email } })
+export const linkInfo = ma => request('POST', '/auth/link-info', { body: { ma } })
+export async function setPasswordFromLink(ma, matKhau) {
+  const r = await request('POST', '/auth/set-password', { body: { ma, mat_khau: matKhau } })
+  setToken(r.access_token)
+  return loadUser()
+}
+
 export async function login(email, password) {
   const res = await fetch(API + '/auth/login', { method: 'POST', body: new URLSearchParams({ username: email, password }) })
   if (!res.ok) {
@@ -147,6 +159,12 @@ export const updateKnowledge = (id, body) => request('PATCH', '/knowledge/' + id
 export const setKnowledgeStatus = (id, trangThai) => request('POST', '/knowledge/' + id + '/status', { body: { trang_thai: trangThai } })
 export const deleteKnowledge = id => request('DELETE', '/knowledge/' + id)
 export const knowledgeGaps = () => get('/knowledge/gaps')
+// forbidden topics (seq-3 b15): keywords the assistant must not discuss
+export const listTopics = () => get('/forbidden-topics')
+export const createTopic = body => request('POST', '/forbidden-topics', { body })
+export const updateTopic = (id, body) => request('PATCH', '/forbidden-topics/' + id, { body })
+export const deleteTopic = id => request('DELETE', '/forbidden-topics/' + id)
+export const tryTopics = text => request('POST', '/forbidden-topics/try', { body: { text } })
 export const dismissGaps = ids => request('POST', '/knowledge/gaps/dismiss', { body: { ids } })
 export const addDimension = body => request('POST', '/taxonomy', { body })
 export const editDimension = (id, body) => request('PATCH', '/taxonomy/' + id, { body })
@@ -185,6 +203,18 @@ function track(loai, spaceId) {
   request('POST', '/events', { body: { loai, dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
     .catch(() => {}) // errors are not the visitor's problem
 }
+/* behaviour-events (UC21): page views with time and scroll, CTA clicks, forms, chat, share, filters. Same consent rule as
+   track(): details only with consent, otherwise just the day's count. Never for staff (a signed-in account still loading
+   could be staff, so it waits). keepalive lets a page-leave event survive the tab closing. */
+export function trackEvent(loai, fields = {}) {
+  if (session.token && (!session.user || session.user.role !== 'visitor')) return
+  const id = consent.get() === 'yes' && visitId()
+  const body = id ? { loai, dong_y: true, phien_id: id, ...fields } : { loai, dong_y: false }
+  try {
+    fetch(API + '/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true })
+      .catch(() => {})
+  } catch { /* never the visitor's problem */ }
+}
 export const trackView = spaceId => track('xem_khong_gian', spaceId)
 export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
 export const trackQuizPick = spaceId => track('chon_trac_nghiem', spaceId) // style-quiz: not in the interest score
@@ -201,10 +231,20 @@ export const RETURNABLE = ['in_review', 'approved', 'cleared']
 export const returnSpaces = (ids, lyDo) => request('POST', '/spaces/return', { body: { space_ids: ids, ly_do: lyDo } })
 export const keepInternal = (ids, lyDo) => request('POST', '/spaces/keep-internal', { body: { space_ids: ids, ly_do: lyDo } })
 export const reopenSpaces = (ids, lyDo) => request('POST', '/spaces/reopen', { body: { space_ids: ids, ly_do: lyDo } })
+/* unpublish-photos: published -> draft (to fix) or noi_bo (the client withdrew consent), always with a reason */
+export const unpublishSpaces = (ids, lyDo, giuNoiBo = false) => request('POST', '/spaces/unpublish', { body: { space_ids: ids, ly_do: lyDo, giu_noi_bo: giuNoiBo } })
 export const EDITORS = [...STAFF, 'content'] // content may only edit caption / alt text of spaces in review
 
 export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })
 export const reviewSpace = (id, body) => request('PATCH', '/spaces/' + id, { body })
+/* hotspot-items: hotspots edited by hand and the item library (seq-14) */
+export const saveHotspots = (id, hotspots) => request('PUT', '/spaces/' + id + '/hotspots', { body: { hotspots } })
+export const searchItems = (q = '', limit = 200) => get('/items', { q, limit })
+export const createItem = body => request('POST', '/items', { body })
+export const updateItem = (id, body) => request('PATCH', '/items/' + id, { body })
+export const deleteItem = id => request('DELETE', '/items/' + id)
+export const itemSpaces = id => get('/items/' + id + '/spaces')
+export const itemServices = () => get('/items/services') // service packages an item may point to
 export const advanceSpaces = (ids, rightsConfirmed = false) =>
   request('POST', '/spaces/advance', { body: { space_ids: ids, rights_confirmed: rightsConfirmed } })
 export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}
@@ -235,8 +275,17 @@ export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o 
 }))
 export const listLeads = (params = {}) => get('/leads', params)
 /* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
-export const sendChat = (message, history, contact, sendViews = false) =>
-  request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}), ...viewsConsent(sendViews) } })
+/* chat-history: the conversation id goes with every message; the session id goes whenever the banner was accepted
+   (as /events does) so the conversation is linked, while a lead still attaches views only when the box is ticked */
+export const sendChat = (message, history, contact, sendViews = false, hoiThoaiId = null) => {
+  const phien = consent.get() === 'yes' && visitId()
+  return request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}),
+    ...(hoiThoaiId ? { hoi_thoai_id: hoiThoaiId } : {}), ...(phien ? { phien_id: phien } : {}), gui_ho_so: !!(phien && sendViews) } })
+}
+export const getChat = id => get('/chat/' + encodeURIComponent(id))
+export const deleteChat = id => request('DELETE', '/chat/' + encodeURIComponent(id))
+export const listConversations = (params = {}) => get('/conversations', params)
+export const getConversation = id => get('/conversations/' + encodeURIComponent(id))
 /* Saved collection (UC07) and design brief (UC08). The browser-or-account switch lives in lib/collection.js */
 export const getMyCollection = () => get('/collections/me')
 export const saveToCollection = (spaceId, ghiChu = null) =>
@@ -254,6 +303,7 @@ export const getSpacesByIds = ids => ids.length ? get('/spaces', { ids: ids.join
 export const sendBrief = body => request('POST', '/briefs', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 /* Trend dashboard (UC22): interest score, trends, totals; aggregates only */
 export const getOverview = (days = 30) => get('/analytics/overview', { days })
+export const getBehaviour = (days = 30) => get('/analytics/behaviour', { days }) // behaviour-events
 export const getProjectStats = (days = 30, cuaToi = false) => get('/analytics/projects', { days, ...(cuaToi ? { cua_toi: true } : {}) })
 export const getProjectDetail = (folder, days = 30) => get('/analytics/projects/' + encodeURIComponent(folder), { days })
 export const getWeeklyOptIn = () => get('/me/weekly-report')

@@ -108,6 +108,63 @@
         </ol>
         <p v-else class="small">Chưa có lượt xem trong {{ days }} ngày.</p>
       </section>
+
+      <!-- behaviour on the site (behaviour-events) -->
+      <section v-if="bh" class="tr-card" aria-labelledby="tr-bh">
+        <h2 id="tr-bh" class="tr-h">Hành vi trên trang <span class="tr-note">{{ days }} ngày, khách đã đồng ý</span></h2>
+        <div class="bh-grid">
+          <div class="bh-block">
+            <h3 class="bh-h">Trang được xem nhiều</h3>
+            <table v-if="bh.trang.length" class="bh-table">
+              <thead><tr><th scope="col">Trang</th><th scope="col">Lượt xem</th><th scope="col">Thời gian TB</th><th scope="col">Cuộn TB</th></tr></thead>
+              <tbody>
+                <tr v-for="p in bh.trang" :key="p.trang">
+                  <td data-k="Trang"><code>{{ p.trang }}</code></td>
+                  <td data-k="Lượt xem" class="num">{{ p.luot_xem }}</td>
+                  <td data-k="Thời gian TB" class="num">{{ p.giay_tb === null ? '–' : p.giay_tb + ' giây' }}</td>
+                  <td data-k="Cuộn TB" class="num">{{ p.cuon_tb === null ? '–' : p.cuon_tb + '%' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="small">Chưa có lượt xem trang.</p>
+            <p class="small bh-anon num">Không đồng ý (chỉ đếm): {{ bh.an_danh.xem_trang + bh.an_danh.xem_du_an }} lượt xem trang</p>
+          </div>
+          <div class="bh-block">
+            <h3 class="bh-h">Dự án được xem nhiều</h3>
+            <ol v-if="bh.du_an.length" class="bh-list">
+              <li v-for="d in bh.du_an" :key="d.du_an"><router-link :to="'/du-an/' + d.du_an">{{ d.du_an }}</router-link>
+                <span class="num">{{ d.luot_xem }} lượt · {{ d.giay_tb ?? '–' }} giây</span></li>
+            </ol>
+            <p v-else class="small">Chưa có.</p>
+          </div>
+          <div class="bh-block">
+            <h3 class="bh-h">Nút kêu gọi (CTA)</h3>
+            <ul v-if="bh.cta.length" class="bh-list">
+              <li v-for="c in bh.cta" :key="c.dich"><code>{{ c.dich }}</code> <span class="num">{{ c.so_lan }} lần</span>
+                <span class="small bh-from">từ {{ c.tu_trang.slice(0, 3).map(t => t.trang + ' (' + t.so_lan + ')').join(', ') }}</span></li>
+            </ul>
+            <p v-else class="small">Chưa có.</p>
+            <p class="small bh-anon num">Không đồng ý: {{ bh.an_danh.bam_CTA }}</p>
+          </div>
+          <div class="bh-block">
+            <h3 class="bh-h">Form, trò chuyện, chia sẻ</h3>
+            <ul class="bh-list">
+              <li v-for="(n, k) in bh.form" :key="k">Gửi form {{ FORM_VI[k] || k }} <span class="num">{{ n }}</span></li>
+              <li>Tin nhắn với trợ lý <span class="num">{{ bh.dong_y.nhan_chatbot }}</span></li>
+              <li>Chia sẻ bộ sưu tập <span class="num">{{ bh.dong_y.chia_se }}</span></li>
+            </ul>
+            <p class="small bh-anon num">Không đồng ý: {{ bh.an_danh.gui_form }} form · {{ bh.an_danh.nhan_chatbot }} tin nhắn · {{ bh.an_danh.chia_se }} chia sẻ</p>
+          </div>
+          <div class="bh-block">
+            <h3 class="bh-h">Bộ lọc được dùng</h3>
+            <ol v-if="bh.bo_loc.length" class="bh-list">
+              <li v-for="f in bh.bo_loc" :key="f.gia_tri">{{ f.gia_tri.split(':')[1].replaceAll('_', ' ') }}
+                <span class="small">{{ f.gia_tri.split(':')[0].replaceAll('_', ' ') }}</span> <span class="num">{{ f.so_lan }}</span></li>
+            </ol>
+            <p v-else class="small">Chưa có.</p>
+          </div>
+        </div>
+      </section>
     </template>
   </main>
 </template>
@@ -115,7 +172,7 @@
 <script setup>
 /* Bảng điều khiển xu hướng (UC22; act-3, seq-18) cho TP Kinh doanh, KTS trưởng, admin. Chỉ số tổng hợp, không có dữ liệu cá nhân. */
 import { computed, ref, watch } from 'vue'
-import { APPROVERS, getOverview, getWeeklyOptIn, hasRole, imageUrl, setWeeklyOptIn, spaceLabel } from '@/api'
+import { APPROVERS, getBehaviour, getOverview, getWeeklyOptIn, hasRole, imageUrl, setWeeklyOptIn, spaceLabel } from '@/api'
 import WeeklyReportPanel from '@/components/WeeklyReportPanel.vue'
 
 const SOURCES = [{ v: 'form', t: 'Form' }, { v: 'chat', t: 'Chat' }, { v: 'brief', t: 'Bộ sưu tập' }, { v: 'estimate', t: 'Ước tính' }]
@@ -134,9 +191,12 @@ const trendText = v => [LABEL[v.xu_huong], v.thay_doi !== null && v.thay_doi !==
 const trendShort = v => (v.xu_huong === 'moi_noi' ? 'mới' : v.thay_doi !== null ? sign(v.thay_doi) : '')
 const weekLabel = iso => { const [, m, d] = iso.split('-'); return d + '/' + m }
 
+const bh = ref(null) // behaviour-events: pages, CTAs, forms, chat, shares, filters
+const FORM_VI = { lien_he: 'liên hệ', brief: 'bộ sưu tập', uoc_tinh: 'ước tính' }
 async function load() {
   error.value = ''
   try { data.value = await getOverview(days.value) } catch (e) { error.value = e.message }
+  bh.value = await getBehaviour(days.value).catch(() => null) // the dashboard works without it
 }
 watch(days, load, { immediate: true })
 
@@ -201,5 +261,24 @@ async function saveOptIn(on) {
 .tr-top { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)) }
 .tr-top a { display: grid; gap: 6px; color: var(--ink); text-decoration: none; font-size: 13px }
 .tr-top img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm); display: block }
+
+.bh-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)) }
+.bh-block { min-width: 0 }
+.bh-h { margin: 0 0 8px; font-size: 13px; font-weight: 500; color: var(--ink-2) }
+.bh-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--ink-2) }
+.bh-table th { text-align: left; font-weight: 400; font-size: 11px; color: var(--faint); padding: 4px 6px; border-bottom: 1px solid var(--line) }
+.bh-table td { padding: 5px 6px; border-bottom: 1px solid var(--line-soft); overflow-wrap: anywhere }
+.bh-table code, .bh-list code { font-size: 12px }
+.bh-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--ink-2) }
+.bh-list .num { color: var(--dim); margin-left: 4px }
+.bh-from { display: block; color: var(--faint) }
+.bh-anon { margin: 8px 0 0; color: var(--faint) }
+@media (max-width: 600px) {
+  .bh-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
+  .bh-table, .bh-table tbody, .bh-table tr, .bh-table td { display: block }
+  .bh-table tr { padding: 6px 0; border-bottom: 1px solid var(--line-soft) }
+  .bh-table td { display: flex; justify-content: space-between; gap: 10px; border: 0; padding: 2px 0 }
+  .bh-table td::before { content: attr(data-k); color: var(--faint); font-size: 11px }
+}
 .tr-top a:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 3px }
 </style>

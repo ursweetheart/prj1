@@ -28,8 +28,9 @@ FIELDS = ("space_type", "design_style")
 
 def classify(clf, row):
     sid, path, palette, hotspots = row[:4]
-    res = clf.classify(IMG_DIR / path, ColorAnalysisResult.model_validate(palette),
-                       FurnitureDetectionResult.model_validate(hotspots))
+    detected = {**hotspots, "objects": [o for o in hotspots.get("objects", []) if o.get("nguon_tao", "ai") == "ai"]}
+    res = clf.classify(IMG_DIR / path, ColorAnalysisResult.model_validate(palette),  # hand-made points have no box
+                       FurnitureDetectionResult.model_validate(detected))
     if res.llm_usage is None:  # the heuristic fallback answered: it guesses from the folder name, so don't use it
         raise RuntimeError("model call failed (heuristic fallback)")
     return res

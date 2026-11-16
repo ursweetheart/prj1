@@ -11,10 +11,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -23,11 +23,11 @@ from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
 from psycopg.errors import UniqueViolation
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (bo_suu_tap, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
-                      trends, vertex, weekly_report)
+from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+                      topic_guard, trends, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
 from pipeline.schemas import SpaceClassificationResult
@@ -53,8 +53,19 @@ STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__arg
 WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
 
 
+_last_purge = None
+
+
 def _weekly_once():
+    """The maintenance check: the weekly report when due, and once a day the 90-day conversation purge."""
+    global _last_purge
     now = datetime.now(timezone.utc)
+    if _last_purge is None or (now - _last_purge).total_seconds() >= 86400:
+        with _db() as c:
+            n = conversations.purge(c)
+        _last_purge = now
+        if n:
+            weekly_report.log.info("purged %d conversations older than %d days", n, conversations.KEEP_DAYS)
     if weekly_report.due(now):
         with _db() as c:
             weekly_report.send_week(c, now)
@@ -133,7 +144,7 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
             f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
             + (", ly_do_duyet" if staff else "") + " "  # the review reason is staff-only
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
-            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai')) "
+            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
             {"t": space_type, "s": design_style, "r": review_status, "i": id_list, "rv": tra_ve and staff,
@@ -306,6 +317,9 @@ BACK = {  # action: (allowed source statuses, target status, reason kind, log ac
     "return": (RETURNABLE, "draft", "tra_ve", "return"),
     "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
     "reopen": ({"noi_bo"}, "draft", "mo_lai", "reopen"),
+    # unpublish-photos: a published photo taken down, to fix it (draft) or because the client withdrew consent (noi_bo)
+    "unpublish": ({"published"}, "draft", "go_xuong", "unpublish"),
+    "unpublish_internal": ({"published"}, "noi_bo", "go_noi_bo", "unpublish"),
 }
 STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
              "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
@@ -360,6 +374,16 @@ def reopen_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*
     return _move_back("reopen", body, user, tasks)
 
 
+class Unpublish(MoveBack):
+    giu_noi_bo: bool = False  # True: the client withdrew consent -> "Lưu nội bộ"; False: back to draft to fix
+
+
+@app.post("/spaces/unpublish")
+def unpublish_spaces(body: Unpublish, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Gỡ khỏi website": published -> draft or noi_bo, with a reason; separate from "Trả về nháp" on purpose."""
+    return _move_back("unpublish_internal" if body.giu_noi_bo else "unpublish", body, user, tasks)
+
+
 AI_DIMS = {"khong_gian", "phong_cach", "tong_mau", "vat_lieu"}  # mirrored from space columns by sync_ai_tags
 
 
@@ -400,11 +424,22 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
     return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
 
 
+PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem")  # about one published photo
+
+
 class Event(BaseModel):
-    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem"]  # view, heart save, photo chosen in the style quiz
+    # photo events (view, heart save, quiz pick) and the behaviour events of UC21 (change behaviour-events)
+    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
+                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc"]
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
+    trang: Optional[str] = Field(default=None, pattern=r"^/[a-z0-9/:_-]{0,99}$")  # route pattern, never a real path
+    doi_tuong: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_/-]{1,100}$")  # slug, photo id, CTA target, form
+    gia_tri: Optional[list[Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+:[A-Za-z0-9_]+$")]]] = Field(
+        default=None, max_length=20)                 # filter values of ap_dung_bo_loc
+    thoi_gian_dung_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
+    do_sau_cuon: Optional[float] = Field(default=None, ge=0, le=1)
 
     @field_validator("phien_id")
     @classmethod
@@ -425,6 +460,11 @@ def track(body: Event):
             return
         c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true) ON CONFLICT DO NOTHING",
                   (body.phien_id,))
+        if body.loai not in PHOTO_EVENTS:  # behaviour-events: no photo, so stored as sent (all fields validated)
+            c.execute("INSERT INTO su_kien (phien_id, loai, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, do_sau_cuon) "
+                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", (body.phien_id, body.loai, body.trang, body.doi_tuong,
+                                                        body.gia_tri or [], body.thoi_gian_dung_ms, body.do_sau_cuon))
+            return
         c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri) "
                   "SELECT %(p)s, %(l)s, s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
                   "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
@@ -442,16 +482,72 @@ class Chat(BaseModel):
     contact: Optional[str] = Field(default=None, max_length=200)
     phien_id: Optional[str] = Field(default=None, pattern=PHIEN)
     gui_ho_so: bool = False                          # "gửi kèm những không gian tôi đã xem", ticked in the chat
+    hoi_thoai_id: Optional[str] = Field(default=None, max_length=64)  # the stored conversation (chat-history)
 
 
 @app.post("/chat", dependencies=[Depends(limit("chat", 20, 60))])
 def chat(body: Chat, tasks: BackgroundTasks):
-    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
-    out = respond(body.message, body.history, body.contact, body.phien_id, body.gui_ho_so)
+    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect.
+    Every turn is stored (masked, anonymous unless the session is a consented one) and the constraints the visitor
+    gave earlier in the conversation carry over (chat-history)."""
+    with _db() as c:
+        hid, rang_buoc, stored = conversations.start_or_get(c, body.hoi_thoai_id, body.phien_id)
+        # the server's own turns once there are any; the lead keeps what the visitor saw, unmasked
+        out = respond(body.message, stored or body.history, body.contact, body.phien_id, body.gui_ho_so,
+                      rang_buoc=rang_buoc, lead_history=body.history or stored)
+        blocked = out.pop("chu_de_cam", None)  # staff only: never in the public reply
+        conversations.add_turn(c, hid, body.message, out["answer"], out["sources"], out.get("diem_cao_nhat"),
+                               out["answered"], out["rang_buoc"], blocked)
+        if out.get("lead_id"):
+            conversations.link_lead(c, hid, out["lead_id"], handoff=not out["answered"])
     if out.get("lead_id"):
         tasks.add_task(notify.notify_new_lead, out["lead_id"])
+    return {**out, "hoi_thoai_id": hid}
+
+
+@app.get("/chat/{hid}", dependencies=[Depends(limit("chat", 20, 60))])
+def chat_read(hid: str):
+    """A visitor's own conversation; the random id is the only key. Masked text, no photos."""
+    with _db() as c:
+        out = conversations.read(c, hid)
+    if out is None:
+        raise HTTPException(404, "no such conversation")
     return out
 
+
+@app.delete("/chat/{hid}", status_code=204, dependencies=[Depends(limit("chat", 20, 60))])
+def chat_delete(hid: str):
+    """"Bắt đầu cuộc mới": the old conversation is removed from the server."""
+    with _db() as c:
+        conversations.delete(c, hid)
+    return Response(status_code=204)
+
+
+
+# ── Conversations for staff (chat-history): how the assistant answers ─────────
+CONVERSATION_ROLES = ("content", "sales", *APPROVERS)
+
+
+@app.get("/conversations")
+def conversations_list(loc: str = "tat_ca", days: int = 30, offset: int = Query(0, ge=0),
+                       user=Depends(require(*CONVERSATION_ROLES))):
+    """Newest first, 50 a page. loc: tat_ca | chua_tra_loi | lead. Masked text, no session id, no contact."""
+    if loc not in conversations.FILTERS:
+        raise HTTPException(422, [{"loc": ["query", "loc"], "msg": "loc must be tat_ca, chua_tra_loi or lead", "type": "value_error"}])
+    if days not in (7, 30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return conversations.list_for_staff(c, loc, days, offset)
+
+
+@app.get("/conversations/{hid}")
+def conversation_detail(hid: str, user=Depends(require(*CONVERSATION_ROLES))):
+    """Messages with each answer's sources and score, the collected constraints, the handoff flag and the lead id."""
+    with _db() as c:
+        out = conversations.detail_for_staff(c, hid)
+    if out is None:
+        raise HTTPException(404, "no such conversation")
+    return out
 
 # ── Lead intake (UC11, seq-5, dfd-2-4) ─────────────────────────────────────────
 PHONE_SEPARATORS = re.compile(r"[\s.\-()]")
@@ -764,6 +860,114 @@ def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
     return row
 
 
+
+# ── Hotspots by hand and the item library (seq-14; class-1 Hotspot / MonDo; roadmap 1.9) ──────────────
+class HotspotIn(BaseModel):
+    index: Optional[int] = None          # position of the detected object it comes from; None = made by hand
+    x: float
+    y: float
+    label_vi: str = Field(max_length=120)
+    mon_do_id: Optional[int] = None
+
+
+class HotspotsIn(BaseModel):
+    hotspots: list[HotspotIn] = Field(max_length=items.MAX_POINTS + 1)  # the exact limit is checked with a row-free message
+
+
+def _item_error(e):
+    if isinstance(e, items.Invalid):
+        loc = ["body", "hotspots", e.row] if e.row is not None else ["body", e.field] if e.field else ["body"]
+        return HTTPException(422, [{"loc": loc, "msg": e.msg, "type": "value_error"}])
+    if isinstance(e, items.Conflict):
+        return HTTPException(409, {"msg": str(e), "existing": e.existing})
+    if isinstance(e, items.InUse):
+        return HTTPException(409, {"msg": str(e), "so_anh": e.n})
+    return HTTPException(404, "no such item")
+
+
+@app.put("/spaces/{space_id}/hotspots")
+def save_hotspots(space_id: int, body: HotspotsIn, user=Depends(require(*STAFF))):
+    """Replace a photo's hotspots with the editor's list: add, move, delete, rename, link to an item (seq-14 b13-14)."""
+    with _db() as c:
+        row = c.execute("SELECT hotspots FROM space WHERE id = %s FOR UPDATE", (space_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such space")
+        try:
+            doc = items.validate_hotspots(c, row["hotspots"], [h.model_dump() for h in body.hotspots])
+        except items.Invalid as e:
+            raise _item_error(e)
+        c.execute("UPDATE space SET hotspots = %s WHERE id = %s", (Jsonb(doc), space_id))
+        objs = doc["objects"]
+        _log(c, space_id, user, "hotspots", {"truoc": len((row["hotspots"] or {}).get("objects", [])), "sau": len(objs),
+                                             "thu_cong": sum(o.get("nguon_tao") == "thu_cong" for o in objs),
+                                             "lien_ket": sum(o.get("mon_do_id") is not None for o in objs)})
+        out = with_services(doc, c)
+    return {"hotspots": out}
+
+
+class ItemIn(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=120)
+    phan_loai: Optional[str] = Field(default=None, max_length=60)
+    kieu_dang: Optional[str] = Field(default=None, max_length=60)
+    vat_lieu: Optional[str] = Field(default=None, max_length=60)
+    mau_sac: Optional[str] = Field(default=None, max_length=40)
+    nha_cung_cap: Optional[str] = Field(default=None, max_length=120)
+    ghi_chu: Optional[str] = Field(default=None, max_length=500)
+    dich_vu_id: Optional[int] = None  # a knowledge entry of kind 'service'; null unlinks
+
+
+@app.get("/items/services")
+def items_services(user=Depends(require(*STAFF))):
+    """Service packages an item may point to (architects cannot open the knowledge screens)."""
+    with _db() as c:
+        return items.services(c)
+
+
+@app.get("/items")
+def items_list(q: str = "", limit: int = Query(200, ge=1, le=500), user=Depends(require(*STAFF))):
+    """The library with how many photos use each item; q searches name, type and material."""
+    with _db() as c:
+        return items.search(c, q, limit)
+
+
+@app.post("/items", status_code=201)
+def items_create(body: ItemIn, user=Depends(require(*STAFF))):
+    try:
+        with _db() as c:
+            return items.create(c, body.model_dump(exclude_unset=True), user["id"])
+    except (items.Invalid, items.Conflict) as e:
+        raise _item_error(e)
+
+
+@app.patch("/items/{item_id}")
+def items_update(item_id: int, body: ItemIn, user=Depends(require(*STAFF))):
+    try:
+        with _db() as c:
+            return items.update(c, item_id, body.model_dump(exclude_unset=True), user["id"])
+    except (items.Invalid, items.Conflict, items.NotFound) as e:
+        raise _item_error(e)
+
+
+@app.delete("/items/{item_id}", status_code=204)
+def items_delete(item_id: int, user=Depends(require(*STAFF))):
+    """Refused while any photo links to the item (409 with the photo count)."""
+    try:
+        with _db() as c:
+            items.delete(c, item_id)
+    except (items.InUse, items.NotFound) as e:
+        raise _item_error(e)
+    return Response(status_code=204)
+
+
+@app.get("/items/{item_id}/spaces")
+def items_spaces(item_id: int, user=Depends(optional_user)):
+    """Photos whose hotspots link to the item. Visitors: published photos, the item's name and type only."""
+    with _db() as c:
+        out = items.spaces_for(c, item_id, staff=bool(user) and user["role"] in STAFF)
+    if out is None:
+        raise HTTPException(404, "no such item")
+    return out
+
 # ── Trend dashboard (UC22; act-3, seq-18) ──────────────────────────────────────
 @app.get("/analytics/overview")
 def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS))):
@@ -775,6 +979,15 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
         return trends.overview(c, days)
 
 
+
+
+@app.get("/analytics/behaviour")
+def analytics_behaviour(days: int = 30, user=Depends(require("sales", *APPROVERS))):
+    """Pages (time, scroll), projects, CTAs, forms, chat, shares, filters (behaviour-events). Counts and averages only."""
+    if days not in (7, 30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return behaviour.overview(c, days)
 
 # ── Project results (BFD 5.4; act-1 30-day check; roadmap 3.5) ────────────────
 PROJECT_STATS_ROLES = ("sales", *STAFF)
@@ -1039,6 +1252,90 @@ def knowledge_status(entry_id: int, body: EntryStatus, user=Depends(require(*KNO
 @app.delete("/knowledge/{entry_id}", status_code=204)
 def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
     _kn(lambda c: knowledge.delete(c, user, entry_id))
+
+
+# ── Sitemap (seq-6 b18, roadmap 4.5; change topic-guard-sitemap-item-services) ─
+SITEMAP_PAGES = ("", "du-an", "khong-gian", "uoc-tinh", "trac-nghiem", "lien-he", "ve-chung-toi")
+SITEMAP_FOLDER = re.compile(r"^[a-z0-9_]{1,60}$")
+
+
+@app.get("/sitemap.xml")
+def sitemap(request: Request):
+    """Public. Built from the database on every read, so a publish or a take-down shows at once: the public pages,
+    each project with at least one published photo (its folder, '_' -> '-'), and each published photo. lastmod: the
+    photo's latest review_log entry (space has no timestamp of its own; a photo with no log entry gets today)."""
+    from xml.sax.saxutils import escape
+    base = os.getenv("D3_FRONTEND_URL") or f"{request.url.scheme}://{request.headers.get('host', 'localhost')}/prj1/"
+    base = base.rstrip("/") + "/"
+    with _db() as c:
+        rows = c.execute("SELECT s.id, s.relative_path, coalesce(max(r.at), now()) AS lastmod FROM space s "
+                         "LEFT JOIN review_log r ON r.space_id = s.id WHERE s.review_status = 'published' "
+                         "GROUP BY s.id ORDER BY s.id").fetchall()
+    projects = {}
+    for r in rows:
+        folder = r["relative_path"].split("/")[0] if "/" in r["relative_path"] else None
+        if folder and SITEMAP_FOLDER.match(folder):
+            projects[folder] = max(projects.get(folder, r["lastmod"]), r["lastmod"])
+
+    def url(path, lastmod=None):
+        mod = f"<lastmod>{lastmod.date().isoformat()}</lastmod>" if lastmod else ""
+        return f"<url><loc>{escape(base + path)}</loc>{mod}</url>"
+    body = ([url(p) for p in SITEMAP_PAGES] + [url("du-an/" + f.replace("_", "-"), m) for f, m in sorted(projects.items())]
+            + [url(f"khong-gian/{r['id']}", r["lastmod"]) for r in rows])
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+           + "\n".join(body) + "\n</urlset>\n")
+    return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=300"})
+
+
+# ── Forbidden topics (seq-3 b15; change topic-guard-sitemap-item-services) ─────
+class TopicIn(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=200)
+    tu_khoa: Optional[list[str]] = Field(default=None, max_length=100)
+    ghi_chu: Optional[str] = Field(default=None, max_length=1000)
+    bat: Optional[bool] = None
+
+
+class TopicTry(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+def _tg(call):
+    try:
+        with _db() as c:
+            return call(c)
+    except topic_guard.Invalid as e:
+        raise HTTPException(422, [{"loc": ["body", e.field], "msg": e.msg, "type": "value_error"}])
+    except topic_guard.Conflict as e:
+        raise HTTPException(409, {"msg": str(e), "existing": e.existing})
+    except topic_guard.NotFound:
+        raise HTTPException(404, "no such topic")
+
+
+@app.get("/forbidden-topics")
+def topics_list(user=Depends(require(*KNOWLEDGE))):
+    return _tg(topic_guard.list_all)
+
+
+@app.post("/forbidden-topics/try")
+def topics_try(body: TopicTry, user=Depends(require(*KNOWLEDGE))):
+    """Which switched-on topic a sample sentence hits, and through which keyword; the assistant is not asked."""
+    return {"trung": _tg(lambda c: topic_guard.check(c, body.text))}
+
+
+@app.post("/forbidden-topics", status_code=201)
+def topics_create(body: TopicIn, user=Depends(require(*KNOWLEDGE))):
+    return _tg(lambda c: topic_guard.create(c, body.model_dump(exclude_unset=True), user["id"]))
+
+
+@app.patch("/forbidden-topics/{topic_id}")
+def topics_update(topic_id: int, body: TopicIn, user=Depends(require(*KNOWLEDGE))):
+    return _tg(lambda c: topic_guard.update(c, topic_id, body.model_dump(exclude_unset=True), user["id"]))
+
+
+@app.delete("/forbidden-topics/{topic_id}", status_code=204)
+def topics_delete(topic_id: int, user=Depends(require(*APPROVERS))):
+    """Content staff switch a topic off instead."""
+    _tg(lambda c: topic_guard.delete(c, topic_id))
 
 
 # ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────

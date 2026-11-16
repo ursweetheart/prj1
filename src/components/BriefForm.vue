@@ -92,7 +92,7 @@
  * Cùng cách kiểm tra, chống spam và báo lỗi như ContactForm. */
 import { reactive, ref, useId } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { consent, sendBrief } from '@/api'
+import { consent, sendBrief, trackEvent } from '@/api'
 
 const props = defineProps({
   items: { type: Array, required: true } // [{ space_id, ghi_chu }] as shown on the collection page
@@ -151,6 +151,7 @@ async function submit() {
     })
     const path = r.ma_chia_se ? '/bo-suu-tap/xem/' + r.ma_chia_se : null
     done.value = { message: r.message, path, link: path && location.origin + router.resolve(path).href }
+    trackEvent('gui_form', { doi_tuong: 'brief' }) // behaviour-events
   } catch (e) {
     if (e.status === 422 && Array.isArray(e.detail)) {
       for (const d of e.detail) {
@@ -170,7 +171,10 @@ async function submit() {
 }
 
 async function copy() {
-  try { await navigator.clipboard.writeText(done.value.link); copied.value = true } catch { copied.value = false }
+  try {
+    await navigator.clipboard.writeText(done.value.link); copied.value = true
+    trackEvent('chia_se', { doi_tuong: 'brief' }) // behaviour-events: the link was copied to share
+  } catch { copied.value = false }
 }
 </script>
 
