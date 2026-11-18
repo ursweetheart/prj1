@@ -67,12 +67,12 @@ def test_consented_quiz_pick_is_stored_with_snapshot(spaces):
 
 
 def test_quiz_pick_without_consent_counts_anonymously():
-    sql = "SELECT COALESCE(sum(so_luong),0) FROM su_kien_an_danh WHERE ngay=current_date AND loai='chon_trac_nghiem'"
+    sql = "SELECT COALESCE(sum(so_luong),0) FROM su_kien_an_danh WHERE ngay=(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai='chon_trac_nghiem'"
     before = _q(sql)[0][0]
     assert client.post("/events", json={"loai": "chon_trac_nghiem", "dong_y": False}).status_code == 204
     assert _q(sql)[0][0] == before + 1
     with psycopg.connect(DSN) as c:
-        c.execute("UPDATE su_kien_an_danh SET so_luong = so_luong - 1 WHERE ngay=current_date AND loai='chon_trac_nghiem'")
+        c.execute("UPDATE su_kien_an_danh SET so_luong = so_luong - 1 WHERE ngay=(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai='chon_trac_nghiem'")
 
 
 # ── 2.1 pairs ──────────────────────────────────────────────────────────────────

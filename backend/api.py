@@ -1,6 +1,7 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
 import asyncio
+from collections import Counter
 import io
 import os
 import random
@@ -26,7 +27,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (behaviour, intake, label_feedback, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, home_suggestions, intake, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -65,6 +66,10 @@ WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
 _last_purge = None
 
 
+def _on(var: str) -> bool:
+    return os.getenv(var, "on").lower() not in ("off", "0", "false", "no")
+
+
 def _weekly_once():
     """The maintenance check: the weekly report when due, and once a day the 90-day conversation purge."""
     global _last_purge
@@ -75,7 +80,9 @@ def _weekly_once():
         _last_purge = now
         if n:
             weekly_report.log.info("purged %d conversations older than %d days", n, conversations.KEEP_DAYS)
-    if weekly_report.due(now):
+    if _on("D3_NIGHTLY"):  # seq-4 loop "Hằng đêm": from 01:00 UTC+7, once yesterday is missing from the analytics store
+        rollup.due_and_run(now)
+    if _on("D3_WEEKLY_REPORT") and weekly_report.due(now):
         with _db() as c:
             weekly_report.send_week(c, now)
 
@@ -93,11 +100,10 @@ async def _weekly_loop():
 @asynccontextmanager
 async def lifespan(_app):
     task = None
-    if os.getenv("D3_WEEKLY_REPORT", "on").lower() in ("off", "0", "false", "no"):
-        weekly_report.log.info("weekly report scheduler: off (D3_WEEKLY_REPORT)")
-    elif "pytest" not in sys.modules:  # tests call the module directly and must never send
-        weekly_report.log.info("weekly report scheduler: on (Monday from 08:00 UTC+7)")
-        task = asyncio.create_task(_weekly_loop())
+    if "pytest" not in sys.modules:  # tests call the modules directly and must never send or roll up
+        weekly_report.log.info("weekly report: %s (Monday from 08:00 UTC+7); nightly analytics: %s (from 01:00 UTC+7)",
+                               "on" if _on("D3_WEEKLY_REPORT") else "off", "on" if _on("D3_NIGHTLY") else "off")
+        task = asyncio.create_task(_weekly_loop())  # also the daily conversation purge
     worker = None
     if os.getenv("D3_INTAKE_WORKER", "on").lower() in ("off", "0", "false", "no"):
         intake.log.info("upload queue worker: off (D3_INTAKE_WORKER)")
@@ -590,15 +596,20 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
     return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
 
 
-PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem")  # about one published photo
+# about one published photo: stored with that photo's taxonomy values at that moment (class-4 note)
+PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_goi_y_tuong_tu", "chon_goi_y")
+EVENT_TYPES = Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
+                      "nhan_chatbot", "chia_se", "ap_dung_bo_loc", "tim_kiem", "xem_goi_y_tuong_tu", "chon_goi_y"]
+OBJECT_KIND = {"xem_du_an": "du_an", "xem_trang": "trang", "bam_CTA": "lien_ket", "gui_form": "form", "tim_kiem": "tim_kiem",
+               "chia_se": "bo_suu_tap", "ap_dung_bo_loc": "bo_loc", "nhan_chatbot": "tro_ly",
+               **{k: "khong_gian" for k in PHOTO_EVENTS}}  # class-4 SuKien.loai_doi_tuong
+SESSION_ID = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser tokens, never tied to an account
+VN_DAY = "(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date"  # analytics days are UTC+7 dates (tracking-pipeline)
 
 
-class Event(BaseModel):
-    # photo events (view, heart save, quiz pick) and the behaviour events of UC21 (change behaviour-events)
-    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
-                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc"]
-    dong_y: bool                                     # the visitor's answer on the consent banner
-    phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
+class EventItem(BaseModel):
+    """One behaviour event (UC21; class-4 SuKien). In a batch, cach_ms says how long before sending it happened."""
+    loai: EVENT_TYPES
     space_id: Optional[int] = None
     trang: Optional[str] = Field(default=None, pattern=r"^/[a-z0-9/:_-]{0,99}$")  # route pattern, never a real path
     doi_tuong: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_/-]{1,100}$")  # slug, photo id, CTA target, form
@@ -606,37 +617,109 @@ class Event(BaseModel):
         default=None, max_length=20)                 # filter values of ap_dung_bo_loc
     thoi_gian_dung_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
     do_sau_cuon: Optional[float] = Field(default=None, ge=0, le=1)
+    so_ket_qua: Optional[int] = Field(default=None, ge=0, le=1000)  # tim_kiem: number of results, never the query
+    cach_ms: int = Field(default=0, ge=0, le=600_000)
+
+
+def _not_demo(v):  # 'demo-' is reserved for pipeline/demo_activity.py, so demo data stays identifiable
+    if v and v.startswith("demo-"):
+        raise ValueError("phien_id_du_tru")
+    return v
+
+
+class Event(EventItem):
+    """The earlier one-event body, still accepted."""
+    dong_y: bool                                     # the visitor's answer on the consent banner
+    phien_id: Optional[str] = SESSION_ID
 
     @field_validator("phien_id")
     @classmethod
-    def _not_demo(cls, v):  # 'demo-' is reserved for pipeline/demo_activity.py, so demo data stays identifiable
-        if v and v.startswith("demo-"):
-            raise ValueError("phien_id_du_tru")
-        return v
+    def _demo(cls, v):
+        return _not_demo(v)
+
+
+class EventBatch(BaseModel):
+    """seq-4 b2-b3: the browser's buffer, sent every 5 s and when the page is left (at most 50 events)."""
+    dong_y: bool
+    phien_id: Optional[str] = SESSION_ID
+    ma_thiet_bi: Optional[str] = SESSION_ID          # class-4: anonymous device id, only under analytics consent
+    nguon: Optional[str] = Field(default=None, pattern=r"^[a-z0-9_]{1,40}$")  # truc_tiep | tim_kiem | ... | utm name
+    thiet_bi: Optional[Literal["di_dong", "may_tinh_bang", "may_tinh"]] = None
+    ca_nhan_hoa: bool = False                        # act-7: personalisation allowed too
+    su_kien: list[EventItem] = Field(min_length=1, max_length=50)
+
+    @field_validator("phien_id")
+    @classmethod
+    def _demo(cls, v):
+        return _not_demo(v)
 
 
 @app.post("/events", status_code=204, dependencies=[Depends(limit("events", 120, 60))])
-def track(body: Event):
-    """Behaviour signal for taxonomy discovery (act-7, UC21). Only a consented session is stored, enriched with the
-    viewed space's facet values; otherwise nothing per visitor is kept, just the day's anonymous count (NFR-09)."""
+def track(body: EventBatch | Event):
+    """Behaviour signals (UC21; seq-4 b3-b5). The whole batch is validated first (one bad event refuses it). Only a
+    consented session is stored, each event at the time it happened; otherwise only the day's anonymous count per
+    type grows (NFR-09) and no session detail may be sent."""
+    batch = body if hasattr(body, "su_kien") else EventBatch(  # not isinstance: a test may reload this module
+        dong_y=body.dong_y, phien_id=body.phien_id, su_kien=[EventItem(**body.model_dump(exclude={"dong_y", "phien_id"}))])
     with _db() as c:
-        if not (body.dong_y and body.phien_id):
-            c.execute("INSERT INTO su_kien_an_danh (ngay, loai, so_luong) VALUES (current_date, %s, 1) "
-                      "ON CONFLICT (ngay, loai) DO UPDATE SET so_luong = su_kien_an_danh.so_luong + 1", (body.loai,))
+        if not (batch.dong_y and batch.phien_id):
+            if batch.ma_thiet_bi or batch.nguon or batch.thiet_bi or batch.ca_nhan_hoa:
+                raise HTTPException(422, "session details are only sent with consent")
+            for loai, n in Counter(e.loai for e in batch.su_kien).items():
+                c.execute(f"INSERT INTO su_kien_an_danh (ngay, loai, so_luong) VALUES ({VN_DAY}, %s, %s) "
+                          "ON CONFLICT (ngay, loai) DO UPDATE SET so_luong = su_kien_an_danh.so_luong + EXCLUDED.so_luong",
+                          (loai, n))
             return
-        c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true) ON CONFLICT DO NOTHING",
-                  (body.phien_id,))
-        if body.loai not in PHOTO_EVENTS:  # behaviour-events: no photo, so stored as sent (all fields validated)
-            c.execute("INSERT INTO su_kien (phien_id, loai, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, do_sau_cuon) "
-                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", (body.phien_id, body.loai, body.trang, body.doi_tuong,
-                                                        body.gia_tri or [], body.thoi_gian_dung_ms, body.do_sau_cuon))
-            return
-        c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri) "
-                  "SELECT %(p)s, %(l)s, s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
-                  "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
-                  "  JOIN chieu_phan_loai d ON d.id = v.chieu_id WHERE sg.space_id = s.id), '{}') "
-                  "FROM space s WHERE s.id = %(s)s AND s.review_status = 'published'",
-                  {"p": body.phien_id, "l": body.loai, "s": body.space_id})
+        oldest, newest = max(e.cach_ms for e in batch.su_kien), min(e.cach_ms for e in batch.su_kien)
+        c.execute(
+            "INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap, ma_thiet_bi, nguon, thiet_bi, ca_nhan_hoa, bat_dau, ket_thuc) "
+            "VALUES (%(p)s, true, %(d)s, %(n)s, %(t)s, %(c)s, now() - %(o)s * interval '1 millisecond', "
+            "        now() - %(w)s * interval '1 millisecond') "
+            "ON CONFLICT (id) DO UPDATE SET ma_thiet_bi = COALESCE(EXCLUDED.ma_thiet_bi, phien_truy_cap.ma_thiet_bi), "
+            "  nguon = COALESCE(phien_truy_cap.nguon, EXCLUDED.nguon), thiet_bi = COALESCE(EXCLUDED.thiet_bi, phien_truy_cap.thiet_bi), "
+            "  ca_nhan_hoa = EXCLUDED.ca_nhan_hoa, bat_dau = LEAST(COALESCE(phien_truy_cap.bat_dau, EXCLUDED.bat_dau), EXCLUDED.bat_dau), "
+            "  ket_thuc = GREATEST(COALESCE(phien_truy_cap.ket_thuc, EXCLUDED.ket_thuc), EXCLUDED.ket_thuc)",
+            {"p": batch.phien_id, "d": batch.ma_thiet_bi, "n": batch.nguon, "t": batch.thiet_bi, "c": batch.ca_nhan_hoa,
+             "o": oldest, "w": newest})
+        for e in batch.su_kien:
+            at = {"p": batch.phien_id, "l": e.loai, "k": OBJECT_KIND[e.loai], "ms": e.cach_ms, "s": e.space_id,
+                  "o": e.doi_tuong}
+            if e.loai not in PHOTO_EVENTS:  # no photo: stored as sent (every field validated)
+                c.execute("INSERT INTO su_kien (phien_id, loai, loai_doi_tuong, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, "
+                          "do_sau_cuon, so_ket_qua, created_at) VALUES (%(p)s, %(l)s, %(k)s, %(t)s, %(o)s, %(g)s, %(d)s, %(c)s, "
+                          "%(r)s, now() - %(ms)s * interval '1 millisecond')",
+                          {**at, "t": e.trang, "g": e.gia_tri or [], "d": e.thoi_gian_dung_ms, "c": e.do_sau_cuon,
+                           "r": e.so_ket_qua})
+                continue
+            c.execute("INSERT INTO su_kien (phien_id, loai, loai_doi_tuong, space_id, doi_tuong, gia_tri, created_at) "
+                      "SELECT %(p)s, %(l)s, %(k)s, s.id, %(o)s, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
+                      "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
+                      "  JOIN chieu_phan_loai d ON d.id = v.chieu_id WHERE sg.space_id = s.id), '{}'), "
+                      "  now() - %(ms)s * interval '1 millisecond' "
+                      "FROM space s WHERE s.id = %(s)s AND s.review_status = 'published'", at)
+
+
+class ForgetMe(BaseModel):
+    phien_id: Optional[str] = SESSION_ID
+    ma_thiet_bi: Optional[str] = SESSION_ID
+
+
+@app.post("/privacy/xoa-du-lieu", dependencies=[Depends(limit("privacy", 5, 60))])
+def forget_me(body: ForgetMe):
+    """act-7 "Gửi yêu cầu xóa dữ liệu cá nhân": delete this browser's sessions (the current one and every one carrying
+    its device id) with their events. Both ids are random values only that browser holds. Conversations and leads stay,
+    detached (their FKs are ON DELETE SET NULL); figures already aggregated hold no session data and stay too.
+    Only the counts and the time are logged."""
+    if not (body.phien_id or body.ma_thiet_bi):
+        raise HTTPException(422, "phien_id or ma_thiet_bi is required")
+    with _db() as c:
+        ids = [r["id"] for r in c.execute("SELECT id FROM phien_truy_cap WHERE id = %s OR (%s::text IS NOT NULL AND ma_thiet_bi = %s)",
+                                           (body.phien_id, body.ma_thiet_bi, body.ma_thiet_bi)).fetchall()]
+        events = c.execute("SELECT count(*) AS n FROM su_kien WHERE phien_id = ANY(%s)", (ids,)).fetchone()["n"]
+        if ids:
+            c.execute("DELETE FROM phien_truy_cap WHERE id = ANY(%s)", (ids,))
+            c.execute("INSERT INTO yeu_cau_xoa_du_lieu (so_phien, so_su_kien) VALUES (%s, %s)", (len(ids), events))
+    return {"so_phien": len(ids), "so_su_kien": events}
 
 
 PHIEN = r"^[A-Za-z0-9_-]{16,64}$"  # the random browser session token of /events
@@ -1145,6 +1228,35 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
         return trends.overview(c, days)
 
 
+
+
+# ── Homepage suggestions (tracking-pipeline; act-3 "Điều chỉnh gợi ý trên trang chủ") ─────────────────────────────
+@app.get("/home/suggestions", dependencies=[Depends(limit("home_suggestions", 60, 60))])
+def home_suggestions_public(phien_id: Optional[str] = Query(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")):
+    """Public. Up to 8 published spaces for "Đang được quan tâm"; the session id is used only when that session
+    allowed personalisation (act-7), otherwise ignored."""
+    with _db() as c:
+        return home_suggestions.suggestions(c, phien_id)
+
+
+@app.get("/analytics/home-suggestions")
+def home_suggestions_admin(user=Depends(require("sales", *APPROVERS))):
+    with _db() as c:
+        return home_suggestions.admin_view(c)
+
+
+class HomeSetting(BaseModel):
+    gia_tri: str = Field(pattern=r"^[a-z0-9_]+:[A-Za-z0-9_]+$")
+    che_do: Literal["tu_dong", "uu_tien", "an"]
+
+
+@app.put("/analytics/home-suggestions")
+def home_suggestions_set(body: HomeSetting, user=Depends(require("sales", *APPROVERS))):
+    with _db() as c:
+        try:
+            return home_suggestions.set_mode(c, body.gia_tri, body.che_do, user["id"])
+        except KeyError:
+            raise HTTPException(404, "no such visitor-facing value")
 
 
 @app.get("/analytics/behaviour")

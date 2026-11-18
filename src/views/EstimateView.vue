@@ -127,7 +127,7 @@ const PROJECT_TYPES = { can_ho: ['chung-cu'], nha_pho: ['nha-pho'], biet_thu: ['
                         thuong_mai: ['showroom', 'lounge', 'fnb'] }
 
 const route = useRoute()
-const consented = consent.get() === 'yes'
+const consented = consent.analytics()
 const input = reactive({ loai_nha: 'can_ho', dien_tich_m2: '', so_phong_ngu: 2, goi: 'tieu_chuan' })
 const inputErr = reactive({})
 const asked = ref(null)

@@ -5,7 +5,8 @@ A project is a catalog project (space.du_an_slug, change project-catalog); a pho
 Rows keep the key in "folder" (the page's id for the row), with the project's name ("ten") and the folder most of
 its photos are in ("thu_muc", for the review-screen link).
 
-    views / saves  consented su_kien 'xem_khong_gian' / 'luu_anh' on the project's published photos, in the period
+    views / saves  the analytics store's views / saves of the project's published photos, in the period ending with
+                   the last processed day (tracking-pipeline)
     leads          distinct leads in the period whose ngu_canh names the project's page (du_an = its slug), whose
                    ngu_canh names one of its photos (space_id), or whose brief sent one of its photos
     published      earliest review_log 'advance' to 'published' of the folder; else its earliest 'ingest' (approximate)
@@ -63,13 +64,14 @@ def statuses(projects: list, days_needed: int) -> dict:
 
 def _counts(conn, period: str, by_space=False, folder=None) -> dict:
     """{folder or space id: [views, saves]} of published photos in the period."""
+    # tracking-pipeline (seq-18 b9-b11): from the analytics store, the period ending with the last processed day
     key = "s.id" if by_space else FOLDER
     out = {}
-    for k, loai, n in _rows(conn, f"SELECT {key}, e.loai, count(*) FROM su_kien e JOIN space s ON s.id = e.space_id "
-                                  "WHERE s.review_status = 'published' AND e.loai IN ('xem_khong_gian', 'luu_anh') "
-                                  f"AND e.created_at > now() - %s::interval AND (%s::text IS NULL OR {FOLDER} = %s) "
-                                  "GROUP BY 1, 2", (period, folder, folder)):
-        out.setdefault(k, [0, 0])[0 if loai == "xem_khong_gian" else 1] = n
+    for k, xem, luu in _rows(conn, f"SELECT {key}, sum(t.so_xem), sum(t.so_luu) FROM tk_khong_gian_ngay t "
+                                   "JOIN space s ON s.id = t.space_id WHERE s.review_status = 'published' "
+                                   "AND t.ngay > (SELECT max(ngay) FROM tk_ngay) - %s::interval "
+                                   f"AND (%s::text IS NULL OR {FOLDER} = %s) GROUP BY 1", (period, folder, folder)):
+        out[k] = [int(xem), int(luu)]
     return out
 
 

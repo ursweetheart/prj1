@@ -2,12 +2,13 @@
 activity. Counts are checked as differences, so real events already in the database do not matter."""
 import json
 import uuid
+from datetime import timedelta
 
 import psycopg
 import pytest
 
 from conftest import client
-from pipeline import demo_activity, discovery, trends
+from pipeline import demo_activity, discovery, trends, rollup
 from pipeline.store import DSN
 from psycopg.types.json import Jsonb
 
@@ -20,7 +21,7 @@ def _q(sql, *args):
 @pytest.fixture
 def world():
     """A throw-away consented session and published spaces; everything removed afterwards."""
-    made = {"spaces": [], "sessions": [], "leads": []}
+    made = {"spaces": [], "sessions": [], "leads": [], "days": set()}
 
     def space(style="Wabi_sabi", room="phong_khach"):
         with psycopg.connect(DSN) as c:
@@ -38,7 +39,9 @@ def world():
         made["sessions"].append(pid)
         return pid
 
-    def events(pid, space_id, loai="xem_khong_gian", n=1, days_ago=0):
+    def events(pid, space_id, loai="xem_khong_gian", n=1, days_ago=1):
+        # tracking-pipeline: the dashboard counts processed days only, so test events happen on past days
+        made["days"].add(rollup.local_today() - timedelta(days=days_ago))
         with psycopg.connect(DSN) as c:
             for _ in range(n):
                 c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri, created_at) SELECT %s, %s, s.id, "
@@ -47,14 +50,19 @@ def world():
                           "WHERE sg.space_id = s.id), '{}'), now() - make_interval(days => %s) FROM space s WHERE s.id = %s",
                           (pid, loai, days_ago, space_id))
 
+    def refresh():
+        """Reprocess the touched days (and yesterday) into the analytics store, as the nightly run would."""
+        rollup.run(days=sorted(made["days"] | {rollup.local_today() - timedelta(days=1)}))
+
     yield type("W", (), {"space": staticmethod(space), "session": staticmethod(session), "events": staticmethod(events),
-                         "made": made})
+                         "refresh": staticmethod(refresh), "made": made})
     with psycopg.connect(DSN) as c:
         c.execute("DELETE FROM lead WHERE id = ANY(%s)", (made["leads"],))
         c.execute("DELETE FROM bo_suu_tap WHERE id IN (SELECT bo_suu_tap_id FROM bo_suu_tap_anh WHERE space_id = ANY(%s))",
                   (made["spaces"],))
         c.execute("DELETE FROM phien_truy_cap WHERE id = ANY(%s)", (made["sessions"],))
         c.execute("DELETE FROM space WHERE id = ANY(%s)", (made["spaces"],))
+    refresh()  # the store forgets the test data too
 
 
 def _overview(days=30):
@@ -78,11 +86,11 @@ def test_consented_save_is_stored_with_snapshot(world):
 
 
 def test_save_without_consent_counts_anonymously(world):
-    before = _q("SELECT COALESCE(sum(so_luong),0) FROM su_kien_an_danh WHERE ngay=current_date AND loai='luu_anh'")[0][0]
+    before = _q("SELECT COALESCE(sum(so_luong),0) FROM su_kien_an_danh WHERE ngay=(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai='luu_anh'")[0][0]
     assert client.post("/events", json={"loai": "luu_anh", "dong_y": False}).status_code == 204
-    assert _q("SELECT sum(so_luong) FROM su_kien_an_danh WHERE ngay=current_date AND loai='luu_anh'")[0][0] == before + 1
+    assert _q("SELECT sum(so_luong) FROM su_kien_an_danh WHERE ngay=(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai='luu_anh'")[0][0] == before + 1
     with psycopg.connect(DSN) as c:
-        c.execute("UPDATE su_kien_an_danh SET so_luong = so_luong - 1 WHERE ngay=current_date AND loai='luu_anh'")
+        c.execute("UPDATE su_kien_an_danh SET so_luong = so_luong - 1 WHERE ngay=(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai='luu_anh'")
 
 
 def test_demo_prefix_is_reserved():
@@ -110,16 +118,21 @@ def test_trend_rule():
 def test_overview_counts_and_trends(world):
     a, b = world.space("Wabi_sabi"), world.space("Indochine")
     pid = world.session()
+    world.refresh()
     before = _overview(30)
-    world.events(pid, a, n=4)                      # this week
+    world.events(pid, a, n=4)                      # this week (yesterday)
     world.events(pid, a, "luu_anh", n=2)
     world.events(pid, b, n=3, days_ago=12)         # two weeks ago
+    world.events(pid, a, n=5, days_ago=0)          # today: not counted until tonight's run
     with psycopg.connect(DSN) as c:
-        cid = c.execute("INSERT INTO bo_suu_tap (loai, ma_chia_se) VALUES ('da_gui', %s) RETURNING id",
-                        (uuid.uuid4().hex,)).fetchone()[0]
+        cid = c.execute("INSERT INTO bo_suu_tap (loai, ma_chia_se, created_at) VALUES ('da_gui', %s, now() - interval '1 day') "
+                        "RETURNING id", (uuid.uuid4().hex,)).fetchone()[0]
         c.execute("INSERT INTO bo_suu_tap_anh (bo_suu_tap_id, space_id) VALUES (%s, %s)", (cid, a))
-        world.made["leads"].append(c.execute("INSERT INTO lead (nguon, ho_ten) VALUES ('estimate', 'T') RETURNING id").fetchone()[0])
+        world.made["leads"].append(c.execute("INSERT INTO lead (nguon, ho_ten, created_at) VALUES ('estimate', 'T', "
+                                             "now() - interval '1 day') RETURNING id").fetchone()[0])
+    world.refresh()
     after = _overview(30)
+    assert after["den_ngay"] == str(rollup.local_today() - timedelta(days=1))
     w_b, w_a = _value(before, "phong_cach", "Wabi_sabi"), _value(after, "phong_cach", "Wabi_sabi")
     assert (w_a["xem"] - w_b["xem"], w_a["luu"] - w_b["luu"], w_a["brief"] - w_b["brief"]) == (4, 2, 1)
     assert w_a["diem"] - w_b["diem"] == 4 + 6 + 5
@@ -134,9 +147,10 @@ def test_overview_counts_and_trends(world):
 def test_top_spaces_and_order(world):
     a = world.space("Japandi")
     pid = world.session()
-    world.events(pid, a, n=60)
+    world.events(pid, a, n=50)  # 60 in one minute would make the session abnormal (seq-4 b8) and drop it
+    world.refresh()
     ov = _overview(7)
-    assert ov["khong_gian_xem_nhieu"][0]["id"] == a and ov["khong_gian_xem_nhieu"][0]["luot_xem"] >= 60
+    assert ov["khong_gian_xem_nhieu"][0]["id"] == a and ov["khong_gian_xem_nhieu"][0]["luot_xem"] >= 50
     styles = next(d for d in ov["chieu"] if d["ma"] == "phong_cach")["gia_tri"]
     assert styles == sorted(styles, key=lambda v: -v["diem"]) and all(v["ma"].lower() != "khac" for v in styles)
 
@@ -184,8 +198,10 @@ def test_demo_generate_rerun_remove(world):
 def test_quiz_answers_not_scored(world):
     a = world.space("Japandi")
     pid = world.session()
+    world.refresh()
     before = _overview(30)
     world.events(pid, a, "chon_trac_nghiem", n=4)
+    world.refresh()
     after = _overview(30)
     assert _value(after, "phong_cach", "Japandi") == _value(before, "phong_cach", "Japandi")
     assert after["tong"] == before["tong"]

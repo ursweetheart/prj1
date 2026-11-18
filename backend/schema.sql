@@ -503,3 +503,96 @@ UNION ALL
 SELECT id, 'phong_cach', design_style_ai, style_confidence, design_style FROM space
  WHERE design_style_ai IS NOT NULL AND design_style IS DISTINCT FROM design_style_ai
 ON CONFLICT (space_id, chieu) DO NOTHING;
+
+-- ── tracking-pipeline (seq-4, act-3, act-7, dfd-2-1, dfd-2-5, seq-2, class-4) ──────────────────────────────────────
+-- class-4 PhienTruyCap: device id (random, kept by the browser only under analytics consent), source, device type,
+-- start / end; ca_nhan_hoa = the visitor also allowed personalisation (act-7 Tùy chỉnh)
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS ma_thiet_bi text CHECK (ma_thiet_bi ~ '^[A-Za-z0-9_-]{16,64}$');
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS nguon text CHECK (nguon ~ '^[a-z0-9_]{1,40}$');
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS thiet_bi text CHECK (thiet_bi IN ('di_dong', 'may_tinh_bang', 'may_tinh'));
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS bat_dau timestamptz;
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS ket_thuc timestamptz;
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS ca_nhan_hoa boolean NOT NULL DEFAULT false;
+UPDATE phien_truy_cap p SET bat_dau = COALESCE((SELECT min(created_at) FROM su_kien WHERE phien_id = p.id), p.created_at),
+                            ket_thuc = COALESCE((SELECT max(created_at) FROM su_kien WHERE phien_id = p.id), p.created_at)
+ WHERE bat_dau IS NULL;
+CREATE INDEX IF NOT EXISTS phien_truy_cap_thiet_bi ON phien_truy_cap (ma_thiet_bi) WHERE ma_thiet_bi IS NOT NULL;
+-- class-4 SuKien: object type; real dwell time (nightly, seq-4 b8); result count of a search (dfd-2-1 1.3)
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS loai_doi_tuong text;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS dung_thuc_ms int;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS so_ket_qua int CHECK (so_ket_qua >= 0);
+ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem',
+  'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc',
+  'tim_kiem', 'xem_goi_y_tuong_tu', 'chon_goi_y'));
+UPDATE su_kien SET loai_doi_tuong = CASE
+    WHEN loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem', 'xem_goi_y_tuong_tu', 'chon_goi_y') THEN 'khong_gian'
+    WHEN loai = 'xem_du_an' THEN 'du_an' WHEN loai = 'xem_trang' THEN 'trang' WHEN loai = 'bam_CTA' THEN 'lien_ket'
+    WHEN loai = 'gui_form' THEN 'form' WHEN loai = 'tim_kiem' THEN 'tim_kiem' WHEN loai = 'chia_se' THEN 'bo_suu_tap'
+    WHEN loai = 'ap_dung_bo_loc' THEN 'bo_loc' WHEN loai = 'nhan_chatbot' THEN 'tro_ly' END
+ WHERE loai_doi_tuong IS NULL;
+CREATE INDEX IF NOT EXISTS su_kien_phien_luc ON su_kien (phien_id, created_at);
+CREATE INDEX IF NOT EXISTS su_kien_luc ON su_kien (created_at);
+-- seq-4 b8: a session left out of a day's figures; raw events stay so the decision can be checked
+CREATE TABLE IF NOT EXISTS phien_bat_thuong (
+  ngay date NOT NULL,
+  phien_id text NOT NULL REFERENCES phien_truy_cap(id) ON DELETE CASCADE,
+  ly_do text NOT NULL,
+  PRIMARY KEY (ngay, phien_id)
+);
+-- D10 analytics store (seq-4 b9-b11, dfd-2-5): daily facts over the taxonomy dimensions; no session id, no person
+CREATE TABLE IF NOT EXISTS tk_ngay (               -- one row per processed day (UTC+7 dates)
+  ngay date PRIMARY KEY,
+  xu_ly_luc timestamptz NOT NULL DEFAULT now(),
+  so_su_kien int NOT NULL DEFAULT 0,
+  so_phien int NOT NULL DEFAULT 0,
+  so_phien_bat_thuong int NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS tk_gia_tri_ngay (       -- per taxonomy value 'dimension:value'
+  ngay date NOT NULL, gia_tri text NOT NULL,
+  so_xem int NOT NULL DEFAULT 0, so_luu int NOT NULL DEFAULT 0, so_brief int NOT NULL DEFAULT 0,
+  so_phien int NOT NULL DEFAULT 0, tong_dung_ms bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, gia_tri)
+);
+CREATE TABLE IF NOT EXISTS tk_khong_gian_ngay (    -- per space
+  ngay date NOT NULL, space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  so_xem int NOT NULL DEFAULT 0, so_luu int NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, space_id)
+);
+CREATE TABLE IF NOT EXISTS tk_hanh_vi_ngay (       -- per behaviour event type and page / object ('' when none)
+  ngay date NOT NULL, loai text NOT NULL, trang text NOT NULL DEFAULT '', doi_tuong text NOT NULL DEFAULT '',
+  so_luot int NOT NULL DEFAULT 0, tong_dung_ms bigint NOT NULL DEFAULT 0, so_co_dung int NOT NULL DEFAULT 0,
+  tong_cuon double precision NOT NULL DEFAULT 0, so_co_cuon int NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, loai, trang, doi_tuong)
+);
+CREATE TABLE IF NOT EXISTS tk_tong_ngay (          -- per day: briefs sent, leads by source
+  ngay date PRIMARY KEY, so_brief int NOT NULL DEFAULT 0, lead jsonb NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS tk_xu_huong (           -- seq-4 b11: interest score and trend per value, one set per run date
+  ngay_tinh date NOT NULL, gia_tri text NOT NULL,
+  tuan0 int NOT NULL, tb4 real NOT NULL, so_tin_hieu int NOT NULL, thay_doi int, xu_huong text,
+  PRIMARY KEY (ngay_tinh, gia_tri)
+);
+CREATE TABLE IF NOT EXISTS tk_nhom_chay (          -- act-3: one taste-group run per run date
+  ngay_tinh date PRIMARY KEY, so_phien int NOT NULL, du_du_lieu boolean NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tk_nhom_thi_hieu (
+  ngay_tinh date NOT NULL REFERENCES tk_nhom_chay(ngay_tinh) ON DELETE CASCADE, nhom int NOT NULL,
+  so_phien int NOT NULL, ty_le real NOT NULL, gia_tri text[] NOT NULL, moi boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (ngay_tinh, nhom)
+);
+-- act-3 "Điều chỉnh gợi ý trên trang chủ": leadership prioritises or hides a value on the homepage section
+CREATE TABLE IF NOT EXISTS goi_y_trang_chu (
+  gia_tri text PRIMARY KEY CHECK (gia_tri ~ '^[a-z0-9_]+:[A-Za-z0-9_]+$'),
+  che_do text NOT NULL CHECK (che_do IN ('uu_tien', 'an')),
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  luc timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS goi_y_trang_chu_nhat_ky (
+  id serial PRIMARY KEY, gia_tri text NOT NULL, che_do_cu text, che_do_moi text NOT NULL,
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL, luc timestamptz NOT NULL DEFAULT now()
+);
+-- act-7 "Gửi yêu cầu xóa dữ liệu cá nhân": only the counts and the time are kept
+CREATE TABLE IF NOT EXISTS yeu_cau_xoa_du_lieu (
+  id serial PRIMARY KEY, luc timestamptz NOT NULL DEFAULT now(), so_phien int NOT NULL, so_su_kien int NOT NULL
+);

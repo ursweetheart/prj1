@@ -62,16 +62,18 @@ def change(this: int, before: int) -> str:
 
 def _totals(conn, start, end) -> dict:
     """Views and saves (consented + anonymous daily counts), briefs sent and leads by source in [start, end)."""
-    ev = dict(_rows(conn, "SELECT loai, count(*) FROM su_kien WHERE loai IN ('xem_khong_gian', 'luu_anh') "
-                          "AND created_at >= %s AND created_at < %s GROUP BY loai", (start, end)))
+    # tracking-pipeline (seq-18 b2-b3): from the analytics store; [start, end) are UTC+7 midnights, so whole days
+    d0, d1 = start.astimezone(VN).date(), end.astimezone(VN).date()
+    xem, luu = (int(x or 0) for x in _rows(conn, "SELECT sum(so_xem), sum(so_luu) FROM tk_khong_gian_ngay "
+                                                  "WHERE ngay >= %s AND ngay < %s", (d0, d1))[0])
     anon = dict(_rows(conn, "SELECT loai, sum(so_luong) FROM su_kien_an_danh WHERE ngay >= %s AND ngay < %s GROUP BY loai",
-                      (start.date(), end.date())))
-    briefs = _rows(conn, "SELECT count(*) FROM bo_suu_tap WHERE loai = 'da_gui' AND created_at >= %s AND created_at < %s",
-                   (start, end))[0][0]
-    leads = dict(_rows(conn, "SELECT nguon, count(*) FROM lead WHERE created_at >= %s AND created_at < %s GROUP BY nguon",
-                       (start, end)))
-    return {"luot_xem": ev.get("xem_khong_gian", 0) + int(anon.get("xem_khong_gian") or 0),
-            "luot_luu": ev.get("luu_anh", 0) + int(anon.get("luu_anh") or 0),
+                      (d0, d1)))
+    briefs, leads = 0, {}
+    for b, ld in _rows(conn, "SELECT so_brief, lead FROM tk_tong_ngay WHERE ngay >= %s AND ngay < %s", (d0, d1)):
+        briefs += b
+        for s, n in ld.items():
+            leads[s] = leads.get(s, 0) + n
+    return {"luot_xem": xem + int(anon.get("xem_khong_gian") or 0), "luot_luu": luu + int(anon.get("luu_anh") or 0),
             "brief": briefs, "lead": {s: leads.get(s, 0) for s in trends.SOURCES}}
 
 

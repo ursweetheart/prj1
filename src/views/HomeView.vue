@@ -3,6 +3,8 @@
 
   <ProjectGrid />
 
+  <TrendingSpaces />
+
   <SpaceSearchBand />
 
   <!-- CTA -->
@@ -29,4 +31,5 @@
 import HeroSlideshow from '@/components/HeroSlideshow.vue'
 import ProjectGrid from '@/components/ProjectGrid.vue'
 import SpaceSearchBand from '@/components/SpaceSearchBand.vue'
+import TrendingSpaces from '@/components/TrendingSpaces.vue'
 </script>

@@ -119,3 +119,15 @@ describe('pollTasks', () => {
     expect(r.ok).toBe(1)
   })
 })
+
+// tracking-pipeline 6.2: a similar space opened from the list shown last (seq-2 b14)
+describe('takeSimilarPick', () => {
+  it('names the source space once, only for spaces in the list shown', async () => {
+    const { getSimilar, takeSimilarPick } = await load()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => [{ id: 30 }, { id: 31 }] })))
+    await getSimilar(12)
+    expect(takeSimilarPick(99)).toBe(null)
+    expect(takeSimilarPick('30')).toBe(12)
+    expect(takeSimilarPick(31)).toBe(null) // used once: the list is forgotten after a pick
+  })
+})
