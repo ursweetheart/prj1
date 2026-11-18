@@ -51,7 +51,7 @@
     </article>
 
     <!-- review-tag-autocomplete: words reviewers typed for a room type / style that no value covers -->
-    <template v-if="valueItems.length">
+    <template v-if="valueItems.length || valueDone">
       <h2 class="h-4" style="margin-top:36px">Giá trị được gợi ý</h2>
       <p class="small">Kiến trúc sư gõ khi duyệt ảnh; các ảnh này đang tạm để «Khác» cho tới khi bạn quyết định.</p>
       <p v-if="valueDone" class="panel small" style="margin-top:12px" role="status">{{ valueDone }}</p>

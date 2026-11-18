@@ -1,10 +1,10 @@
 """Rebuild the AI hotspots of draft photos nobody has touched (change: hotspot-accuracy).
 
     python rebuild_hotspots.py --dry-run          # how many photos would change
-    python rebuild_hotspots.py [--limit N] [--workers 4]
+    python rebuild_hotspots.py [--limit N] [--workers 4] [--include-published]
     python rebuild_hotspots.py --restore          # put back what a rebuild replaced (photos not edited since)
 
-Untouched = draft, no hand-made point, no point linked to an item, no hotspot edit in the review log, not rebuilt
+Untouched = draft (or published, with --include-published), no hand-made point, no point linked to an item, no hotspot edit in the review log, not rebuilt
 before. The stored detector boxes are reused (no GPU); one Gemini call per photo names and points at the items, and
 pipeline.hotspots.propose decides the final list. The previous objects go to review_log ('rebuild_hotspots'), so
 --restore can undo it. A photo whose call fails keeps its hotspots.
@@ -27,7 +27,7 @@ IMG_DIR = Path("image_d3")
 
 UNTOUCHED = """
 SELECT s.id, s.relative_path, s.palette, s.hotspots FROM space s
-WHERE s.review_status = 'draft' AND s.hotspots IS NOT NULL
+WHERE s.review_status = ANY(%(st)s) AND s.hotspots IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.hotspots->'objects', '[]')) o
                   WHERE o->>'nguon_tao' = 'thu_cong' OR o->>'mon_do_id' IS NOT NULL)
   AND NOT EXISTS (SELECT 1 FROM review_log l WHERE l.space_id = s.id AND (l.action = 'hotspots'
@@ -36,8 +36,8 @@ WHERE s.review_status = 'draft' AND s.hotspots IS NOT NULL
 ORDER BY s.id"""
 
 
-def untouched(conn, limit=None) -> list:
-    rows = conn.execute(UNTOUCHED).fetchall()
+def untouched(conn, limit=None, statuses=("draft",)) -> list:
+    rows = conn.execute(UNTOUCHED, {"st": list(statuses)}).fetchall()
     return rows[:limit] if limit else rows
 
 
@@ -51,14 +51,14 @@ def items_for(clf, row):
     return res.items
 
 
-def write(conn, row, items) -> int:
+def write(conn, row, items, statuses=("draft",)) -> int:
     """Replace one draft's objects with the proposed ones and log the old ones. -> number of hotspots now."""
     sid, _, _, hotspots = row
     old = hotspots.get("objects", [])
     detected = [DetectedFurniture.model_validate(o) for o in old if o.get("bbox")]  # the stored detector boxes
     new = [o.model_dump() for o in propose(detected, items)]
-    n = conn.execute("UPDATE space SET hotspots = jsonb_set(hotspots, '{objects}', %s) WHERE id = %s AND review_status = 'draft'",
-                     (Jsonb(new), sid)).rowcount
+    n = conn.execute("UPDATE space SET hotspots = jsonb_set(hotspots, '{objects}', %s) WHERE id = %s AND review_status = ANY(%s)",
+                     (Jsonb(new), sid, list(statuses))).rowcount
     if n:
         conn.execute("INSERT INTO review_log (space_id, user_id, action, detail) VALUES (%s, NULL, 'rebuild_hotspots', %s)",
                      (sid, Jsonb({"truoc": old, "so_truoc": len(old), "so_sau": len(new)})))
@@ -88,15 +88,17 @@ def main():
     ap.add_argument("--restore", action="store_true")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--include-published", action="store_true", help="also untouched published photos (visitors see the change)")
     args = ap.parse_args()
 
     with psycopg.connect(DSN) as conn:
         if args.restore:
             print(f"restored {restore(conn)} photo(s)")
             return
-        rows = untouched(conn, args.limit)
+        statuses = ("draft", "published") if args.include_published else ("draft",)
+        rows = untouched(conn, args.limit, statuses)
         before = sum(len(r[3].get("objects", [])) for r in rows)
-        print(f"{len(rows)} untouched draft photo(s), {before} hotspots now")
+        print(f"{len(rows)} untouched photo(s), {before} hotspots now")
         if args.dry_run or not rows:
             return
         from pipeline.multimodal_classifier import MultimodalClassifier
@@ -116,7 +118,7 @@ def main():
                 if err:
                     failed.append(err)
                     continue
-                after += write(conn, row, items)
+                after += write(conn, row, items, statuses)
                 conn.commit()  # one photo per transaction
                 done += 1
     print(f"rebuilt {done}, failed {len(failed)}; hotspots on rebuilt photos now {after}")

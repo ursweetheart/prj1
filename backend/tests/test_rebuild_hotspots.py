@@ -98,3 +98,12 @@ def test_heuristic_answer_is_a_failure_not_an_empty_list():
         rb.items_for(Clf(), (1, "x/y.jpg", {"palette": [], "dominant_hex": "#fff", "brightness": "light",
                                             "temperature": "warm", "weighted_luminance": 50},
                              {"objects": [], "counts_by_category": {}, "inference_time_ms": 1}))
+
+
+def test_published_photos_only_with_the_flag(spaces):
+    pub = spaces(NOISY, status="published")
+    with psycopg.connect(DSN) as c:
+        assert _selected(c, [pub]) == set()                                        # default: drafts only
+        row = next(r for r in rb.untouched(c, statuses=("draft", "published")) if r[0] == pub)
+        assert rb.write(c, row, ITEMS) == 5                                       # write keeps to drafts by default: unchanged
+        assert rb.write(c, row, ITEMS, ("draft", "published")) == 2

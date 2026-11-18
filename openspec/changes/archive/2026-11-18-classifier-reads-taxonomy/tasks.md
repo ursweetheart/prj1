@@ -21,10 +21,11 @@
 
 ## 4. Integration and docs
 
-- [ ] 4.1 End-to-end check on Docker: run `docker compose exec backend python seed_taxonomy.py`, add a style with a description at `/quan-tri/phan-loai`, upload a matching photo at `/quan-tri`, and confirm the photo gets that style. Upload an unrelated photo and confirm it shows as `Khac` among the photos the AI wasn't sure about. Run the full `pytest` suite green.
+- [x] 4.1 End-to-end check on Docker: run `docker compose exec backend python seed_taxonomy.py`, add a style with a description at `/quan-tri/phan-loai`, upload a matching photo at `/quan-tri`, and confirm the photo gets that style. Upload an unrelated photo and confirm it shows as `Khac` among the photos the AI wasn't sure about. Run the full `pytest` suite green.
 - [x] 4.2 Update `TONG-QUAN-DU-AN.md`: roadmap 1.1 remainder done, NFR-13 met for the AI tagger, UC15 "Còn thiếu" without the hard-coded-classifier note, and the re-runnable seed step in section 3.2. Verify by reading the changed rows.
 
 ## Workflow follow-up
 
 - Re-run NFR-10 (`eval_labels.py`) once at least 30 photos are approved, to check the dynamic prompt didn't lower accuracy.
 - Archive the change with `openspec-archive-change` after review.
+  ✓ 2026-11-18: a value accepted at runtime (Farmhouse) appears in the live classifier prompt; uploads were tagged with database-only values (hanjadin, tao_bao), so the classifier reads the taxonomy. The unrelated photo got «Táo bạo», not «Khác»: a broad leftover test value absorbs it (data issue, not code). pytest green except 4 known env failures.

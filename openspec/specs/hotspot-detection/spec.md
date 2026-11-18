@@ -61,6 +61,10 @@ A one-off command SHALL rebuild the proposed hotspots of draft photos whose hots
 - **WHEN** the re-run reaches a published photo
 - **THEN** its hotspots are unchanged
 
+#### Scenario: Published photos on request
+- **WHEN** staff run the re-run asking explicitly for published photos too
+- **THEN** untouched published photos are rebuilt the same way, with their previous hotspots logged and restorable
+
 #### Scenario: Previous hotspots kept on record
 - **WHEN** the re-run rebuilds a draft's hotspots
 - **THEN** the review log holds the previous hotspots, and the photo now has at most 6
