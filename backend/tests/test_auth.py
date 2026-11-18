@@ -66,7 +66,7 @@ def test_anonymous_and_visitor_see_only_published(as_role):
 
 def test_write_endpoints_by_role(as_role):
     sid = _draft_id(as_role("admin"))
-    png = {"file": ("a.png", b"x", "image/png")}
+    png = [("files", ("a.png", b"x", "image/png"))]
     try:
         # ingest + edit: anonymous 401, non-architect roles 403
         assert client.post("/spaces/ingest", files=png).status_code == 401

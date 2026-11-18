@@ -60,11 +60,17 @@ def drafts():
         with psycopg.connect(DSN) as c:
             rows = c.execute(f"SELECT id, {COLS} FROM space WHERE review_status='draft' AND {where} ORDER BY id LIMIT %s",
                              (n,)).fetchall()
+            ids = [r[0] for r in rows]
+            fixes.extend(c.execute("SELECT * FROM nhan_bi_sua WHERE space_id = ANY(%s)", (ids,)).fetchall())
         taken.extend(rows)
         return [r[0] for r in rows]
 
+    fixes = []  # labelling-queue-feedback: corrections of the taken photos, put back as they were
     yield take
     with psycopg.connect(DSN) as c:
+        c.execute("DELETE FROM nhan_bi_sua WHERE space_id = ANY(%s)", ([r[0] for r in taken],))
+        for f in fixes:
+            c.execute("INSERT INTO nhan_bi_sua VALUES (%s,%s,%s,%s,%s,%s,%s)", f)
         for sid, *vals in taken:
             vals[-1] = Jsonb(vals[-1])  # hotspots
             c.execute(f"UPDATE space SET ({COLS}) = (%s,%s,%s,%s,%s,%s,%s) WHERE id=%s", (*vals, sid))

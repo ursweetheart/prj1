@@ -81,26 +81,41 @@ describe('sliding session', () => {
 })
 
 describe('uploadAll', () => {
-  it('sends one file at a time in order, keeps going after a failure and reports it', async () => {
+  it('sends every file in one request and reports refused files (labelling-queue-feedback)', async () => {
     const { uploadAll } = await load()
-    let inFlight = 0
     const sent = []
     vi.stubGlobal('fetch', vi.fn(async (url, { body }) => {
       expect(url).toContain('/spaces/ingest')
-      expect(++inFlight).toBe(1) // never two at once: single GPU
-      const name = body.get('file').name
-      sent.push([name, body.get('project')])
-      await Promise.resolve()
-      inFlight--
-      return name === 'b.jpg'
-        ? { ok: false, status: 415, json: async () => ({ detail: 'image only (jpg/png/webp)' }) }
-        : { ok: true, status: 201, json: async () => ({}) }
+      sent.push([body.getAll('files').map(f => f.name), body.get('project')])
+      return { ok: true, status: 202, json: async () => ({ tasks: [], refused: [{ name: 'b.pdf', ly_do: 'Chỉ nhận ảnh JPG, PNG hoặc WEBP.' }] }) }
     }))
-    const files = ['a.jpg', 'b.jpg', 'c.jpg'].map(n => new File(['x'], n))
-    const progress = []
-    const failed = await uploadAll(files, 'Biệt thự', n => progress.push(n))
-    expect(sent).toEqual([['a.jpg', 'Biệt thự'], ['b.jpg', 'Biệt thự'], ['c.jpg', 'Biệt thự']])
-    expect(progress).toEqual([1, 2, 3])
-    expect(failed).toEqual([{ name: 'b.jpg', error: 'image only (jpg/png/webp)' }])
+    const files = ['a.jpg', 'b.pdf'].map(n => new File(['x'], n))
+    const r = await uploadAll(files, 'Biệt thự')
+    expect(sent).toEqual([[['a.jpg', 'b.pdf'], 'Biệt thự']])
+    expect(r).toEqual({ total: 0, ok: 0, failed: [{ name: 'b.pdf', error: 'Chỉ nhận ảnh JPG, PNG hoặc WEBP.' }] })
+  })
+})
+
+// labelling-queue-feedback: following the upload queue
+import { pollTasks } from './api'
+
+describe('pollTasks', () => {
+  const tasks = [{ id: 1, relative_path: 'p/a.jpg' }, { id: 2, relative_path: 'p/b.jpg' }]
+  it('polls until every task is done or failed and names the failures', async () => {
+    const answers = [
+      [{ id: 1, trang_thai: 'xong' }, { id: 2, trang_thai: 'dang_xu_ly' }],
+      [{ id: 2, trang_thai: 'loi', loi: 'OSError: hỏng' }],
+    ]
+    const asked = [], seen = []
+    const r = await pollTasks(tasks, async ids => { asked.push(ids); return answers.shift() }, (n, t) => seen.push([n, t]), async () => {})
+    expect(asked).toEqual([[1, 2], [2]])
+    expect(seen).toEqual([[0, 2], [1, 2], [2, 2]])
+    expect(r).toEqual({ ok: 1, failed: [{ name: 'b.jpg', error: 'OSError: hỏng' }] })
+  })
+  it('retries a failed poll instead of giving up', async () => {
+    let n = 0
+    const r = await pollTasks(tasks.slice(0, 1), async () => { if (n++ === 0) throw new Error('net'); return [{ id: 1, trang_thai: 'xong' }] },
+      () => {}, async () => {})
+    expect(r.ok).toBe(1)
   })
 })

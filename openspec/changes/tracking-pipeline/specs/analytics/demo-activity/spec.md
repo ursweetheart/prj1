@@ -1,0 +1,15 @@
+## MODIFIED Requirements
+
+### Requirement: Generate labelled demo activity
+`python -m pipeline.demo_activity` SHALL create consented-looking sessions whose ids start with `demo-`, with view and save events on published spaces spread over the last 8 weeks, and with one style clearly rising in the last 2 weeks. It SHALL be repeatable without duplicating: running it again replaces the earlier demo activity. It SHALL then reprocess the days it touched into the analytics store, so the dashboard shows the demo at once.
+
+#### Scenario: Generate
+- **WHEN** an operator runs the generator on a database with published spaces
+- **THEN** demo sessions and events exist over the last 8 weeks, the analytics store holds their days, and one style is "đang tăng" on the dashboard
+
+### Requirement: Remove demo activity
+`python -m pipeline.demo_activity --remove` SHALL delete every `demo-` session and its events, and nothing else. It SHALL then reprocess the affected days into the analytics store.
+
+#### Scenario: Remove
+- **WHEN** an operator runs the remove command
+- **THEN** no `demo-` session or event remains, real sessions are untouched, and the dashboard no longer counts the demo

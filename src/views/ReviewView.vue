@@ -21,7 +21,8 @@
       </div>
       <template v-if="progress.total">
         <progress :value="progress.done" :max="progress.total" style="width:100%"></progress>
-        <p class="small num" aria-live="polite">AI đã xử lý {{ progress.done }}/{{ progress.total }} ảnh</p>
+        <p class="small num" aria-live="polite">{{ uploading ? `AI đã xử lý ${progress.done}/${progress.total} ảnh`
+          : `Đã xử lý xong ${progress.ok} ảnh` }}</p>
       </template>
       <ul v-if="failed.length" class="small" style="color:var(--danger);margin:0" role="alert">
         <li v-for="f in failed" :key="f.name">{{ f.name }}: {{ f.error }}</li>
@@ -97,6 +98,13 @@
                 <option v-for="o in d.options" :key="o.id" :value="o.id">{{ o.label }}</option>
               </select>
             </div>
+            <!-- seq-1 b17: what the AI proposed, with its confidence; under 70% it says so in words, not colour alone -->
+            <p v-if="isStaff && TYPED.some(t => r[t.ai])" class="small rv-ai">
+              <span v-for="t in TYPED.filter(t => r[t.ai])" :key="'ai' + t.dim">
+                {{ t.label }} AI: {{ nameOf(t.dim, r[t.ai]) }}<template v-if="r[t.conf] != null"> · <span class="num">{{ pct(r[t.conf]) }}%</span></template>
+                <strong v-if="r[t.conf] != null && r[t.conf] < 0.7" class="rv-unsure">AI chưa chắc</strong>
+              </span>
+            </p>
             <template v-for="t in TYPED" :key="'s' + t.dim">
               <p v-if="offer[r.id + t.dim]" class="rv-offer" role="status">
                 Có phải ý bạn là <strong>{{ nameOf(t.dim, offer[r.id + t.dim].ma) }}</strong>?
@@ -196,8 +204,9 @@ const error = ref('')
 const saved = ref(null)
 const humanDims = ref([])
 const tagValues = reactive({ khong_gian: [], phong_cach: [] }) // typed with suggestions (review-tag-autocomplete)
-const TYPED = [{ dim: 'khong_gian', col: 'space_type', label: 'Loại không gian', other: 'khac' },
-  { dim: 'phong_cach', col: 'design_style', label: 'Phong cách', other: 'Khac' }]
+const TYPED = [{ dim: 'khong_gian', col: 'space_type', label: 'Loại không gian', other: 'khac', ai: 'space_type_ai', conf: 'space_type_confidence' },
+  { dim: 'phong_cach', col: 'design_style', label: 'Phong cách', other: 'Khac', ai: 'design_style_ai', conf: 'style_confidence' }]
+const pct = x => Math.round(100 * x)
 const nameOf = (dim, code) => tagValues[dim].find(v => v.ma_dinh_danh === code)?.ten || code
 const suggesting = reactive({}) // `${space id}${dim}` -> word being checked
 const offer = reactive({}) // `${space id}${dim}` -> { ma, ly_do, text }: "Did you mean …?"
@@ -240,8 +249,14 @@ const groups = computed(() => {
 async function load() {
   loading.value = true; error.value = ''; selected.clear(); hs.id = null; moved.value = ''
   try {
-    rows.value = (await listSpaces({ review_status: status.value, ...(status.value === 'draft' && onlyReturned.value ? { tra_ve: 1 } : {}) }))
-      .map(r => ({ ...r, materialsText: (r.materials || []).join(', ') }))
+    // every page: the API returns at most 200 rows, and new uploads have the highest ids (seq-1 b17 must reach them)
+    const params = { review_status: status.value, ...(status.value === 'draft' && onlyReturned.value ? { tra_ve: 1 } : {}) }
+    const all = []
+    for (let page; (page = await listSpaces({ ...params, limit: 200, offset: all.length })).length;) {
+      all.push(...page)
+      if (page.length < 200) break
+    }
+    rows.value = all.map(r => ({ ...r, materialsText: (r.materials || []).join(', ') }))
   } catch (e) { error.value = e.message; rows.value = [] }
   finally { loading.value = false }
   if (target.value) {
@@ -262,13 +277,17 @@ const project = ref('')
 const files = ref([])
 const fileInput = ref(null)
 const uploading = ref(false)
-const progress = reactive({ done: 0, total: 0 })
+const progress = reactive({ done: 0, total: 0, ok: 0 })
 const failed = ref([])
 
+/* seq-1: the server queues the photos and answers at once; the queue is followed until every photo is done (b16) */
 async function upload() {
   uploading.value = true; failed.value = []
-  progress.done = 0; progress.total = files.value.length
-  failed.value = await uploadAll(files.value, project.value, n => { progress.done = n })
+  Object.assign(progress, { done: 0, total: files.value.length, ok: 0 })
+  try {
+    const r = await uploadAll(files.value, project.value, (n, total) => Object.assign(progress, { done: n, total }))
+    progress.ok = r.ok; failed.value = r.failed
+  } catch (e) { failed.value = [{ name: 'Tải lên', error: e.message }] }
   uploading.value = false
   fileInput.value.value = ''
   if (status.value === 'draft') load(); else status.value = 'draft' // new spaces start as drafts
@@ -398,6 +417,8 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .rv-offer { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px }
 .rv-offer .small { flex-basis: 100%; color: var(--dim) }
 .rv-wait { margin: 0; color: var(--warn) }
+.rv-ai { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--dim) }
+.rv-unsure { margin-left: 6px; color: var(--warn); font-weight: 600 }
 .rv-warn { margin: 0; color: var(--danger) }
 .rv-by { color: var(--dim); font-size: 13px }
 .rv-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); color: var(--ink);

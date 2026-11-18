@@ -26,7 +26,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, intake, label_feedback, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -38,6 +38,7 @@ IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD = 8 * 1024 * 1024  # photo search; nginx allows 50 MB, so this is the limit users hit
+AI_FIELDS = "space_type_ai, design_style_ai, space_type_confidence"  # seq-1 b17: the AI's proposal with its confidence
 FIELDS = "id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status"
 # taxonomy values of each space as {dimension: [value, ...]}; the portfolio filters on these
 TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
@@ -97,9 +98,17 @@ async def lifespan(_app):
     elif "pytest" not in sys.modules:  # tests call the module directly and must never send
         weekly_report.log.info("weekly report scheduler: on (Monday from 08:00 UTC+7)")
         task = asyncio.create_task(_weekly_loop())
+    worker = None
+    if os.getenv("D3_INTAKE_WORKER", "on").lower() in ("off", "0", "false", "no"):
+        intake.log.info("upload queue worker: off (D3_INTAKE_WORKER)")
+    elif "pytest" not in sys.modules:  # tests drive intake.process_next directly
+        worker = intake.Worker({"processor": _processor, "img_dir": IMG_DIR})
+        worker.start()
     yield
     if task:
         task.cancel()
+    if worker:
+        worker.stop.set()
 
 
 app = FastAPI(title="D3 Studio AI", lifespan=lifespan)
@@ -150,7 +159,7 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
     with _db() as c:
         return c.execute(
             f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
-            + (", ly_do_duyet, " + PENDING_VALUE if staff else "") + " "  # review reason and suggestions: staff-only
+            + (", ly_do_duyet, " + AI_FIELDS + ", " + PENDING_VALUE if staff else "") + " "  # staff-only: review reason, AI proposal, suggestions
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
@@ -290,21 +299,41 @@ def project_folder(name: str) -> str:
     return taxonomy_admin.slug(name)
 
 
-@app.post("/spaces/ingest", status_code=201)
-def ingest(file: UploadFile = File(...), project: str = Form(""), user=Depends(require(*STAFF))):
-    if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
-        raise HTTPException(415, "image only (jpg/png/webp)")
+MAX_BATCH = 50
+INGEST_KIND = "xu_ly_anh"  # tests swap in a kind the live worker does not run
+
+
+@app.post("/spaces/ingest", status_code=202)
+def ingest(files: list[UploadFile] = File(...), project: str = Form(""), user=Depends(require(*STAFF))):
+    """seq-1 steps 2-5: store the originals, queue one processing task per photo and answer at once.
+    A file of the wrong type or size is refused alone; the rest are queued."""
+    if len(files) > MAX_BATCH:
+        raise HTTPException(422, f"tối đa {MAX_BATCH} ảnh mỗi lần tải lên")
     folder = IMG_DIR / (project_folder(project) or UPLOAD_DIR.name)
-    folder.mkdir(exist_ok=True)
-    dest = folder / Path(file.filename).name  # .name strips any path component; same name in a project = re-upload
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    rec = _processor().process_image(dest, base_dir=IMG_DIR)  # sync on purpose: GPU is a single resource
-    save_records([rec])
+    tasks, refused = [], []
     with _db() as c:
-        row = c.execute(f"SELECT {FIELDS} FROM space WHERE relative_path=%s", (rec.relative_path,)).fetchone()
-        _log(c, row["id"], user, "ingest", {"relative_path": rec.relative_path})
-        return row
+        for file in files:
+            name = Path(file.filename or "").name  # .name strips any path component; same name in a project = re-upload
+            if Path(name).suffix.lower() not in IMAGE_TYPES:
+                refused.append({"name": name, "ly_do": "Chỉ nhận ảnh JPG, PNG hoặc WEBP."})
+                continue
+            data = file.file.read(MAX_UPLOAD + 1)
+            if len(data) > MAX_UPLOAD:
+                refused.append({"name": name, "ly_do": "Ảnh quá lớn, tối đa 8 MB."})
+                continue
+            folder.mkdir(exist_ok=True)
+            (folder / name).write_bytes(data)
+            rel = (folder / name).relative_to(IMG_DIR).as_posix()
+            tid = intake.enqueue(c, INGEST_KIND, {"relative_path": rel}, user["id"])
+            tasks.append({"id": tid, "relative_path": rel, "trang_thai": "dang_xu_ly"})
+    return {"tasks": tasks, "refused": refused}
+
+
+@app.get("/spaces/ingest/tasks", dependencies=[Depends(require(*STAFF))])
+def ingest_tasks(ids: str = Query(pattern=r"^\d+(,\d+){0,199}$")):
+    """Progress of queued uploads (seq-1 b6, b16): dang_xu_ly | xong (with space_id) | loi (with the reason)."""
+    with _db() as c:
+        return intake.status(c, [int(i) for i in ids.split(",")])
 
 
 class HotspotKeep(BaseModel):
@@ -359,6 +388,8 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
         if changes := {k: v for k, v in sent.items() if v != row[k]}:
             c.execute(f"UPDATE space SET {', '.join(k + '=%s' for k in changes)} WHERE id=%s", (*changes.values(), space_id))
             _log(c, space_id, user, "edit", {"from": {k: row[k] for k in changes}, "to": changes})
+            if {"space_type", "design_style"} & set(changes):
+                label_feedback.record(c, space_id, user["id"])  # seq-1 b21: corrected labels, for model evaluation
         if body.hotspots is not None:
             objs = (row["hotspots"] or {}).get("objects", [])
             if bad := [h.index for h in body.hotspots if h.index >= len(objs)]:
@@ -387,6 +418,7 @@ def _wait_on_suggestion(c, space, dim, text, user, draft) -> int:
     if space[col] != other:
         c.execute(f"UPDATE space SET {col} = %s WHERE id = %s", (other, space["id"]))
         _log(c, space["id"], user, "edit", {"from": {col: space[col]}, "to": {col: other}, "goi_y": cid})
+        label_feedback.record(c, space["id"], user["id"])
     return cid
 
 

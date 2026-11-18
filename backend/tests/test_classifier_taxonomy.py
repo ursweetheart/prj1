@@ -129,3 +129,23 @@ def test_prompt_asks_for_items_with_the_category_list():
 
 def test_offline_fallback_has_no_items():
     assert _heuristic("modern").items == []
+
+
+# ── labelling-queue-feedback 2.1: the room type has its own confidence ──────────────────────────────────────────
+def test_room_confidence_is_parsed_and_clamped():
+    assert _parse(space_type="phong_khach", space_type_confidence=0.82).space_type_confidence == 0.82
+    assert _parse(space_type="phong_khach", space_type_confidence=7).space_type_confidence == 1.0
+
+
+def test_room_confidence_missing_is_none_and_unknown_room_is_zero():
+    assert _parse(space_type="phong_khach").space_type_confidence is None
+    assert _parse(space_type="garage", space_type_confidence=0.9).space_type_confidence == 0.0
+
+
+def test_prompt_asks_for_room_confidence():
+    from pipeline import multimodal_classifier as m  # the JSON shape lives in the prompt template
+    assert '"space_type_confidence": 0.9' in open(m.__file__, encoding="utf-8").read()
+
+
+def test_offline_fallback_room_confidence():
+    assert _heuristic("modern").space_type_confidence == 0.5

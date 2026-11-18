@@ -255,22 +255,38 @@ export const advanceSpaces = (ids, rightsConfirmed = false) =>
 export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}
 export const projectOf = relativePath => relativePath.split('/')[0]
 
-export function ingestSpace(file, project) {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('project', project)
-  return request('POST', '/spaces/ingest', { form })
+export const ingestTasks = ids => get('/spaces/ingest/tasks', { ids: ids.join(',') })
+
+/* labelling-queue-feedback (seq-1 b5-b6, b16): follow queued tasks until each is done or failed.
+   fetchStatus(ids) -> [{id, trang_thai, loi}]; a failed poll (network blip) is simply retried on the next turn. */
+export async function pollTasks(tasks, fetchStatus, onProgress = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)), every = 2000) {
+  const name = Object.fromEntries(tasks.map(t => [t.id, t.relative_path.split('/').pop()]))
+  const failed = []
+  let open = tasks.map(t => t.id), ok = 0
+  onProgress(0, tasks.length)
+  while (open.length) {
+    await wait(every)
+    let st
+    try { st = await fetchStatus(open) } catch { continue }
+    for (const s of st) {
+      if (s.trang_thai === 'xong') ok++
+      else if (s.trang_thai === 'loi') failed.push({ name: name[s.id], error: s.loi })
+    }
+    open = st.filter(s => s.trang_thai === 'dang_xu_ly').map(s => s.id)
+    onProgress(tasks.length - open.length, tasks.length)
+  }
+  return { ok, failed }
 }
 
-/* One request per file, in order: the server runs the pipeline on a single GPU.
- * A failed file is reported and the rest still go up. */
-export async function uploadAll(files, project, onDone = () => {}) {
-  const failed = []
-  for (const [i, f] of [...files].entries()) {
-    try { await ingestSpace(f, project) } catch (e) { failed.push({ name: f.name, error: e.message }) }
-    onDone(i + 1)
-  }
-  return failed
+/* One request queues every photo and comes back at once; then the queue is followed (seq-1 b2-b6).
+   -> { total, ok, failed: [{name, error}] } with refused files (wrong type or size) among the failures. */
+export async function uploadAll(files, project, onProgress = () => {}) {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
+  form.append('project', project)
+  const { tasks, refused } = await request('POST', '/spaces/ingest', { form })
+  const done = await pollTasks(tasks, ingestTasks, onProgress)
+  return { total: tasks.length, ok: done.ok, failed: [...refused.map(r => ({ name: r.name, error: r.ly_do })), ...done.failed] }
 }
 
 // detector objects (anchor in 0..1) -> the {x, y, label} HotspotImage draws, in percent

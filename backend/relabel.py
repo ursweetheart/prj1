@@ -76,9 +76,11 @@ def main():
                 old = {"space_type": row[4], "design_style": row[5]}
                 new = {"space_type": res.space_type, "design_style": res.design_style}
                 conn.execute("UPDATE space SET space_type=%s, design_style=%s, style_confidence=%s, materials=%s, "
-                             "caption=%s, alt_text=%s WHERE id=%s AND review_status='draft'",
+                             "caption=%s, alt_text=%s, space_type_ai=%s, design_style_ai=%s, space_type_confidence=%s "
+                             "WHERE id=%s AND review_status='draft'",  # the AI's proposal is refreshed with the labels
                              (res.space_type, res.design_style, res.design_style_confidence, res.materials,
-                              res.seo_metadata.caption, res.seo_metadata.alt_text, row[0]))
+                              res.seo_metadata.caption, res.seo_metadata.alt_text, res.space_type, res.design_style,
+                              res.space_type_confidence, row[0]))
                 if old != new:
                     conn.execute("INSERT INTO review_log (space_id, user_id, action, detail) VALUES (%s, NULL, 'relabel', %s)",
                                  (row[0], Jsonb({"from": old, "to": new})))

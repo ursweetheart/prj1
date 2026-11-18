@@ -456,3 +456,50 @@ CREATE TABLE IF NOT EXISTS nhat_ky_du_an (
 ALTER TABLE space ADD COLUMN IF NOT EXISTS du_an_slug text REFERENCES du_an(slug) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE space ADD COLUMN IF NOT EXISTS anh_trang text;  -- the site file it matches, e.g. 02.jpg
 CREATE INDEX IF NOT EXISTS space_du_an ON space (du_an_slug);
+
+-- labelling-queue-feedback (seq-1): uploads go through a task queue; a single worker runs one task at a time.
+-- loai names the handler (pipeline/intake.py HANDLERS): xu_ly_anh = process an uploaded photo (du_lieu.relative_path).
+CREATE TABLE IF NOT EXISTS hang_doi_tac_vu (
+  id serial PRIMARY KEY,
+  loai text NOT NULL,
+  du_lieu jsonb NOT NULL DEFAULT '{}',
+  trang_thai text NOT NULL DEFAULT 'cho' CHECK (trang_thai IN ('cho', 'dang_xu_ly', 'xong', 'loi')),
+  so_lan int NOT NULL DEFAULT 0,
+  space_id int REFERENCES space(id) ON DELETE SET NULL,
+  loi text,
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  tao_luc timestamptz NOT NULL DEFAULT now(),
+  bat_dau_luc timestamptz,
+  xong_luc timestamptz
+);
+CREATE INDEX IF NOT EXISTS hang_doi_tac_vu_cho ON hang_doi_tac_vu (id) WHERE trang_thai = 'cho';
+-- what the AI proposed, kept unchanged by human edits (seq-1 b11): the evaluation baseline
+ALTER TABLE space ADD COLUMN IF NOT EXISTS space_type_ai text;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS design_style_ai text;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS space_type_confidence real;
+-- backfill once: the AI label is the 'from' side of the first human edit, else the current label
+UPDATE space s SET
+  space_type_ai = COALESCE((SELECT r.detail->'from'->>'space_type' FROM review_log r WHERE r.space_id = s.id
+                            AND r.action = 'edit' AND r.detail->'from' ? 'space_type' ORDER BY r.id LIMIT 1), s.space_type),
+  design_style_ai = COALESCE((SELECT r.detail->'from'->>'design_style' FROM review_log r WHERE r.space_id = s.id
+                              AND r.action = 'edit' AND r.detail->'from' ? 'design_style' ORDER BY r.id LIMIT 1), s.design_style)
+WHERE s.space_type_ai IS NULL AND s.design_style_ai IS NULL;
+-- seq-1 b21: one row per photo and dimension while the saved label differs from the AI's
+CREATE TABLE IF NOT EXISTS nhan_bi_sua (
+  space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  chieu text NOT NULL CHECK (chieu IN ('khong_gian', 'phong_cach')),
+  ai_gia_tri text,
+  do_tin_cay real,
+  gia_tri_dung text,
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  luc timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (space_id, chieu)
+);
+-- backfill: corrections made before nhan_bi_sua existed (idempotent: only photos with no row yet)
+INSERT INTO nhan_bi_sua (space_id, chieu, ai_gia_tri, do_tin_cay, gia_tri_dung)
+SELECT id, 'khong_gian', space_type_ai, space_type_confidence, space_type FROM space
+ WHERE space_type_ai IS NOT NULL AND space_type IS DISTINCT FROM space_type_ai
+UNION ALL
+SELECT id, 'phong_cach', design_style_ai, style_confidence, design_style FROM space
+ WHERE design_style_ai IS NOT NULL AND design_style IS DISTINCT FROM design_style_ai
+ON CONFLICT (space_id, chieu) DO NOTHING;

@@ -69,9 +69,11 @@ def test_project_folder_is_path_safe():
     assert project_folder("  ") == ""             # -> uploads/
 
 
-def test_ingest_rejects_non_image(as_role):
-    r = client.post("/spaces/ingest", files={"file": ("notes.txt", b"hello", "text/plain")}, headers=as_role("architect"))
-    assert r.status_code == 415
+def test_ingest_refuses_a_non_image_alone(as_role):
+    # labelling-queue-feedback: a bad file is refused on its own, nothing is queued for it
+    r = client.post("/spaces/ingest", files=[("files", ("notes.txt", b"hello", "text/plain"))], headers=as_role("architect"))
+    assert r.status_code == 202
+    assert r.json() == {"tasks": [], "refused": [{"name": "notes.txt", "ly_do": "Chỉ nhận ảnh JPG, PNG hoặc WEBP."}]}
 
 
 
