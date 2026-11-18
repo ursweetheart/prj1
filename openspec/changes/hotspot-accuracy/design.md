@@ -29,7 +29,7 @@ See proposal.md for the measurements and `specs/hotspot-detection/spec.md` for t
 ## Decisions
 
 **1. Gemini returns `items` in the classification answer.**
-The prompt gains a section asking for up to 8 main interior items (not small decor or clutter). Each is `{"ten": "<Vietnamese name>", "loai": <one of a fixed list>, "diem": [y, x]}`, with the point **on the item** in Gemini's 0–1000 convention, y first. `SpaceClassificationResult` gains `items: list[AiItem]` (default `[]`). Parsing drops entries with a missing or unknown `loai`, an empty name, or a point outside 0–1000, then converts the point to 0–1 `(x, y)`.
+The prompt gains a section asking for up to 8 main interior items (not small decor or clutter). Each is `{"ten": "<Vietnamese name>", "loai": <one of a fixed list>, "khung": [ymin, xmin, ymax, xmax]}` in Gemini's 0–1000 convention, and the hotspot is the box centre. (A first version asked for a bare point `[y, x]` on the item; on real photos those points missed by 10–20% of the frame and pushed the accurate YOLO points out of the 6-point cap, while boxes — Gemini's trained detection format — landed on the mirror, chair, desk, rug and vase.) `SpaceClassificationResult` gains `items: list[AiItem]` (default `[]`). Parsing drops entries with a missing or unknown `loai`, an empty name, or a malformed box or one outside 0–1000, then converts the box centre to 0–1 `(x, y)`.
 *Alternative:* ask Gemini for boxes (`box_2d`). Rejected because a box centre is exactly today's problem. A point on the item is what a hotspot needs, and the detector already gives boxes where it can.
 
 **2. Fixed categories, mapped to detector labels where possible.**

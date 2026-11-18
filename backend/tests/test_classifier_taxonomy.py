@@ -104,12 +104,13 @@ def test_offline_fallback_with_merged_away_code_is_other():
 # ── hotspot-accuracy 1.2: the classifier also names and points at items ──────────────────────────────────────────
 def test_items_are_parsed_and_bad_ones_dropped():
     r = _parse(items=[
-        {"ten": "Sofa vải xám", "loai": "sofa", "diem": [640, 420]},
-        {"ten": "Đèn chùm", "loai": "den", "diem": [80, 500]},
-        {"ten": "Bình hoa", "loai": "binh", "diem": [500, 500]},      # unknown category
-        {"ten": "", "loai": "ghe", "diem": [500, 500]},              # no name
-        {"ten": "Thảm", "loai": "thao", "diem": [1200, 500]},        # off the photo
-        {"ten": "Tủ", "loai": "tu", "diem": [500]},                  # not a point
+        {"ten": "Sofa vải xám", "loai": "sofa", "khung": [520, 250, 760, 590]},
+        {"ten": "Đèn chùm", "loai": "den", "khung": [0, 400, 160, 600]},
+        {"ten": "Bình hoa", "loai": "binh", "khung": [400, 400, 600, 600]},   # unknown category
+        {"ten": "", "loai": "ghe", "khung": [400, 400, 600, 600]},           # no name
+        {"ten": "Thảm", "loai": "thao", "khung": [800, 0, 1200, 500]},       # off the photo
+        {"ten": "Tủ", "loai": "tu", "khung": [600, 500, 400, 700]},          # ymin > ymax
+        {"ten": "Kệ", "loai": "ke", "diem": [500, 500]},                     # a point, not a box
         "rác",
     ])
     assert [(i.ten, i.loai, i.x, i.y) for i in r.items] == [("Sofa vải xám", "sofa", 0.42, 0.64), ("Đèn chùm", "den", 0.5, 0.08)]
@@ -117,7 +118,7 @@ def test_items_are_parsed_and_bad_ones_dropped():
 
 def test_items_missing_or_too_many():
     assert _parse().items == []
-    many = [{"ten": f"Ghế {i}", "loai": "ghe", "diem": [500, 100 + i]} for i in range(12)]
+    many = [{"ten": f"Ghế {i}", "loai": "ghe", "khung": [400, 100 + i, 600, 200 + i]} for i in range(12)]
     assert len(_parse(items=many).items) == 8
 
 

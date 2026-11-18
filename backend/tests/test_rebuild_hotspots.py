@@ -87,6 +87,7 @@ def test_restore_puts_back_unless_edited_since(spaces):
     assert len(_objects(b)) == 2          # a person edited it after the rebuild: theirs stays
     with psycopg.connect(DSN) as c:
         assert rb.restore(c, [a, b]) == 0  # a second restore changes nothing
+        assert _selected(c, [a, b]) == {a}  # restored: may be rebuilt again; b was edited by hand
 
 
 def test_heuristic_answer_is_a_failure_not_an_empty_list():

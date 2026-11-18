@@ -30,7 +30,9 @@ SELECT s.id, s.relative_path, s.palette, s.hotspots FROM space s
 WHERE s.review_status = 'draft' AND s.hotspots IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(s.hotspots->'objects', '[]')) o
                   WHERE o->>'nguon_tao' = 'thu_cong' OR o->>'mon_do_id' IS NOT NULL)
-  AND NOT EXISTS (SELECT 1 FROM review_log l WHERE l.space_id = s.id AND l.action IN ('hotspots', 'rebuild_hotspots'))
+  AND NOT EXISTS (SELECT 1 FROM review_log l WHERE l.space_id = s.id AND (l.action = 'hotspots'
+                  OR (l.action = 'rebuild_hotspots' AND NOT EXISTS (  -- a restored rebuild doesn't count
+                      SELECT 1 FROM review_log m WHERE m.space_id = s.id AND m.id > l.id AND m.action = 'rebuild_hotspots_restore'))))
 ORDER BY s.id"""
 
 

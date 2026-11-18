@@ -41,8 +41,7 @@ Nhiệm vụ của bạn là phân tích ảnh không gian nội thất kết h�
    đèn, thảm, rèm, gương, tranh, cây...). KHÔNG liệt kê đồ vặt (chai, cốc, bát, sách, điều khiển, đồ trên bàn).
    - ten: tên tiếng Việt ngắn, cụ thể (vd "Sofa vải xám", "Đèn chùm pha lê", "Thảm len kem").
    - loai: đúng một trong: {loai}.
-   - diem: [y, x] là MỘT ĐIỂM NẰM TRÊN CHÍNH MÓN ĐỒ (không phải khoảng trống cạnh nó), thang 0-1000, y tính từ trên
-     xuống, x tính từ trái sang.
+   - khung: [ymin, xmin, ymax, xmax] là khung bao sát món đồ, thang 0-1000, y tính từ trên xuống, x tính từ trái sang.
 
 Ghi space_type và design_style bằng MÃ ở đầu mỗi dòng. Nếu ảnh không khớp rõ với mã nào, chọn mã "Khác".
 BẮT BUỘC trả về đúng định dạng JSON tuân thủ schema, không thêm text giải thích ngoài JSON.
@@ -94,7 +93,7 @@ Hãy dựa vào ảnh và dữ liệu bằng chứng trên để phân loại kh
     "caption": "...",
     "alt_text": "..."
   }},
-  "items": [{{"ten": "Sofa vải xám", "loai": "sofa", "diem": [640, 420]}}]
+  "items": [{{"ten": "Sofa vải xám", "loai": "sofa", "khung": [520, 250, 760, 590]}}]
 }}
 """
     return prompt
@@ -327,21 +326,22 @@ class MultimodalClassifier:
 
     @staticmethod
     def _parse_items(raw) -> list[dict]:
-        """hotspot-accuracy: [{ten, loai, diem: [y, x] on 0-1000}] -> [{ten, loai, x, y} on 0-1]. Entries with an unknown
-        category, no name, or a point off the photo are dropped; at most MAX_ITEMS kept, in the AI's order."""
+        """hotspot-accuracy: [{ten, loai, khung: [ymin, xmin, ymax, xmax] on 0-1000}] -> [{ten, loai, x, y} on 0-1], the box
+        centre (Gemini places boxes far better than bare points). Entries with an unknown category, no name, or a box
+        that is malformed or off the photo are dropped; at most MAX_ITEMS kept, in the AI's order."""
         out = []
         for it in raw if isinstance(raw, list) else []:
             if not isinstance(it, dict):
                 continue
-            ten, loai, diem = str(it.get("ten") or "").strip()[:120], it.get("loai"), it.get("diem")
-            if not ten or loai not in CATEGORIES or not isinstance(diem, (list, tuple)) or len(diem) != 2:
+            ten, loai, khung = str(it.get("ten") or "").strip()[:120], it.get("loai"), it.get("khung")
+            if not ten or loai not in CATEGORIES or not isinstance(khung, (list, tuple)) or len(khung) != 4:
                 continue
             try:
-                y, x = float(diem[0]), float(diem[1])
+                y0, x0, y1, x1 = (float(v) for v in khung)
             except (TypeError, ValueError):
                 continue
-            if 0 <= x <= 1000 and 0 <= y <= 1000:
-                out.append({"ten": ten, "loai": loai, "x": round(x / 1000, 3), "y": round(y / 1000, 3)})
+            if 0 <= y0 < y1 <= 1000 and 0 <= x0 < x1 <= 1000:
+                out.append({"ten": ten, "loai": loai, "x": round((x0 + x1) / 2000, 3), "y": round((y0 + y1) / 2000, 3)})
         return out[:MAX_ITEMS]
 
     @staticmethod

@@ -16,7 +16,7 @@
 
 ## 4. Integration and docs
 
-- [ ] 4.1 On Docker: upload one living-room photo and check the hotspots on `/quan-tri` (fewer, on the items, including a lamp or rug where present); run `python rebuild_hotspots.py --dry-run`, then `--limit 5`, and compare 5 photos before and after on `/khong-gian/<id>`. Run the full `pytest` suite; only the already-known failures may remain.
+- [x] 4.1 On Docker: upload one living-room photo and check the hotspots on `/quan-tri` (fewer, on the items, including a lamp or rug where present); run `python rebuild_hotspots.py --dry-run`, then `--limit 5`, and compare 5 photos before and after on `/khong-gian/<id>`. Run the full `pytest` suite; only the already-known failures may remain.
 - [x] 4.2 Update `TONG-QUAN-DU-AN.md`: UC17 (how hotspots are proposed, the re-run command) and section 11.4 scripts (`rebuild_hotspots.py`). Verify by reading the changed rows.
 
 ## Workflow follow-up
