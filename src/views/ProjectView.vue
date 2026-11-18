@@ -14,7 +14,7 @@
         <button v-for="item in row.items" :key="item.index" type="button" class="pv-photo"
                 :style="{ '--r': item.w / item.h }"
                 :aria-label="'Xem lớn ảnh ' + (item.index + 1)"
-                @click="open = item.index">
+                @click="zoom(item.index)">
           <img :src="item.src" :width="item.w" :height="item.h"
                :alt="project.name + ' — ảnh ' + (item.index + 1)"
                :loading="item.index < 2 ? 'eager' : 'lazy'" decoding="async">
@@ -38,7 +38,7 @@
     </nav>
 
     <Lightbox v-if="open !== null" :items="lightboxItems" :index="open"
-              @close="open = null" @go="d => open = (open + d + images.length) % images.length">
+              @close="open = null" @go="stepPhoto">
       <!-- ảnh đã có không gian AI được đăng: chỉ một link nhỏ, ảnh vẫn sạch -->
       <template v-if="currentSpace" #bar>
         <router-link class="lb-space glow-hover" :to="'/khong-gian/' + currentSpace.id">
@@ -65,6 +65,7 @@ import Lightbox from '@/components/Lightbox.vue'
 import { LOAI_NAME, PROJECTS_LIST, projectBySlug } from '@/data/projects'
 import { galleryRows } from '@/lib/galleryRows'
 import { loadProjectSpaces } from '@/lib/projectSpaces'
+import { trackEvent } from '@/api'
 
 const route = useRoute()
 const project = computed(() => projectBySlug(route.params.slug))
@@ -74,6 +75,18 @@ const rows = computed(() => galleryRows(images.value))
 const lightboxItems = computed(() => images.value.map(im => ({ img: im.src, alt: project.value.name + ' — ảnh ' + (im.index + 1) })))
 
 const open = ref(null) // ảnh đang xem toàn màn hình (chỉ số) hoặc null
+
+/* behaviour-events (visitor-services-hotspots): phóng to bằng cú bấm (không tính link ?anh= mở sẵn) và chuyển ảnh;
+   đối tượng = <slug>/<số thứ tự ảnh>. trackEvent tự bỏ qua nhân viên và theo đồng ý của khách. */
+const photoEvent = (loai, i) => trackEvent(loai, { trang: '/du-an/:slug', doi_tuong: route.params.slug + '/' + (i + 1) })
+function zoom(i) {
+  open.value = i
+  photoEvent('phong_to_anh', i)
+}
+function stepPhoto(d) {
+  open.value = (open.value + d + images.value.length) % images.value.length
+  photoEvent('chuyen_anh', open.value)
+}
 
 /* ?anh=<file>: mở sẵn Lightbox ở ảnh đó (link từ trang không gian); đi / đóng thì cập nhật URL, không thêm lịch sử */
 const router = useRouter()

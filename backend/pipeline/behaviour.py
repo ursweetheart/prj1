@@ -3,7 +3,8 @@ behaviour events, with the anonymous daily counts beside them. Only counts and a
 
 from psycopg.rows import tuple_row
 
-TYPES = ("xem_trang", "xem_du_an", "bam_CTA", "gui_form", "nhan_chatbot", "chia_se", "ap_dung_bo_loc")
+TYPES = ("xem_trang", "xem_du_an", "bam_CTA", "gui_form", "nhan_chatbot", "chia_se", "ap_dung_bo_loc",
+         "phong_to_anh", "chuyen_anh", "bam_hotspot")  # the last three: visitor-services-hotspots
 TOP = 10
 
 
@@ -47,9 +48,12 @@ def overview(conn, days: int) -> dict:
     filters = [{"gia_tri": v, "so_lan": n} for v, n in _rows(conn, f"""
         SELECT v, count(*) FROM su_kien, unnest(gia_tri) v WHERE loai = 'ap_dung_bo_loc' AND {win}
          GROUP BY v ORDER BY count(*) DESC, v LIMIT %s""", (period, TOP))]
+    hotspots = [{"doi_tuong": d, "so_lan": n} for d, n in _rows(conn, f"""
+        SELECT doi_tuong, count(*) FROM su_kien WHERE loai = 'bam_hotspot' AND doi_tuong IS NOT NULL AND {win}
+         GROUP BY doi_tuong ORDER BY count(*) DESC, doi_tuong LIMIT %s""", (period, TOP))]
     demo = bool(_rows(conn, "SELECT EXISTS (SELECT 1 FROM phien_truy_cap WHERE id LIKE 'demo-%%')")[0][0])
     return {"days": int(days), "trang": pages, "du_an": projects,
             "cta": sorted(cta.values(), key=lambda c: (-c["so_lan"], c["dich"])),
-            "form": count_by("gui_form"), "chia_se": count_by("chia_se"), "bo_loc": filters,
+            "form": count_by("gui_form"), "chia_se": count_by("chia_se"), "bo_loc": filters, "hotspot": hotspots,
             "dong_y": {t: totals.get(t, 0) for t in TYPES}, "an_danh": {t: anon.get(t, 0) for t in TYPES},
             "co_du_lieu_mo_phong": demo}

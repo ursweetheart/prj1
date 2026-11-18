@@ -671,6 +671,10 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
            font: inherit; font-size: 13px; color: var(--ink-2) }
 .hs-link:hover, .hs-link:focus-visible { color: var(--ink) }
 .hs-card .small { color: var(--dim) }
+/* visitor-services-hotspots: the related service, one quiet line under a hairline (no price, no buy button) */
+.hs-service { align-self: stretch; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line);
+              font-size: 12px; color: var(--dim); text-decoration: none; line-height: 1.4 }
+.hs-service:hover, .hs-service:focus-visible { color: var(--ink) }
 
 /* ─── Lightbox (câu 29: bấm để phóng to) ──────────────────────────── */
 .lb { position: fixed; inset: 0; z-index: 120; /* trên header cố định (100) */ display: grid; place-items: center;

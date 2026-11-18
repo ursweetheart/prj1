@@ -274,10 +274,13 @@ export async function uploadAll(files, project, onDone = () => {}) {
 }
 
 // detector objects (anchor in 0..1) -> the {x, y, label} HotspotImage draws, in percent
+/* visitor-services-hotspots: the card shows the name, the item's other spaces (itemId) and the service as a small link */
 export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o => ({
   x: o.hotspot_anchor[0] * 100, y: o.hotspot_anchor[1] * 100,
-  label: o.label_vi || o.label, kind: o.service || 'Món đồ trong ảnh', price: null
+  label: o.label_vi || o.label, raw: o.label || '', itemId: Number.isInteger(o.mon_do_id) ? o.mon_do_id : null,
+  service: o.service || null
 }))
+export const getServices = () => get('/services') // public: service packages in use, for /dich-vu
 export const listLeads = (params = {}) => get('/leads', params)
 /* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
 /* chat-history: the conversation id goes with every message; the session id goes whenever the banner was accepted

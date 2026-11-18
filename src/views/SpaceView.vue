@@ -31,7 +31,7 @@
         <div class="sv-photo" :style="ratio ? { '--r': ratio } : null">
           <HotspotImage :src="imageUrl(space.relative_path)" :alt="space.alt_text || title"
                         :hotspots="hotspots" :show="showSpots"
-                        @similar="toSimilar" @load="onLoad" />
+                        @similar="toSimilar" @item="toItem" @open="onSpotOpen" @load="onLoad" />
         </div>
 
         <aside v-if="hotspots.length || space.materials?.length || palette.length" class="sv-info">
@@ -54,6 +54,17 @@
         </aside>
       </div>
 
+      <section v-if="itemSpaces" id="mon-do" ref="itemEl" class="sv-similar" aria-labelledby="item-h" aria-live="polite">
+        <h2 id="item-h" class="projects-title">Không gian có {{ itemSpaces.name.toLowerCase() }}</h2>
+        <p v-if="itemSpaces.loading" class="pv-brief">Đang tải…</p>
+        <p v-else-if="itemSpaces.error" class="pv-brief" role="alert">{{ itemSpaces.error }}</p>
+        <p v-else-if="!itemSpaces.cards.length" class="pv-brief">Hiện chỉ không gian này dùng món đồ này.
+          <button class="sv-toggle" type="button" @click="toSimilar">Xem không gian tương tự →</button></p>
+        <div v-else class="projects-grid">
+          <SpaceTile v-for="s in itemSpaces.cards" :key="s.id" :space="s" />
+        </div>
+      </section>
+
       <section v-if="similar.length" id="tuong-tu" ref="similarEl" class="sv-similar" aria-labelledby="similar-h">
         <h2 id="similar-h" class="projects-title">Không gian tương tự</h2>
         <div class="projects-grid">
@@ -67,11 +78,13 @@
 <script setup>
 /* Một không gian (một ảnh) với phần AI đọc được: món đồ, mô tả, vật liệu, bảng màu, không gian tương tự.
  * Cùng ngôn ngữ thiết kế với trang dự án; ‹ › đi qua các ảnh đã đăng khác của cùng dự án. */
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { PC_LABEL } from '@/data'
 import { projectBySlug } from '@/data/projects'
-import { STAFF, getSimilar, getSpace, hasRole, hotspotsOf, imageUrl, spaceLabel, toCard, trackView } from '@/api'
+import { STAFF, getSimilar, getSpace, hasRole, hotspotsOf, imageUrl, itemSpaces as fetchItemSpaces, spaceLabel, toCard,
+  trackEvent, trackView } from '@/api'
+import { slug } from '@/lib/slug'
 import { fileOf, loadProjectSpaces, projectPhotoHref, slugOf } from '@/lib/projectSpaces'
 import HotspotImage from '@/components/HotspotImage.vue'
 import SaveHeart from '@/components/SaveHeart.vue'
@@ -86,6 +99,8 @@ const error = ref('')
 const showSpots = ref(true)
 const ratio = ref(0)
 const similarEl = ref(null)
+const itemEl = ref(null)
+const itemSpaces = ref(null) // { id, name, loading, error, cards }: "Không gian có món đồ này" (visitor-services-hotspots)
 
 const project = computed(() => space.value && projectBySlug(slugOf(space.value.relative_path)))
 const card = computed(() => toCard(space.value))
@@ -106,8 +121,27 @@ const step = d => siblings.value[(pos.value + d + siblings.value.length) % sibli
 const onLoad = e => { ratio.value = e.target.naturalWidth / e.target.naturalHeight }
 const toSimilar = () => similarEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
+async function toItem(h) {
+  const reveal = () => nextTick(() => itemEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  if (itemSpaces.value?.id === h.itemId && !itemSpaces.value.error) return reveal()
+  const here = space.value.id
+  itemSpaces.value = { id: h.itemId, name: h.label, loading: true, error: '', cards: [] }
+  reveal()
+  try {
+    const r = await fetchItemSpaces(h.itemId)
+    if (space.value?.id !== here || itemSpaces.value?.id !== h.itemId) return
+    itemSpaces.value = { ...itemSpaces.value, name: r.mon_do?.ten || h.label, loading: false, cards: r.spaces.filter(s => s.id !== here).map(toCard) }
+  } catch (e) {
+    if (itemSpaces.value?.id === h.itemId) itemSpaces.value = { ...itemSpaces.value, loading: false, error: e.message }
+  }
+}
+
+// behaviour-events: which hotspots visitors open (photo id / library item or label); trackEvent skips staff and applies consent
+const onSpotOpen = h => trackEvent('bam_hotspot', { trang: '/khong-gian/:id',
+  doi_tuong: space.value.id + '/' + (h.itemId ? 'mon_do_' + h.itemId : slug(h.raw || h.label) || 'diem') })
+
 watch(() => route.params.id, async id => {
-  space.value = null; similar.value = []; siblings.value = []; error.value = ''; ratio.value = 0
+  space.value = null; similar.value = []; siblings.value = []; error.value = ''; ratio.value = 0; itemSpaces.value = null
   window.scrollTo(0, 0)
   try {
     const [s, sim] = await Promise.all([getSpace(id), getSimilar(id)])
