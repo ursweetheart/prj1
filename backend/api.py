@@ -564,7 +564,7 @@ PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem")  # about one pu
 class Event(BaseModel):
     # photo events (view, heart save, quiz pick) and the behaviour events of UC21 (change behaviour-events)
     loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
-                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc"]
+                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc", "phong_to_anh", "chuyen_anh", "bam_hotspot"]
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
@@ -1317,6 +1317,25 @@ def _kn(call):
         raise HTTPException(403, str(e))
     except knowledge.Invalid as e:
         raise HTTPException(422, str(e))
+
+
+SAMPLE_MARK = "[DỮ LIỆU MẪU]"
+
+
+@app.get("/services")
+def services_public():
+    """Public: the service packages in use, for /dich-vu (visitor-services-hotspots). Title and text only; the sample
+    marker becomes a flag so the page can show its own badge."""
+    with _db() as c:
+        rows = c.execute("SELECT id, title, content FROM kb_chunk WHERE kind = 'service' AND trang_thai = 'dang_dung' "
+                         "ORDER BY title").fetchall()
+    out = []
+    for r in rows:
+        text = r["content"].strip()
+        mau = text.startswith(SAMPLE_MARK)
+        out.append({"id": r["id"], "title": r["title"], "content": text[len(SAMPLE_MARK):].strip() if mau else text,
+                    "mau": mau})
+    return out
 
 
 @app.get("/knowledge")

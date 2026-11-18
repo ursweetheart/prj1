@@ -6,32 +6,44 @@
       <button v-for="(h, i) in hotspots" :key="i" class="hs" type="button"
               :style="{ left: h.x + '%', top: h.y + '%' }"
               :aria-expanded="String(active === i)" :aria-label="'Món đồ: ' + h.label"
-              @click="active = active === i ? -1 : i">{{ active === i ? '×' : '+' }}</button>
+              @click="toggle(i)">{{ active === i ? '×' : '+' }}</button>
       <div v-for="(h, i) in hotspots" :key="'c' + i" v-show="active === i"
            class="hs-card" :style="cardStyle(h)">
         <b>{{ h.label }}</b>
-        <button class="hs-link" type="button" @click="active = -1; $emit('similar')">
+        <button v-if="h.itemId" class="hs-link" type="button" @click="active = -1; $emit('item', h)">
+          Không gian có món đồ này <span aria-hidden="true">→</span>
+        </button>
+        <button v-else class="hs-link" type="button" @click="active = -1; $emit('similar')">
           Không gian tương tự <span aria-hidden="true">→</span>
         </button>
+        <router-link v-if="h.service" class="hs-service" :to="{ path: '/dich-vu', hash: '#' + slug(h.service) }">
+          {{ h.service }} <span aria-hidden="true">→</span>
+        </router-link>
       </div>
     </template>
   </div>
 </template>
 
 <script setup>
-/* Ảnh một không gian với các món đồ AI nhận ra (đã được kiến trúc sư giữ lại).
- * Bấm "+" chỉ hiện tên món đồ và lối sang các không gian tương tự — không giá, không bán hàng. */
+/* Ảnh một không gian với các món đồ (AI nhận ra hoặc kiến trúc sư đặt tay).
+ * Bấm "+" hiện tên món đồ, lối sang các không gian có cùng món đồ (hoặc tương tự) và một dòng nhỏ tới gói dịch vụ
+ * liên quan ở /dich-vu (change visitor-services-hotspots) — không giá, không nút mua. */
 import { ref, watch } from 'vue'
+import { slug } from '@/lib/slug'
 
 const props = defineProps({
   src: String,
   alt: String,
-  hotspots: { type: Array, default: () => [] }, // [{ x, y, label }] theo %
+  hotspots: { type: Array, default: () => [] }, // [{ x, y, label, itemId, service }] theo %
   show: { type: Boolean, default: true }
 })
-defineEmits(['similar', 'load'])
+const emit = defineEmits(['similar', 'item', 'open', 'load'])
 
 const active = ref(-1)
+const toggle = i => {
+  active.value = active.value === i ? -1 : i
+  if (active.value === i) emit('open', props.hotspots[i]) // behaviour-events: bam_hotspot
+}
 watch(() => props.src, () => { active.value = -1 })
 
 function cardStyle(h) {

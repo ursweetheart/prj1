@@ -20,7 +20,8 @@ describe('page tracking', () => {
   it('recognises CTA links with or without the base', () => {
     const o = 'http://localhost:8080'
     expect(ctaTarget('/prj1/lien-he', o, '/prj1/')).toBe('/lien-he')
-    expect(ctaTarget('/prj1/uoc-tinh/', o, '/prj1/')).toBe('/uoc-tinh')
+    expect(ctaTarget('/prj1/trac-nghiem/', o, '/prj1/')).toBe('/trac-nghiem')
+    expect(ctaTarget('/prj1/uoc-tinh', o, '/prj1/')).toBeNull()  // no cost-estimate page any more
     expect(ctaTarget('/lien-he#zalo', o, '/')).toBe('/lien-he')
     expect(ctaTarget('/prj1/du-an', o, '/prj1/')).toBeNull()
     expect(ctaTarget('https://zalo.me/1', o, '/prj1/')).toBeNull()

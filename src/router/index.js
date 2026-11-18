@@ -16,9 +16,11 @@ const router = createRouter({
     },
     // Mục "Không gian": tìm không gian tương tự bằng AI (cần backend)
     { path: '/khong-gian', name: 'khong-gian-list', component: () => import('@/views/SpacesView.vue') },
-    { path: '/uoc-tinh', name: 'uoc-tinh', component: () => import('@/views/EstimateView.vue') },
+    // no price / cost-estimate feature on the site: old links (sitemap, chat answers) land on the contact page
+    { path: '/uoc-tinh', redirect: '/lien-he' },
     { path: '/trac-nghiem', name: 'trac-nghiem', component: () => import('@/views/QuizView.vue') },
     { path: '/lien-he', name: 'lien-he', component: () => import('@/views/ContactView.vue') },
+    { path: '/dich-vu', name: 'dich-vu', component: () => import('@/views/ServicesView.vue') },
     { path: '/ve-chung-toi', name: 've-chung-toi', component: () => import('@/views/AboutView.vue') },
     { path: '/quan-tri/xu-huong', name: 'xu-huong', meta: { roles: SALES }, component: () => import('@/views/TrendsView.vue') },
     { path: '/quan-tri/hieu-qua', name: 'hieu-qua', meta: { roles: [...STAFF, 'sales'] }, component: () => import('@/views/ProjectStatsView.vue') },
@@ -26,7 +28,7 @@ const router = createRouter({
     { path: '/quan-tri/hoi-thoai', name: 'hoi-thoai', meta: { roles: ['content', ...SALES] }, component: () => import('@/views/ConversationsView.vue') },
     { path: '/quan-tri/mon-do', name: 'mon-do', meta: { roles: STAFF }, component: () => import('@/views/ItemsView.vue') },
     { path: '/quan-tri/tri-thuc', name: 'tri-thuc', meta: { roles: ['content', ...APPROVERS] }, component: () => import('@/views/KnowledgeView.vue') },
-    { path: '/quan-tri/don-gia', name: 'don-gia', meta: { roles: APPROVERS }, component: () => import('@/views/PricesView.vue') },
+    { path: '/quan-tri/don-gia', redirect: '/quan-tri' },
     { path: '/bo-suu-tap', name: 'bo-suu-tap', component: () => import('@/views/CollectionView.vue') },
     { path: '/bo-suu-tap/xem/:ma', name: 'bo-suu-tap-xem', component: () => import('@/views/CollectionView.vue') },
     { path: '/cong-trinh', redirect: to => ({ path: '/khong-gian', hash: to.hash }) },

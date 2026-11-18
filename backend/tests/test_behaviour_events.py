@@ -50,7 +50,7 @@ def test_unconsented_counts_only():
 @pytest.mark.parametrize("bad", [
     {"trang": "/bo-suu-tap/xem/ABC123?x=1"}, {"trang": "lien-he"}, {"doi_tuong": "a b"}, {"doi_tuong": "x" * 101},
     {"gia_tri": ["Phong cach"]}, {"gia_tri": ["a:b"] * 21}, {"thoi_gian_dung_ms": -1},
-    {"thoi_gian_dung_ms": 86_400_001}, {"do_sau_cuon": 1.5}, {"loai": "bam_hotspot"},
+    {"thoi_gian_dung_ms": 86_400_001}, {"do_sau_cuon": 1.5}, {"loai": "bam_bay"},
 ])
 def test_invalid_fields(pid, bad):
     body = {"loai": "xem_trang", "dong_y": True, "phien_id": pid, "trang": "/", **bad}
@@ -118,3 +118,22 @@ def test_endpoint_roles_and_no_session(pid, as_role):
     assert client.get("/analytics/behaviour", headers=as_role("visitor")).status_code == 403
     assert client.get("/analytics/behaviour").status_code == 401
     assert client.get("/analytics/behaviour", params={"days": 10}, headers=as_role("sales")).status_code == 422
+
+
+# ── visitor-services-hotspots: photo interactions ───────────────────────────────
+def test_photo_interactions_stored_and_listed(pid):
+    send(pid, "phong_to_anh", trang="/du-an/:slug", doi_tuong=f"test-{TAG}/3")
+    send(pid, "chuyen_anh", trang="/du-an/:slug", doi_tuong=f"test-{TAG}/4")
+    for _ in range(2):
+        send(pid, "bam_hotspot", trang="/khong-gian/:id", doi_tuong=f"999999/test_{TAG}")
+    assert _q("SELECT loai, doi_tuong FROM su_kien WHERE phien_id = %s ORDER BY id", pid)[:2] == \
+        [("phong_to_anh", f"test-{TAG}/3"), ("chuyen_anh", f"test-{TAG}/4")]
+    ov = _ov()
+    assert ov["dong_y"]["phong_to_anh"] >= 1 and ov["dong_y"]["bam_hotspot"] >= 2
+    assert {"doi_tuong": f"999999/test_{TAG}", "so_lan": 2} in ov["hotspot"] or len(ov["hotspot"]) == behaviour.TOP
+
+
+def test_photo_interaction_without_consent_counts_only():
+    before = _anon("bam_hotspot")
+    r = client.post("/events", json={"loai": "bam_hotspot", "dong_y": False, "doi_tuong": "1/sofa"})
+    assert r.status_code == 204 and _anon("bam_hotspot") == before + 1

@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════ */
 import { trackEvent } from '@/api'
 
-export const CTA = ['/lien-he', '/uoc-tinh', '/trac-nghiem']
+export const CTA = ['/lien-he', '/trac-nghiem']
 const MAX_MS = 86_400_000
 
 /* '/khong-gian/:id(\\d+)' -> '/khong-gian/:id'; only characters the API accepts */

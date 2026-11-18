@@ -25,6 +25,16 @@ export const STUDIO = {
     { ten: 'Trần Xuân Bằng', vai_tro: { gia_tri: 'Thiết kế nội thất', mau: true } },
     { ten: 'Trần Xuân Tuấn', vai_tro: { gia_tri: 'Diễn hoạ 3D', mau: true } }
   ],
+  // trang /dich-vu khi không có backend (GitHub Pages): bản sao 3 gói "service" mẫu của kho tri thức (kb/sample.json).
+  // Khi có backend trang đọc GET /services (gói đang dùng ở /quan-tri/tri-thuc), danh sách này không được dùng.
+  dich_vu: {
+    mau: true,
+    goi: [
+      { title: 'Dịch vụ thiết kế phòng khách', content: 'Thiết kế phòng khách gồm bố trí công năng, sofa, kệ tivi, đèn và rèm. Có thể đóng riêng sofa và tủ kệ theo kích thước.' },
+      { title: 'Dịch vụ thiết kế phòng ngủ', content: 'Thiết kế phòng ngủ master và phòng ngủ phụ: giường, tủ quần áo âm tường, bàn trang điểm, ánh sáng dịu.' },
+      { title: 'Dịch vụ thiết kế bếp và phòng ăn', content: 'Thiết kế bếp và phòng ăn: tủ bếp trên dưới, đảo bếp, bàn ăn, lắp đặt thiết bị bếp.' }
+    ]
+  },
   // cùng 5 bước với mục "Quy trình làm việc với D3 Studio" của trợ lý (cũng là dữ liệu mẫu)
   quy_trinh: {
     mau: true,

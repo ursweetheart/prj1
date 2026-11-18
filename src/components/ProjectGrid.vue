@@ -26,7 +26,9 @@
     </div>
 
     <div v-if="matching.length > limit" class="projects-more">
-      <button type="button" class="btn btn-secondary" @click="limit += PAGE">Xem thêm</button>
+      <button type="button" class="btn-line is-down" @click="limit += PAGE">
+        Xem thêm dự án <span class="arrow" aria-hidden="true">↓</span>
+      </button>
     </div>
   </section>
 </template>

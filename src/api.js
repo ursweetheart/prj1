@@ -274,10 +274,13 @@ export async function uploadAll(files, project, onDone = () => {}) {
 }
 
 // detector objects (anchor in 0..1) -> the {x, y, label} HotspotImage draws, in percent
+/* visitor-services-hotspots: the card shows the name, the item's other spaces (itemId) and the service as a small link */
 export const hotspotsOf = s => ((s.hotspots && s.hotspots.objects) || []).map(o => ({
   x: o.hotspot_anchor[0] * 100, y: o.hotspot_anchor[1] * 100,
-  label: o.label_vi || o.label, kind: o.service || 'Món đồ trong ảnh', price: null
+  label: o.label_vi || o.label, raw: o.label || '', itemId: Number.isInteger(o.mon_do_id) ? o.mon_do_id : null,
+  service: o.service || null
 }))
+export const getServices = () => get('/services') // public: service packages in use, for /dich-vu
 export const listLeads = (params = {}) => get('/leads', params)
 /* phien_id + gui_ho_so: the visitor accepted the banner and ticked "send what I viewed" (lead-intake) */
 /* chat-history: the conversation id goes with every message; the session id goes whenever the banner was accepted
@@ -316,11 +319,6 @@ export const setWeeklyOptIn = nhan => request('PUT', '/me/weekly-report', { body
 export const listWeeklyReports = () => get('/reports/weekly')
 export const previewWeeklyReport = () => get('/reports/weekly/preview')
 export const testWeeklyReport = () => request('POST', '/reports/weekly/test')
-/* Cost estimate (UC10) and its price table D8 */
-export const estimate = body => request('POST', '/estimates', { body })
-export const sendEstimate = body => request('POST', '/estimates/send', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
-export const getPrices = () => get('/prices')
-export const savePrice = (id, body) => request('PUT', '/prices/' + id, { body })
 export const createLead = body => request('POST', '/leads', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 function viewsConsent(ticked) { // the session id goes out only with both consents; the server checks again
   const id = ticked && consent.get() === 'yes' && visitId()

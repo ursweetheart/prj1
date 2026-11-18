@@ -77,7 +77,6 @@ const roleLinks = computed(() => [
   hasRole(EDITORS) && { to: '/quan-tri', label: 'Duyệt' },
   hasRole(APPROVERS) && { to: '/quan-tri/phan-loai', label: 'Phân loại' },
   hasRole(STAFF) && { to: '/quan-tri/mon-do', label: 'Món đồ' },
-  hasRole(APPROVERS) && { to: '/quan-tri/don-gia', label: 'Đơn giá' },
   hasRole(['content', ...APPROVERS]) && { to: '/quan-tri/tri-thuc', label: 'Tri thức' },
   hasRole(['content', ...SALES]) && { to: '/quan-tri/hoi-thoai', label: 'Hội thoại' },
   hasRole(['admin']) && { to: '/quan-tri/tai-khoan', label: 'Tài khoản' },
