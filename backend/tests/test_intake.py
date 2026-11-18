@@ -34,7 +34,7 @@ def fake_processor(style="Hien_dai", conf=0.62, room_conf=0.8, fail_on=None):
     proc = object.__new__(SpaceImageProcessor)
     proc.color_engine = lambda p, k=5: color
     proc.detector = Stub(detect=lambda p: FurnitureDetectionResult(objects=[], counts_by_category={}, inference_time_ms=1))
-    proc.embedder = Stub(embed_image=lambda p: [0.0] * 768)
+    proc.embedder = Stub(embed_image=lambda p: [0.0] * 768, model_name="test-siglip")
     proc.classifier = Stub(classify=classify)
     return proc
 
@@ -124,10 +124,12 @@ def test_upload_answers_at_once_then_the_worker_saves_the_ai_proposal(kinds, mon
     with psycopg.connect(DSN) as c:
         row = c.execute("SELECT space_type_ai, design_style_ai, space_type_confidence, style_confidence, review_status "
                         "FROM space WHERE id = %s", (st[0]["space_id"],)).fetchone()
+        model = c.execute("SELECT mo_hinh_nhung FROM space WHERE id = %s", (st[0]["space_id"],)).fetchone()[0]
         logged = c.execute("SELECT user_id IS NOT NULL FROM review_log WHERE space_id=%s AND action='ingest'",
                            (st[0]["space_id"],)).fetchone()
     assert row == ("phong_khach", "Hien_dai", pytest.approx(0.8), pytest.approx(0.62), "draft")
     assert logged == (True,)
+    assert model == "test-siglip"  # admin-tools 5.2: the embedding records the model that made it
 
 
 def test_upload_limits_and_roles(as_role):

@@ -26,7 +26,19 @@ def compose(conn, space_id: int) -> str | None:
 
 @intake.handler("nap_tri_thuc")
 def load(conn, task, ctx):
-    sid = task["du_lieu"]["space_id"]
+    return refresh(conn, task["du_lieu"]["space_id"])
+
+
+@intake.handler("cap_nhat_chi_muc")
+def reindex(conn, task, ctx):
+    """seq-15 b22 (admin-tools): after a merge, the affected photos' descriptions are written again from their
+    current labels, so none names the merged-away value."""
+    for sid in task["du_lieu"]["space_ids"]:
+        refresh(conn, sid)
+    return None
+
+
+def refresh(conn, sid: int):
     text = compose(conn, sid)
     if text is None:  # taken down before the task ran
         conn.execute("DELETE FROM space_text WHERE space_id = %s", (sid,))

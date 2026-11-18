@@ -13,6 +13,8 @@
         <label class="sr-only" for="us-inv-email">Email người được mời</label>
         <input id="us-inv-email" v-model.trim="inv.email" class="txt us-inv-email" type="email" placeholder="email@congty.vn"
                required :aria-invalid="!!inv.error" :aria-describedby="inv.error ? 'us-inv-err' : null">
+        <label class="sr-only" for="us-inv-name">Họ tên (không bắt buộc)</label>
+        <input id="us-inv-name" v-model="inv.ho_ten" class="txt" type="text" maxlength="100" placeholder="Họ tên (không bắt buộc)">
         <label class="sr-only" for="us-inv-role">Vai trò</label>
         <select id="us-inv-role" v-model="inv.role" class="txt">
           <option v-for="(label, r) in ROLE_VI" :key="r" :value="r">{{ label }}</option>
@@ -53,6 +55,10 @@
       <li v-for="u in items" :key="u.id" class="us-item" :class="{ 'is-locked': u.bi_khoa }">
         <div class="us-who">
           <span class="us-email">{{ u.email }}</span>
+          <!-- admin-tools: the account's full name, editable here -->
+          <label class="sr-only" :for="'name-' + u.id">Họ tên của {{ u.email }}</label>
+          <input :id="'name-' + u.id" class="txt us-name" type="text" maxlength="100" placeholder="Họ tên" :value="u.ho_ten || ''"
+                 @change="saveName(u, $event.target.value)">
           <span v-if="u.la_toi" class="us-tag is-me">bạn</span>
           <span class="us-tags">
             <span v-for="m in u.dang_nhap" :key="m" class="us-tag">{{ METHOD[m] }}</span>
@@ -137,7 +143,7 @@
 /* /quan-tri/tai-khoan (admin): accounts, roles, lock / unlock (UC24, seq-19 b16-19). The server enforces the guards
  * (never yourself, never the last active admin) and sends why a control is unavailable; the page only shows it. */
 import { nextTick, onMounted, reactive, ref } from 'vue'
-import { ROLE_VI, cancelInvite, inviteUser, listUsers, lockUser, resendInvite, setUserRole, unlockUser } from '@/api'
+import { ROLE_VI, cancelInvite, inviteUser, listUsers, lockUser, resendInvite, setUserName, setUserRole, unlockUser } from '@/api'
 
 const METHOD = { mat_khau: 'Mật khẩu', google: 'Google', facebook: 'Facebook' }
 const STATES = [{ id: '', label: 'Tất cả' }, { id: 'false', label: 'Đang hoạt động' }, { id: 'true', label: 'Bị khoá' }]
@@ -171,7 +177,12 @@ function describe(l) {
 }
 
 /* invitations (account-invites-reset) */
-const inv = reactive({ email: '', role: 'architect', error: '' })
+const inv = reactive({ email: '', role: 'architect', ho_ten: '', error: '' })
+async function saveName(u, v) {
+  note.value = ''
+  try { const r = await setUserName(u.id, v); u.ho_ten = r.ho_ten; note.value = `Đã lưu họ tên của ${u.email}.` }
+  catch (e) { note.value = 'Chưa lưu được: ' + e.message }
+}
 const link = ref(null) // shown only when email is not configured: the admin passes the link on
 const sentNote = (r, verb) => {
   link.value = r.link ? { email: r.user.email, url: r.link, copied: false } : null
@@ -182,8 +193,8 @@ async function invite() {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email)) { inv.error = 'Nhập một địa chỉ email hợp lệ.'; return }
   busy.value = true
   try {
-    sentNote(await inviteUser(inv.email, inv.role), 'gửi')
-    inv.email = ''
+    sentNote(await inviteUser(inv.email, inv.role, inv.ho_ten), 'gửi')
+    inv.email = ''; inv.ho_ten = ''
     await load()
   } catch (e) { inv.error = typeof e.detail === 'string' ? e.detail : e.message } finally { busy.value = false }
 }
@@ -325,4 +336,5 @@ onMounted(load)
              padding: 20px; width: min(480px, calc(100vw - 32px)) }
 .us-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
 .us-dialog textarea { width: 100% }
+.us-name { max-width: 220px; min-height: 34px; padding: 4px 8px; font-size: 14px } /* admin-tools */
 </style>

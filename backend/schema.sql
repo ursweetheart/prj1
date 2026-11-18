@@ -629,3 +629,13 @@ CREATE TABLE IF NOT EXISTS tin_nhan_sms (
   loi text,
   luc timestamptz NOT NULL DEFAULT now()
 );
+
+-- ── admin-tools (seq-14, seq-15, class-6) ──────────────────────────────────────────────────────────────────────────
+ALTER TABLE mon_do ADD COLUMN IF NOT EXISTS khoang_gia text CHECK (length(khoang_gia) <= 60);       -- class-6 MonDo
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS ho_ten text CHECK (length(ho_ten) <= 100);            -- class-6 NguoiDung
+ALTER TABLE space ADD COLUMN IF NOT EXISTS mo_hinh_nhung text;                                      -- class-6 VectorAnh
+UPDATE space SET mo_hinh_nhung = 'hf-hub:timm/ViT-B-16-SigLIP2' WHERE embedding IS NOT NULL AND mo_hinh_nhung IS NULL;
+ALTER TABLE du_an ADD COLUMN IF NOT EXISTS du_an_bat_dong_san text CHECK (length(du_an_bat_dong_san) <= 120);
+ALTER TABLE du_an ADD COLUMN IF NOT EXISTS so_ngay_thi_cong int CHECK (so_ngay_thi_cong > 0);
+UPDATE du_an SET so_ngay_thi_cong = substring(thoi_gian_thi_cong FROM '^\s*(\d+)\s*ngày')::int
+ WHERE so_ngay_thi_cong IS NULL AND thoi_gian_thi_cong ~ '^\s*\d+\s*ngày';

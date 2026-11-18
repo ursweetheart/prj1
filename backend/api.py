@@ -233,7 +233,12 @@ def project_spaces(folder: str = PathParam(pattern=r"^[a-z0-9_]{1,60}$"), user=D
 
 # ── Project catalog (change: project-catalog; roadmap 0.1, UC02) ─────────────────────────────────────────────
 SLUG = r"^[a-z0-9-]{1,60}$"
-PROJECT_STAFF_FIELDS = ("dien_tich_m2", "so_phong_ngu", "thoi_gian_thi_cong", "muc_dau_tu", "thuyet_minh")
+PROJECT_STAFF_FIELDS = ("dien_tich_m2", "so_phong_ngu", "thoi_gian_thi_cong", "so_ngay_thi_cong", "du_an_bat_dong_san",
+                        "muc_dau_tu", "thuyet_minh")
+# class-6 DuAn (admin-tools): derived from the project's photos, never stored twice
+PROJECT_STATE = ("CASE WHEN bool_or(s.review_status = 'published') THEN 'da_xuat_ban' ELSE 'chua_xuat_ban' END AS trang_thai, "
+                 "COALESCE(bool_or(s.review_status = 'published'), false) AS da_xac_nhan_quyen_cong_bo, "  # published = rights step passed
+                 "min(s.ngay_xuat_ban) FILTER (WHERE s.review_status = 'published') AS ngay_xuat_ban")
 PROJECT_FIELDS = "slug, ten, loai, nam, mo_ta_ngan, co_trang, " + ", ".join(PROJECT_STAFF_FIELDS) + ", cap_nhat_luc"
 PHOTO_ORDER = 'anh_trang COLLATE "C" NULLS LAST, relative_path COLLATE "C"'  # the site's photo order, then file name
 
@@ -244,7 +249,7 @@ def list_projects(user=Depends(optional_user)):
     staff = _is_staff(user)
     with _db() as c:
         rows = c.execute(f"""
-            SELECT d.slug, d.ten, d.loai, d.nam, d.mo_ta_ngan, d.co_trang,
+            SELECT d.slug, d.ten, d.loai, d.nam, d.mo_ta_ngan, d.co_trang, {PROJECT_STATE},
                    count(s.id) FILTER (WHERE s.review_status = 'published') AS so_anh_da_dang,
                    count(s.id) FILTER (WHERE s.review_status <> 'published') AS so_anh_chua_dang,
                    (SELECT json_build_object('id', p.id, 'relative_path', p.relative_path, 'anh_trang', p.anh_trang,
@@ -278,7 +283,9 @@ def projects_filter(phong_cach: list[str] = Query(default=[]), loai_cong_trinh: 
 def get_project(slug: str = PathParam(pattern=SLUG), user=Depends(optional_user)):
     staff = _is_staff(user)
     with _db() as c:
-        project = c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
+        project = c.execute(f"SELECT {', '.join('d.' + f.strip() for f in PROJECT_FIELDS.split(','))}, {PROJECT_STATE} "
+                            "FROM du_an d LEFT JOIN space s ON s.du_an_slug = d.slug WHERE d.slug = %s GROUP BY d.slug",
+                            (slug,)).fetchone()
         spaces = c.execute(f"SELECT {FIELDS}, anh_trang FROM space WHERE du_an_slug = %(s)s "
                            f"AND (%(all)s OR review_status = 'published') ORDER BY {PHOTO_ORDER}",
                            {"s": slug, "all": staff}).fetchall() if project else []
@@ -292,6 +299,8 @@ class ProjectDetailsIn(BaseModel):
     dien_tich_m2: Optional[float] = Field(default=None, gt=0, le=100000)
     so_phong_ngu: Optional[int] = Field(default=None, gt=0, le=100)
     thoi_gian_thi_cong: Optional[str] = Field(default=None, max_length=80)
+    so_ngay_thi_cong: Optional[int] = Field(default=None, gt=0, le=3650)      # class-6 DuAn (admin-tools)
+    du_an_bat_dong_san: Optional[str] = Field(default=None, max_length=120)   # the real-estate development
     muc_dau_tu: Optional[str] = None
     thuyet_minh: Optional[str] = Field(default=None, max_length=4000)
 
@@ -466,7 +475,7 @@ def _handover(tasks: BackgroundTasks, moved: dict, rows_by_id: dict, user):
     for kind, status in (("bien_tap", "editing"), ("duyet", "in_review")):
         items = [(sid, rows_by_id[sid]) for sid, st in moved.items() if st == status]
         if items:
-            tasks.add_task(notify.notify_handover, kind, items, user["email"])
+            tasks.add_task(notify.notify_handover, kind, items, user.get("ho_ten") or user["email"])
 
 
 @app.patch("/spaces/{space_id}")
@@ -624,7 +633,8 @@ def _move_back(action: str, body: MoveBack, user, tasks: BackgroundTasks) -> dic
             _log(c, r["id"], user, log_action, {"from": r["review_status"], "to": target, "reason": body.ly_do})
             if r["review_status"] == "published":  # taken down: out of the assistant's knowledge too (publishing-workflow)
                 c.execute("DELETE FROM space_text WHERE space_id = %s", (r["id"],))
-    tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows], user["email"])
+    tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows],
+                   user.get("ho_ten") or user["email"])  # the account's name when it has one (admin-tools)
     return {"moved": [r["id"] for r in rows], "status": target}
 
 
@@ -1238,12 +1248,26 @@ def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
 
 
 # ── Hotspots by hand and the item library (seq-14; class-1 Hotspot / MonDo; roadmap 1.9) ──────────────
+class Box(BaseModel):
+    x_min: float = Field(ge=0, le=1)
+    y_min: float = Field(ge=0, le=1)
+    x_max: float = Field(ge=0, le=1)
+    y_max: float = Field(ge=0, le=1)
+
+
+class AiSuggestion(BaseModel):  # admin-tools: what POST /spaces/{id}/detect proposed, kept with the accepted point
+    label: str = Field(pattern=r"^[a-z0-9 _-]{1,60}$")
+    confidence: float = Field(ge=0, le=1)
+    bbox: Box
+
+
 class HotspotIn(BaseModel):
     index: Optional[int] = None          # position of the detected object it comes from; None = made by hand
     x: float
     y: float
     label_vi: str = Field(max_length=120)
     mon_do_id: Optional[int] = None
+    goi_y_ai: Optional[AiSuggestion] = None  # an accepted on-demand suggestion: source "AI" with its confidence
 
 
 class HotspotsIn(BaseModel):
@@ -1259,6 +1283,39 @@ def _item_error(e):
     if isinstance(e, items.InUse):
         return HTTPException(409, {"msg": str(e), "so_anh": e.n})
     return HTTPException(404, "no such item")
+
+
+DETECT_SAME_NAME = 0.05  # a suggestion this close to a hotspot of the same name is already marked
+
+
+@app.post("/spaces/{space_id}/detect", dependencies=[Depends(limit("detect", 10, 60))])
+def detect_objects(space_id: int, user=Depends(require(*STAFF))):
+    """seq-14 b6-b9 (admin-tools): run the local furniture detector on the photo now and propose objects (name, box,
+    centre, confidence). No external AI call; nothing is stored until the editor saves."""
+    with _db() as c:
+        row = c.execute("SELECT relative_path, hotspots FROM space WHERE id = %s", (space_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such space")
+    path = IMG_DIR / row["relative_path"]
+    if not path.is_file():
+        raise HTTPException(404, "the photo file is missing")
+    with intake.GPU_LOCK:  # the queue worker uses the same models: one job at a time
+        found = _processor().detector.detect(path).objects
+    marked = [((o.get("label_vi") or "").casefold(), o.get("hotspot_anchor") or [None, None])
+              for o in (row["hotspots"] or {}).get("objects", [])]
+
+    def already(o) -> bool:
+        b, name = o.bbox, o.label_vi.casefold()
+        for n, (x, y) in marked:
+            if n != name or x is None:
+                continue
+            near = abs(x - o.hotspot_anchor[0]) <= DETECT_SAME_NAME and abs(y - o.hotspot_anchor[1]) <= DETECT_SAME_NAME
+            inside = b.x_min <= x <= b.x_max and b.y_min <= y <= b.y_max
+            if near or inside:
+                return True
+        return False
+    return [{"label": o.label, "label_vi": o.label_vi, "confidence": o.confidence, "bbox": o.bbox.model_dump(),
+             "anchor": list(o.hotspot_anchor)} for o in found if not already(o)]
 
 
 @app.put("/spaces/{space_id}/hotspots")
@@ -1288,6 +1345,7 @@ class ItemIn(BaseModel):
     vat_lieu: Optional[str] = Field(default=None, max_length=60)
     mau_sac: Optional[str] = Field(default=None, max_length=40)
     nha_cung_cap: Optional[str] = Field(default=None, max_length=120)
+    khoang_gia: Optional[str] = Field(default=None, max_length=60)  # class-6 MonDo (admin-tools); never shown to visitors
     ghi_chu: Optional[str] = Field(default=None, max_length=500)
     dich_vu_id: Optional[int] = None  # a knowledge entry of kind 'service'; null unlinks
 

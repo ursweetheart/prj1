@@ -71,6 +71,7 @@ class SpaceImageProcessor:
             llm_usage=classification.llm_usage if classification else None,
             embedding_dimension=len(embedding_vec),
             embedding=embedding_vec,
+            embedding_model=getattr(self.embedder, "model_name", None),
         )
 
     def process_directory(
@@ -182,6 +183,7 @@ class SpaceImageProcessor:
                     llm_usage=u,
                     embedding_dimension=len(emb_vec),
                     embedding=emb_vec,
+                    embedding_model=getattr(self.embedder, "model_name", None),
                 )
                 processed_records[order_idx] = rec
 

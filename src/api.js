@@ -95,7 +95,10 @@ export function adoptTokenFromHash() {
   history.replaceState(null, '', location.pathname + location.search)
 }
 /* account-invites-reset: invitations (admin) and password links (public). The link code travels in the body, never the URL */
-export const inviteUser = (email, role) => request('POST', '/users/invite', { body: { email, role } })
+export const inviteUser = (email, role, ho_ten = '') => request('POST', '/users/invite', { body: { email, role, ...(ho_ten.trim() ? { ho_ten } : {}) } })
+// class-6 NguoiDung.ho_ten (admin-tools): the admin sets anyone's, a signed-in user their own
+export const setUserName = (id, ho_ten) => request('PATCH', '/users/' + id, { body: { ho_ten } })
+export async function setMyName(ho_ten) { await request('PATCH', '/auth/me', { body: { ho_ten } }); return loadUser() }
 export const resendInvite = id => request('POST', '/users/' + id + '/invite/resend')
 export const cancelInvite = id => request('POST', '/users/' + id + '/invite/cancel')
 export const forgotPassword = email => request('POST', '/auth/forgot', { body: { email } })
@@ -115,8 +118,8 @@ export async function login(email, password) {
   setToken((await res.json()).access_token)
   return loadUser()
 }
-export async function register(email, password) {
-  await request('POST', '/auth/register', { body: { email, password } })
+export async function register(email, password, ho_ten = '') {
+  await request('POST', '/auth/register', { body: { email, password, ...(ho_ten.trim() ? { ho_ten } : {}) } })
   return login(email, password)
 }
 export const logout = () => setToken(null)
@@ -170,6 +173,8 @@ export function projectFilterParams(sel = {}, area = [], sort = 'moi_nhat') {
 export const filterProjects = (sel, area, sort) => get('/projects/filter', projectFilterParams(sel, area, sort))
 // BFD 2.3 (visitor-touchpoints): a read-only snapshot of the current collection -> {ma, so_anh}
 export const shareCollection = items => request('POST', '/collections/share', { body: { items } })
+// seq-14 b6-b9 (admin-tools): the local detector's suggestions for one photo, nothing stored
+export const detectObjects = id => request('POST', `/spaces/${id}/detect`)
 export const getTaxonomy = () => get('/taxonomy')
 // taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
 export const getTaxonomyAdmin = () => get('/taxonomy/admin')

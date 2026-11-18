@@ -80,3 +80,4 @@ class SpaceRecord(BaseModel):
     llm_usage: Optional[LLMUsage] = None
     embedding_dimension: int = 768
     embedding: Optional[List[float]] = Field(default=None, description="SigLIP2 vector stored in Postgres/pgvector")
+    embedding_model: Optional[str] = None  # class-6 VectorAnh.ten_mo_hinh (admin-tools)

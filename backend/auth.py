@@ -58,7 +58,7 @@ def optional_user(token: str | None = Depends(oauth2)):
     except (jwt.InvalidTokenError, ValueError, KeyError):
         raise HTTPException(401, "invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
     with _conn() as c:
-        user = c.execute("SELECT id, email, role, bi_khoa, phien_tu FROM app_user WHERE id=%s", (uid,)).fetchone()
+        user = c.execute("SELECT id, email, role, bi_khoa, phien_tu, ho_ten FROM app_user WHERE id=%s", (uid,)).fetchone()
     if not user:
         raise HTTPException(401, "unknown user", headers={"WWW-Authenticate": "Bearer"})
     # 401, not 403: the site signs the user out on 401, which is what a lock must do to an open session
@@ -82,6 +82,7 @@ def require(*roles: str):
 class Credentials(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    ho_ten: str | None = Field(default=None, max_length=100)  # class-6 NguoiDung (admin-tools), optional
 
 
 @router.post("/auth/register", status_code=201, dependencies=[Depends(limit("register", 10, 60))])
@@ -90,8 +91,8 @@ def register(body: Credentials):
     try:
         with _conn() as c:
             return c.execute(
-                "INSERT INTO app_user (email, password_hash) VALUES (%s, %s) RETURNING id, email, role",
-                (body.email.lower(), _hasher.hash(body.password))).fetchone()
+                "INSERT INTO app_user (email, password_hash, ho_ten) VALUES (%s, %s, %s) RETURNING id, email, role, ho_ten",
+                (body.email.lower(), _hasher.hash(body.password), _name(body.ho_ten))).fetchone()
     except UniqueViolation:
         raise HTTPException(409, "email already registered")
 
@@ -111,6 +112,33 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 @router.get("/auth/me")
 def me(user=Depends(require(*ROLES))):
     return user
+
+
+class NameBody(BaseModel):
+    ho_ten: str | None = Field(default=None, max_length=100)
+
+
+def _name(v):
+    return " ".join((v or "").split()) or None
+
+
+@router.patch("/auth/me")
+def set_my_name(body: NameBody, user=Depends(require(*ROLES))):
+    """The account's own full name (admin-tools); nothing else is changed here."""
+    with _conn() as c:
+        c.execute("UPDATE app_user SET ho_ten = %s WHERE id = %s", (_name(body.ho_ten), user["id"]))
+    return {**user, "ho_ten": _name(body.ho_ten)}
+
+
+@router.patch("/users/{user_id}")
+def set_user_name(user_id: int, body: NameBody, me=Depends(require("admin"))):
+    """Admin sets an account's full name (admin-tools)."""
+    with _conn() as c:
+        row = c.execute("UPDATE app_user SET ho_ten = %s WHERE id = %s RETURNING id, email, role, ho_ten",
+                        (_name(body.ho_ten), user_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such account")
+    return row
 
 
 @router.post("/auth/refresh")
@@ -169,19 +197,20 @@ def unlock_user(user_id: int, me=Depends(require("admin"))):
 class InviteBody(BaseModel):
     email: EmailStr
     role: str
+    ho_ten: str | None = Field(default=None, max_length=100)
 
 
 def _invited(me, user, code) -> dict:
     """Email the link; without SMTP give it to the admin to pass on (it is never logged)."""
     link = password_links.link_url(code)
-    sent = notify.send_invitation(user["email"], user["role"], link, me["email"])
+    sent = notify.send_invitation(user["email"], user["role"], link, me.get("ho_ten") or me["email"])
     return {"user": user, "gui_email": sent, **({} if sent else {"link": link})}
 
 
 @router.post("/users/invite", status_code=201)
 def invite_user(body: InviteBody, me=Depends(require("admin"))):
     """Create the account with its role and no password, and send it an invitation link (72 h, single use)."""
-    user, code = _accounts(lambda c: accounts.invite(c, me, body.email, body.role))
+    user, code = _accounts(lambda c: accounts.invite(c, me, body.email, body.role, _name(body.ho_ten)))
     return _invited(me, user, code)
 
 
