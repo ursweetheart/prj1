@@ -11,17 +11,22 @@ from fastapi import HTTPException, Request
 _hits: dict = defaultdict(deque)
 
 
+def check(name: str, who, count: int, seconds: int):
+    """At most `count` calls per `seconds` for `who` (an IP, or a user id when only part of an endpoint is limited)."""
+    q = _hits[(name, who)]
+    now = time.monotonic()
+    while q and now - q[0] > seconds:
+        q.popleft()
+    if len(q) >= count:
+        raise HTTPException(429, "Bạn thao tác quá nhanh, vui lòng thử lại sau.",
+                            headers={"Retry-After": str(math.ceil(seconds - (now - q[0])))})
+    q.append(now)
+
+
 def limit(name: str, count: int, seconds: int):
     """FastAPI dependency: at most `count` calls per `seconds` per client, then 429 with Retry-After."""
     def dep(request: Request):
-        q = _hits[(name, request.client.host if request.client else "?")]
-        now = time.monotonic()
-        while q and now - q[0] > seconds:
-            q.popleft()
-        if len(q) >= count:
-            raise HTTPException(429, "Bạn thao tác quá nhanh, vui lòng thử lại sau.",
-                                headers={"Retry-After": str(math.ceil(seconds - (now - q[0])))})
-        q.append(now)
+        check(name, request.client.host if request.client else "?", count, seconds)
     return dep
 
 

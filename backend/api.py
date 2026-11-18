@@ -27,13 +27,12 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 
 import auth
 from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
-                      topic_guard, trends, vertex, weekly_report)
+                      topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
-from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_image, by_text, similar_to
 from pipeline.store import DSN, save_records
-from ratelimit import limit
+from ratelimit import check as rate_check, limit
 
 IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
@@ -44,10 +43,19 @@ FIELDS = "id, relative_path, space_type, design_style, style_confidence, materia
 TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
         "FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id JOIN chieu_phan_loai d ON d.id = v.chieu_id "
         "WHERE sg.space_id = space.id GROUP BY d.ma_dinh_danh) t) AS tags")
+# review-tag-autocomplete: the new values a space waits on, {dimension: word}, while an approver hasn't decided
+PENDING_VALUE = ("(SELECT COALESCE(jsonb_object_agg(u.bang_chung->>'chieu', u.ten_de_xuat), '{}') FROM ung_vien_phan_loai u "
+                 "WHERE u.loai = 'gia_tri' AND u.trang_thai = 'cho_duyet' AND u.bang_chung->'space_ids' @> to_jsonb(space.id)) "
+                 "AS cho_duyet_gia_tri")
 # QT-01 order; an architect confirms AI tags before anything is published
 NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
-SPACE_TYPES = SpaceClassificationResult.model_fields["space_type"].annotation.__args__
-STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__args__
+
+
+def _check_value(dim: str, field: str, code: Optional[str]):
+    """Room type / style must be a value stored for that dimension now (staff add them at /quan-tri/phan-loai)."""
+    if code and code not in (allowed := taxonomy.values(dim)):
+        raise HTTPException(422, f"{field} must be one of {allowed}")
+
 
 # ── Weekly report scheduler (UC23; seq-18 b1): checks 30 s after start, then every 10 minutes ─────────────
 WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
@@ -142,7 +150,7 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
     with _db() as c:
         return c.execute(
             f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
-            + (", ly_do_duyet" if staff else "") + " "  # the review reason is staff-only
+            + (", ly_do_duyet, " + PENDING_VALUE if staff else "") + " "  # review reason and suggestions: staff-only
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
@@ -177,14 +185,13 @@ def project_spaces(folder: str = PathParam(pattern=r"^[a-z0-9_]{1,60}$"), user=D
     with _db() as c:
         return c.execute(
             f"SELECT {FIELDS} FROM space WHERE split_part(relative_path, '/', 1) = %(f)s "
-            "AND (%(all)s OR review_status = 'published') ORDER BY relative_path",
+            "AND (%(all)s OR review_status = 'published') ORDER BY relative_path COLLATE \"C\"",
             {"f": folder, "all": _is_staff(user)}).fetchall()
 
 
 @app.get("/search")
 def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(optional_user)):
-    if space_type and space_type not in SPACE_TYPES:
-        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
+    _check_value("khong_gian", "space_type", space_type)
     return [_hit(r) for r in by_text(q, space_type, min(k, 24), published_only=not _is_staff(user))]
 
 
@@ -194,8 +201,7 @@ def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(
     """Spaces that look like the uploaded photo; the photo is embedded in memory and never stored."""
     if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
         raise HTTPException(415, "Chỉ nhận ảnh JPG, PNG hoặc WEBP.")
-    if space_type and space_type not in SPACE_TYPES:
-        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
+    _check_value("khong_gian", "space_type", space_type)
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Ảnh quá lớn, tối đa 8 MB.")
@@ -264,10 +270,8 @@ def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str
 
 @app.patch("/spaces/{space_id}")
 def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))):
-    if body.space_type and body.space_type not in SPACE_TYPES:
-        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
-    if body.design_style and body.design_style not in STYLES:
-        raise HTTPException(422, f"design_style must be one of {STYLES}")
+    _check_value("khong_gian", "space_type", body.space_type)
+    _check_value("phong_cach", "design_style", body.design_style)
     sent = {k: v for k, v in body.model_dump(include=set(EDITABLE)).items() if v is not None}
     if "materials" in sent:
         sent["materials"] = [m.strip() for m in sent["materials"] if m.strip()]
@@ -292,6 +296,63 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
         if body.advance:
             _advance(c, space_id, row["review_status"], user, body.rights_confirmed)
         return c.execute(f"SELECT {FIELDS} FROM space WHERE id=%s", (space_id,)).fetchone()
+
+
+class SuggestValue(BaseModel):
+    chieu: Literal["khong_gian", "phong_cach"]
+    text: str = Field(min_length=1, max_length=60)
+    force: bool = False  # the reviewer saw "Did you mean …?" and still wants the new word
+
+
+SUGGEST_FIELDS = "id, relative_path, caption, materials, palette, hotspots, space_type, design_style"
+
+
+def _wait_on_suggestion(c, space, dim, text, user, draft) -> int:
+    """Save / join the suggestion and set the photo to "Other" through the same log as a manual edit."""
+    cid = value_suggest.upsert(c, dim, text, space["id"], user["id"], draft, space)
+    col, other = value_suggest.DIMS[dim], taxonomy.OTHER[dim]
+    if space[col] != other:
+        c.execute(f"UPDATE space SET {col} = %s WHERE id = %s", (other, space["id"]))
+        _log(c, space["id"], user, "edit", {"from": {col: space[col]}, "to": {col: other}, "goi_y": cid})
+    return cid
+
+
+@app.post("/spaces/{space_id}/suggest-value")
+def suggest_value(space_id: int, body: SuggestValue, user=Depends(require(*STAFF))):
+    """A reviewer typed a room type / style the list doesn't have (review-tag-autocomplete). In order: an exact match,
+    an undecided suggestion of the same word, a near spelling, Gemini's opinion; only then a new suggestion. The photo
+    waits on "Other" until an approver decides."""
+    text, dim = " ".join(body.text.split()), body.chieu
+    if not text:
+        raise HTTPException(422, "text is empty")
+    if ma := value_suggest.exact(dim, text):
+        return {"kind": "existing", "ma": ma, "source": "exact"}
+
+    def space_row(c):
+        row = c.execute(f"SELECT {SUGGEST_FIELDS} FROM space WHERE id = %s FOR UPDATE", (space_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "space not found")
+        return row
+
+    with _db() as c:
+        space = space_row(c)
+        if value_suggest.pending(c, dim, text):  # someone already suggested it: join, no second AI call
+            return {"kind": "suggested", "id": _wait_on_suggestion(c, space, dim, text, user, None)}
+    if not body.force and (ma := value_suggest.spelling(dim, text)):
+        return {"kind": "existing", "ma": ma, "source": "spelling"}
+    rate_check("suggest_value", user["id"], 10, 60)  # only the calls that reach Gemini count
+    draft = value_suggest.ai_check(space, dim, text)  # slow (seconds): outside the transaction
+    if draft and draft["trung_voi"] and not body.force:
+        return {"kind": "existing", "ma": draft["trung_voi"], "source": "ai", "ly_do": draft["ly_do"]}
+    with _db() as c:
+        space = space_row(c)  # re-read: it may have been edited while Gemini answered
+        out = {"kind": "suggested", "id": _wait_on_suggestion(c, space, dim, text, user, draft)}
+    if draft and draft["anh_khop"] is False:  # the photo doesn't show the word's features: tell the reviewer now
+        out["canh_bao"] = draft["nhan_xet_anh"] or f"Ảnh này có vẻ không thể hiện «{text}»."
+        out["gan_nhat"] = draft["gan_nhat"]
+    elif draft and draft["caption"]:  # same Gemini call: a caption / alt text for the new value, unsaved until Lưu
+        out["caption"], out["alt_text"] = draft["caption"], draft["alt_text"]
+    return out
 
 
 class AdvanceMany(BaseModel):
@@ -1068,13 +1129,15 @@ def weekly_test(user=Depends(require(*APPROVERS))):
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────
 @app.get("/taxonomy")
-def taxonomy_list():
-    """Dimensions with their values. Public: the portfolio filters read this too."""
+def taxonomy_list(user=Depends(optional_user)):
+    """Dimensions with their values. Public: the portfolio filters read this too. Staff also get so_anh (spaces carrying
+    each value, drafts included) to rank the review page's suggestions; visitors never see draft counts."""
+    count = ", (SELECT count(*) FROM space_gia_tri sg WHERE sg.gia_tri_id = v.id) AS so_anh" if _is_staff(user) else ""
     with _db() as c:
         dims = c.execute("SELECT id, ma_dinh_danh, ten, bat_buoc, cho_phep_nhieu_gia_tri, hien_thi_cho_khach, thu_tu "
                          "FROM chieu_phan_loai ORDER BY thu_tu, id").fetchall()
-        vals = c.execute("SELECT id, chieu_id, ma_dinh_danh, ten, tu_dong_nghia "
-                         "FROM gia_tri_phan_loai ORDER BY id").fetchall()
+        vals = c.execute(f"SELECT v.id, v.chieu_id, v.ma_dinh_danh, v.ten, v.tu_dong_nghia{count} "
+                         "FROM gia_tri_phan_loai v ORDER BY v.id").fetchall()
     by_dim: dict = {}
     for v in vals:
         by_dim.setdefault(v["chieu_id"], []).append(v)
@@ -1350,7 +1413,13 @@ def list_candidates(user=Depends(require(*APPROVERS))):
             r["vi_du"] = c.execute("SELECT id, relative_path, space_type, design_style FROM space WHERE id = ANY(%s) ORDER BY id",
                                    (ids,)).fetchall()
         waiting = c.execute("SELECT count(*) AS n FROM ung_vien_phan_loai WHERE trang_thai = 'cho_bang_chung'").fetchone()["n"]
-    return {"candidates": rows, "cho_bang_chung": waiting}
+        # review-tag-autocomplete: words reviewers typed that no value covers, with the photos waiting on "Other"
+        values = c.execute("SELECT id, ten_de_xuat, bang_chung, created_at, updated_at FROM ung_vien_phan_loai "
+                           "WHERE loai = 'gia_tri' AND trang_thai = 'cho_duyet' ORDER BY created_at").fetchall()
+        for v in values:
+            v["cho"] = c.execute("SELECT id, relative_path, space_type, design_style, caption FROM space WHERE id = ANY(%s) ORDER BY id",
+                                 (v["bang_chung"].get("space_ids", []),)).fetchall()
+    return {"candidates": rows, "cho_bang_chung": waiting, "gia_tri": values}
 
 
 class AcceptCandidate(BaseModel):
@@ -1400,6 +1469,34 @@ def accept_candidate(cid: int, body: AcceptCandidate, user=Depends(require(*APPR
                                             "gan_nhan": len(tags), "can_xem_lai": review}), cid))
     taxonomy.reload()
     return {"chieu": ma, "gia_tri": list(values), "gan_nhan": len(tags), "can_xem_lai": review}
+
+
+class AcceptValue(BaseModel):
+    ten: str = Field(min_length=1, max_length=80)
+    mo_ta: Optional[str] = Field(default=None, max_length=1000)
+    tu_dong_nghia: list[str] = Field(default_factory=list, max_length=30)
+
+
+class MapValue(BaseModel):
+    gia_tri_id: int
+
+
+@app.post("/taxonomy/value-candidates/{cid}/accept", status_code=201)
+def accept_value_candidate(cid: int, body: AcceptValue, user=Depends(require(*APPROVERS))):
+    """A reviewer's word becomes a value; the photos waiting on "Other" for it move to it (review-tag-autocomplete)."""
+    return _tax_write(lambda c: value_suggest.accept(c, user, cid, body.ten, body.mo_ta, body.tu_dong_nghia))
+
+
+@app.post("/taxonomy/value-candidates/{cid}/map")
+def map_value_candidate(cid: int, body: MapValue, user=Depends(require(*APPROVERS))):
+    """The word means an existing value: it is added as that value's synonym and the waiting photos get the value."""
+    return _tax_write(lambda c: value_suggest.map_to(c, user, cid, body.gia_tri_id))
+
+
+@app.post("/taxonomy/value-candidates/{cid}/reject")
+def reject_value_candidate(cid: int, user=Depends(require(*APPROVERS))):
+    """No value; the waiting photos stay on "Other"."""
+    return _tax_write(lambda c: value_suggest.reject(c, user, cid))
 
 
 @app.post("/taxonomy/candidates/{cid}/reject")

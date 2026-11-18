@@ -421,3 +421,9 @@ ALTER TABLE tin_nhan ADD COLUMN IF NOT EXISTS chu_de_cam jsonb;  -- {id, ten, o:
 
 -- Item -> service package (same change; roadmap 1.9): the visitor's hotspot card shows it, over the label mapping.
 ALTER TABLE mon_do ADD COLUMN IF NOT EXISTS dich_vu_id int REFERENCES kb_chunk(id) ON DELETE SET NULL;
+
+-- review-tag-autocomplete: a reviewer's suggested new value (loai = 'gia_tri') waits here with the photos set to "Other"
+-- until an approver decides. bang_chung = {chieu, khoa (folded text), space_ids, nguoi_de_xuat, mo_ta, tu_dong_nghia, ai}.
+-- One undecided suggestion per dimension and folded word, so two reviewers typing the same word share it.
+CREATE UNIQUE INDEX IF NOT EXISTS ung_vien_gia_tri_mot_tu ON ung_vien_phan_loai ((bang_chung->>'chieu'), (bang_chung->>'khoa'))
+  WHERE loai = 'gia_tri' AND trang_thai = 'cho_duyet';

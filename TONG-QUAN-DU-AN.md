@@ -143,6 +143,7 @@ Dự án xây dựng website portfolio dựa trên ba trục khoá vào nhau th�
 
 ```bash
 docker compose up -d --build        # ở thư mục gốc → http://localhost:8080/prj1/
+docker compose exec backend python seed_taxonomy.py            # nạp / bổ sung phân loại gốc: chỉ điền mô tả còn trống và thêm từ đồng nghĩa, giữ tên và chỉnh sửa của nhân viên (chạy lại được)
 docker compose exec backend python ingest.py image_d3          # nạp ảnh vào DB lần đầu
 docker compose exec backend python -m pipeline.assistant kb/sample.json   # nạp kho tri thức (mục nháp AI "[AI SINH - CHƯA DUYỆT]" vào trạng thái Chờ duyệt)
 docker compose exec backend python -m pipeline.assistant kb/generated.json  # 8 mô tả dự án AI soạn: chờ duyệt ở /quan-tri/tri-thuc
@@ -335,11 +336,11 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | UC | Tên | Trạng thái | Đang ở đâu | Còn thiếu |
 | :-- | :-- | :-- | :-- | :-- |
 | UC12 | Tải ảnh hàng loạt | **Xong** | `/quan-tri` → "Tải ảnh dự án mới", `POST /spaces/ingest` | Xử lý tuần tự từng ảnh; trên CPU mất vài giây mỗi ảnh |
-| UC13 | Gắn nhãn không gian | **Xong** | `/quan-tri`: sửa loại phòng, phong cách, vật liệu; tag loại công trình và mức đầu tư theo ảnh hoặc cả dự án | |
+| UC13 | Gắn nhãn không gian | **Xong** | `/quan-tri`: sửa loại phòng, phong cách, vật liệu; tag loại công trình và mức đầu tư theo ảnh hoặc cả dự án. Loại phòng và phong cách **gõ có gợi ý** (change `review-tag-autocomplete`): chữ xám gợi ý giá trị khớp nhất (Tab / → để nhận), danh sách xếp theo khớp đầu tên, đầu từ đồng nghĩa, chứa trong tên, rồi số ảnh; không dấu, không phân biệt hoa thường. Gõ từ chưa có: kiểm tra chính tả («Có phải ý bạn là Japandi?»), rồi Gemini xem ảnh và danh mục (trùng nghĩa thì gợi ý giá trị có sẵn, không thì soạn nháp mô tả và từ đồng nghĩa) và lưu thành **giá trị được gợi ý** cho KTS trưởng; ảnh tạm để «Khác» kèm ghi chú chờ duyệt | Loại công trình và mức đầu tư vẫn là danh sách chọn; KTS trưởng cũng gợi ý chứ không tạo thẳng từ trang duyệt |
 | UC14 | Duyệt và xuất bản dự án | **Xong** | `/quan-tri`: Nháp → Chờ duyệt → Đã duyệt → Đã xác nhận quyền → Đã đăng, chuyển hàng loạt, ô xác nhận quyền công bố, `review_log`. KTS trưởng **trả về nháp**, **lưu nội bộ** (khách không đồng ý công bố) hoặc **mở lại**, luôn kèm lý do: lý do hiện trên thẻ ảnh đến khi ảnh được chuyển tiếp, lọc "Chỉ ảnh bị trả về", người tải ảnh lên nhận email (hoặc log) . **Gỡ khỏi website** (change `unpublish-photos`): ở tab «Đã đăng», KTS trưởng / admin gỡ một hay nhiều ảnh kèm lý do, chọn «Gỡ xuống để sửa» (về Nháp, nằm trong «Chỉ ảnh bị trả về») hoặc «Gỡ và lưu nội bộ» (khách rút lại đồng ý); ghi `review_log`, báo người tải lên; ảnh biến mất khỏi mọi trang công khai, bộ sưu tập và brief đã gửi (quay lại nếu đăng lại) | File ảnh gốc vẫn mở được bằng đường dẫn `/images/...` trực tiếp (xem vấn đề 15). Bước cuối của QT-01 (theo dõi hiệu quả sau 30 ngày) có ở `/quan-tri/hieu-qua`, xem mục 5.4 |
-| UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). **Bộ phân loại AI vẫn dùng danh sách phong cách / không gian cố định** trong `pipeline/schemas.py`: giá trị mới thêm chỉ được gắn bởi người, AI chưa đề xuất được |
+| UC15 | Quản lý taxonomy | **Có** | `/quan-tri/phan-loai`, tab "Danh mục" (change `taxonomy-admin`): cây chiều → giá trị kèm số không gian / đã đăng / dự án; thêm giá trị (mã tự sinh từ tên, xem trước), đổi tên (giữ mã), sửa mô tả và từ đồng nghĩa, gộp vào giá trị khác cùng chiều (hộp thoại báo số không gian và dự án bị ảnh hưởng); thêm chiều bằng tay, đổi tên, ẩn/hiện cho khách, đổi thứ tự; nhật ký "Gần đây" (bảng `nhat_ky_phan_loai`). Tab "Đề xuất của AI" giữ phần duyệt chiều AI đề xuất, và mục **Giá trị được gợi ý** (từ trang duyệt ảnh): sửa tên / mô tả / từ đồng nghĩa rồi tạo giá trị, gộp vào giá trị có sẵn (từ đó thành từ đồng nghĩa) hoặc từ chối; ảnh đang chờ chuyển theo, trừ ảnh đã bị sửa trong lúc chờ. **Gộp** trong `phong_cach` / `khong_gian` cũng chuyển cột `design_style` / `space_type` của không gian; không gộp được `tong_mau` (máy tự tính) hay giữa hai chiều | Không xoá được giá trị / chiều (gộp hoặc ẩn thay thế). Bộ phân loại AI đọc loại không gian và phong cách từ bảng phân loại (change `classifier-reads-taxonomy`): giá trị mới thêm kèm mô tả được AI dùng ngay từ ảnh tải lên tiếp theo, câu trả lời không khớp giá trị nào thành «Khác» với độ tin cậy 0 để nhân viên xem lại. Ảnh cũ không tự gắn lại (chạy `relabel.py`); các chiều khác vẫn do người gắn |
 | UC16 | Quản lý tri thức trợ lý | **Có** | `/quan-tri/tri-thuc` (NV nội dung, KTS trưởng, admin): tìm, thêm, sửa mục (loại, tiêu đề, cụm từ khớp, câu trả lời; lưu là tính lại embedding); trạng thái Nháp / Chờ duyệt / Đang dùng / Tắt, **trợ lý chỉ dùng mục Đang dùng**; mục có giá (loại `price` hoặc câu trả lời nêu số tiền) chỉ KTS trưởng bật được, NV nội dung sửa giá của mục đang dùng thì mục về Chờ duyệt; nháp AI (`kb/generated.json`, 8 mục) vào Chờ duyệt, duyệt thì bỏ dấu "[AI SINH - CHƯA DUYỆT]"; tab "Câu hỏi chưa trả lời" gom câu giống nhau, "Soạn đáp án" → mục mới, bật thì đóng câu hỏi; xoá (KTS trưởng); mục dịch vụ mà điểm nóng liên kết không đổi tên / xoá được; nhật ký `nhat_ky_tri_thuc`. File JSON + lệnh vẫn dùng được để nạp hàng loạt | 11 mục đang dùng vẫn là dữ liệu mẫu (việc 1.6). Chưa có lịch sử phiên bản của từng mục |
-| UC17 | Gắn hotspot món đồ | **Có** | YOLO gợi ý lúc tải ảnh. Ở `/quan-tri` (KTS, KTS trưởng, admin; change `hotspot-items`): bấm vào ảnh để thêm điểm, kéo hoặc dùng phím mũi tên để dời, xoá, đặt tên khách thấy, gắn món đồ trong **thư viện món đồ** (tìm hoặc tạo ngay; tên, loại, kiểu dáng, vật liệu, màu, nhà cung cấp, ghi chú); điểm ghi nguồn tạo AI / Thủ công, mỗi lần lưu ghi `review_log`. `/quan-tri/mon-do`: danh sách, số ảnh dùng, sửa, xoá khi không còn ảnh nào dùng. Trang khách `/khong-gian/:id` vẫn chỉ hiện tên điểm. Món đồ gắn được với một **gói dịch vụ** (mục tri thức loại dịch vụ; change `topic-guard-sitemap-item-services`), chọn ở thư viện và trong ô tạo món đồ; dữ liệu công khai của điểm nóng mang dịch vụ của món đồ (ưu tiên hơn dịch vụ theo nhãn YOLO) | Chưa chạy lại YOLO từ giao diện; khách chưa bấm hotspot ra «không gian có món đồ này» (API `GET /items/{id}/spaces` đã có, phần giao diện khách là của Tùng); thẻ điểm nóng của khách chưa hiện dịch vụ (Tùng bỏ dòng này ở `b6c469b`, dữ liệu đã có sẵn trong `service`) |
+| UC17 | Gắn hotspot món đồ | **Có** | Gợi ý lúc tải ảnh (change `hotspot-accuracy`): Gemini, trong chính lần gọi phân loại, nêu tối đa 8 món nội thất chính kèm tên tiếng Việt và một điểm nằm trên món đồ (cả đèn, thảm, tủ, rèm, gương, tranh mà YOLO không có); gộp với khung YOLO cùng loại, bỏ đồ vặt (chai, cốc, sách…), điểm dưới 0,4 và điểm trùng, tối đa 6 điểm; không có Gemini thì chỉ dùng YOLO đã lọc. Ảnh nháp chưa ai sửa hotspot chạy lại bằng `rebuild_hotspots.py` (bản cũ lưu ở nhật ký, `--restore` để khôi phục). Ở `/quan-tri` (KTS, KTS trưởng, admin; change `hotspot-items`): bấm vào ảnh để thêm điểm, kéo hoặc dùng phím mũi tên để dời, xoá, đặt tên khách thấy, gắn món đồ trong **thư viện món đồ** (tìm hoặc tạo ngay; tên, loại, kiểu dáng, vật liệu, màu, nhà cung cấp, ghi chú); điểm ghi nguồn tạo AI / Thủ công, mỗi lần lưu ghi `review_log`. `/quan-tri/mon-do`: danh sách, số ảnh dùng, sửa, xoá khi không còn ảnh nào dùng. Trang khách `/khong-gian/:id` vẫn chỉ hiện tên điểm. Món đồ gắn được với một **gói dịch vụ** (mục tri thức loại dịch vụ; change `topic-guard-sitemap-item-services`), chọn ở thư viện và trong ô tạo món đồ; dữ liệu công khai của điểm nóng mang dịch vụ của món đồ (ưu tiên hơn dịch vụ theo nhãn YOLO) | Chưa chạy lại YOLO từ giao diện; khách chưa bấm hotspot ra «không gian có món đồ này» (API `GET /items/{id}/spaces` đã có, phần giao diện khách là của Tùng); thẻ điểm nóng của khách chưa hiện dịch vụ (Tùng bỏ dòng này ở `b6c469b`, dữ liệu đã có sẵn trong `service`) |
 
 ### 5.4 Phân tích và hệ thống
 
@@ -370,7 +371,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | M1 Danh mục đa chiều | Một phần | lọc 6 chiều có, nhưng trang đang bị ẩn; chưa có URL SEO |
 | M2 Trang chi tiết dự án | Một phần | gallery đẹp; thiếu thông số, before/after, khối "dự án tương tự" ở cấp dự án |
 | M3 Gợi ý tương tự | Một phần | ảnh → ảnh và chữ → ảnh có; món đồ → dịch vụ chưa có |
-| M4 RAG Chatbot | Xong (lõi) | cần dữ liệu tri thức thật; chưa lọc theo metadata chi tiết (vd diện tích) |
+| M4 RAG Chatbot | Xong (lõi) | ví dụ trả về là **dự án** (tối đa 3 thẻ, mỗi thẻ 1–2 ảnh đã đăng), xếp theo số yếu tố khớp với yêu cầu đã gom trong hội thoại (phong cách, loại phòng, loại công trình) rồi độ giống (change `assistant-project-results`); câu chào / cảm ơn / tạm biệt trả lời ngay, không tạo lead. Cần dữ liệu tri thức thật; chưa lọc theo diện tích, vật liệu, mức đầu tư |
 | M5 CMS & QT-01 | Xong | thiếu trả về/từ chối và theo dõi sau 30 ngày |
 | M6 Quản lý lead (QT-02) | Một phần | chỉ tạo và xem lead. Chưa có vòng đời `Mới → Đã liên hệ → Đủ điều kiện → Đã hẹn khảo sát → Đã báo giá → Ký HĐ / Thất bại`, chấm điểm lead theo hành vi, "dấu chân" khách, thông báo cho sales |
 | M7 Thư viện vật liệu/sản phẩm + hotspot | Một phần | hotspot có; thư viện món đồ (bảng MonDo) chưa có |
@@ -397,7 +398,7 @@ Ký hiệu: **Xong** = chạy được đầu cuối và có test. **Một phầ
 | NFR-10 | gán nhãn ≥ 85% ở Phong cách và Không gian | Có công cụ `eval_labels.py`; chưa đủ ảnh đã duyệt để đo |
 | NFR-11 | precision@5 ≥ 0,7 cho gợi ý tương tự | Chưa đo |
 | NFR-12 | đăng 1 dự án 40 ảnh < 20 phút | Chưa đo (đã đi hết quy trình với dự án 9 ảnh) |
-| NFR-13 | thêm phong cách mới không sửa code | Đạt cho bộ lọc, gắn nhãn tay, trợ lý (UC15 có giao diện). Chưa đạt cho bộ phân loại AI: `pipeline/schemas.py` còn liệt kê cố định |
+| NFR-13 | thêm phong cách mới không sửa code | Đạt cho bộ lọc, gắn nhãn tay, trợ lý (UC15 có giao diện) và bộ phân loại AI (loại không gian, phong cách; change `classifier-reads-taxonomy`) |
 
 **Dữ liệu ngày 2/11/2026:** 152 không gian trong DB, trong đó 9 ảnh đã đăng (dự án `indochine_chinosere_villa`) và 143 ảnh nháp. Frontend tĩnh có 64 dự án trong `src/assets/projects/`.
 
@@ -422,7 +423,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
-| 1.1 | ✓ **UI quản lý taxonomy** (change `taxonomy-admin`): liệt kê chiều và giá trị; thêm, đổi tên, gộp; thêm chiều bằng tay; sửa từ đồng nghĩa; nhật ký | seq-15, class-2 | còn: dựng schema của bộ phân loại AI từ taxonomy để AI gắn được giá trị mới |
+| 1.1 | ✓ **UI quản lý taxonomy** (change `taxonomy-admin`): liệt kê chiều và giá trị; thêm, đổi tên, gộp; thêm chiều bằng tay; sửa từ đồng nghĩa; nhật ký | seq-15, class-2 | ✓ bộ phân loại AI đọc taxonomy (change `classifier-reads-taxonomy`) |
 | 1.2 | ~~Vòng đời lead (QT-02)~~ **Bỏ:** `usecase-0` và `usecase-4` ghi rõ liên hệ, phân công, theo dõi lead do đội tư vấn làm *ngoài hệ thống*; hệ thống chỉ lưu lead và báo kèm hồ sơ hành vi | act-2, usecase-0/4 | — |
 | 1.3 | ✓ **Hồ sơ hành vi trong lead** (change `lead-intake`): bản chụp không gian đã xem và giá trị phân loại nổi bật, chỉ khi khách đồng ý banner *và* tick ô trên form/chat. Chưa chấm điểm lead | act-2, seq-4 | `/khach-hang` hiện "Sở thích" kèm ảnh đã xem |
 | 1.4 | ✓ **Thông báo cho sales** khi có lead mới (change `lead-intake`): email qua SMTP nếu cấu hình, không thì ghi log | business-flow, seq-5 | có email kèm nguồn, liên hệ, ngữ cảnh, tóm tắt sở thích |
@@ -539,7 +540,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | GET | `/items/services` | staff | các mục tri thức loại dịch vụ (id, tiêu đề, trạng thái) để gắn món đồ; `dich_vu_id` trên `/items` (422 nếu không phải dịch vụ) |
 | GET | `/items/{id}/spaces` | công khai | ảnh có hotspot gắn món đồ; khách chỉ thấy ảnh đã đăng, tên và loại món đồ |
 | POST | `/events` | công khai, 120/phút | ghi sự kiện hành vi theo đồng ý: xem / lưu ảnh, trắc nghiệm, xem trang / dự án (`trang`, `doi_tuong`, `thoi_gian_dung_ms`, `do_sau_cuon`), CTA, form, chat, chia sẻ, bộ lọc (`gia_tri`); không đồng ý thì chỉ đếm theo ngày |
-| POST | `/chat` | công khai, 20/phút | trợ lý; nhận và trả `hoi_thoai_id`, lưu từng lượt (đã che liên hệ) |
+| POST | `/chat` | công khai, 20/phút | trợ lý; nhận và trả `hoi_thoai_id`, lưu từng lượt (đã che liên hệ). `projects`: dự án ví dụ `{folder, khop[{chieu, ma, ten}], so_anh_khop, anh[]}`; `images` = ảnh của các thẻ (cho client cũ) |
 | GET / DELETE | `/chat/{id}` | ai có id | đọc lại / xoá hội thoại của mình (id ngẫu nhiên 32 ký tự) |
 | GET | `/conversations?loc=tat_ca\|chua_tra_loi\|lead&days=7\|30\|90` | content, sales, approver | danh sách hội thoại, 50 mỗi trang, không có phiên hay liên hệ |
 | GET | `/conversations/{id}` | content, sales, approver | tin nhắn, nguồn và điểm từng câu trả lời, ràng buộc, lead |
@@ -581,9 +582,11 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | POST | `/taxonomy/{dim_id}/values` | approver | thêm giá trị (`ma_dinh_danh` tuỳ chọn, mặc định sinh từ tên; 409 nếu trùng, không phân biệt hoa thường) |
 | PATCH | `/taxonomy/values/{id}` | approver | đổi tên (giữ mã), mô tả, từ đồng nghĩa |
 | POST | `/taxonomy/values/{id}/merge` | approver | gộp vào giá trị cùng chiều; chuyển cả `design_style` / `space_type`; 422 khi khác chiều hoặc `tong_mau` |
-| GET | `/taxonomy/candidates` | approver | đề xuất chiều mới |
+| GET | `/taxonomy/candidates` | approver | đề xuất chiều mới; `gia_tri`: giá trị được gợi ý kèm ảnh đang chờ |
 | POST | `/taxonomy/candidates/{id}/accept` | approver | chấp nhận, AI gắn nhãn thư viện |
 | POST | `/taxonomy/candidates/{id}/reject` | approver | từ chối |
+| POST | `/spaces/{id}/suggest-value` | staff | gợi ý loại phòng / phong cách chưa có `{chieu, text, force}`: trả giá trị có sẵn (khớp, chính tả, AI) hoặc lưu gợi ý và để ảnh «Khác»; AI giới hạn 10 lần/phút mỗi người |
+| POST | `/taxonomy/value-candidates/{id}/accept`, `/map`, `/reject` | approver | quyết định giá trị được gợi ý: tạo giá trị, gộp vào giá trị có sẵn, từ chối |
 | POST | `/auth/register`, `/auth/login`, `/auth/refresh` | công khai | tài khoản, JWT |
 | GET | `/auth/me` | đã đăng nhập | thông tin người dùng |
 | GET | `/auth/google/*`, `/auth/facebook/*` | công khai | OAuth |
@@ -621,6 +624,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- |
 | `ingest.py <thư mục>` | nạp ảnh: phân loại, màu, YOLO, embedding, ghi DB |
 | `relabel.py` | gán nhãn lại ảnh nháp (không ghi đè nhãn người đã duyệt) |
+| `rebuild_hotspots.py [--dry-run] [--limit N] [--restore]` | dựng lại hotspot AI cho ảnh nháp chưa ai sửa hotspot (1 lần gọi Gemini mỗi ảnh); `--restore` trả lại bản cũ cho ảnh chưa bị sửa sau đó |
 | `reembed.py` | tính lại embedding |
 | `generate_transcripts.py` | mô tả dài từng ảnh cho RAG |
 | `generate_kb.py` | sinh nháp mô tả dự án và câu hỏi đánh giá |

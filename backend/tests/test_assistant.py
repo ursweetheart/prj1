@@ -127,3 +127,64 @@ def test_answered_question_logs_no_gap():
     r = client.post("/chat", json={"message": "D3 Studio có thiết kế phòng khách không?"}).json()
     with psycopg.connect(DSN) as c:
         assert r["answered"] and c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0] == before
+
+
+# ── small talk: greetings, thanks, goodbyes are answered here, never handed off ──────────────────────────────────
+import pytest  # noqa: E402
+
+from pipeline.assistant import small_talk  # noqa: E402
+
+
+@pytest.mark.parametrize("msg,kind", [
+    ("xin chào", "chao"), ("Xin chào shop!", "chao"), ("hello", "chao"), ("Hi ad", "chao"), ("chào bạn ạ", "chao"),
+    ("alo", "chao"), ("Good morning D3 Studio", "chao"),
+    ("cảm ơn", "cam_on"), ("Cảm ơn bạn nhiều nhé!", "cam_on"), ("thanks", "cam_on"), ("thank you", "cam_on"),
+    ("chào, cảm ơn nhé", "cam_on"),
+    ("tạm biệt", "tam_biet"), ("bye", "tam_biet"), ("Hẹn gặp lại!", "tam_biet"),
+])
+def test_small_talk_is_recognised(msg, kind):
+    assert small_talk(msg) == kind
+
+
+@pytest.mark.parametrize("msg", [
+    "chào shop, mình muốn thiết kế phòng khách Japandi", "xin báo giá phòng ngủ", "hello, chi phí bao nhiêu?",
+    "cảm ơn, cho mình hỏi thêm về quy trình", "", "   ", "xin", "ok",
+])
+def test_real_questions_are_not_small_talk(msg):
+    assert small_talk(msg) is None
+
+
+def test_greeting_makes_no_lead_and_no_gap():
+    with psycopg.connect(DSN) as c:
+        leads0 = c.execute("SELECT count(*) FROM lead").fetchone()[0]
+        gaps0 = c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0]
+    r = client.post("/chat", json={"message": "Xin chào!"}).json()
+    assert r["answered"] is True and r["answer"].startswith("Xin chào!") and r["lead_id"] is None
+    with psycopg.connect(DSN) as c:
+        assert c.execute("SELECT count(*) FROM lead").fetchone()[0] == leads0
+        assert c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0] == gaps0
+
+
+# ── assistant-project-results: examples are projects, ranked by the collected request ──────────────────────────
+def test_kb_answer_returns_ranked_projects_of_published_photos(drafts):
+    q = {"message": "Bên bạn thiết kế phòng khách gồm những gì?"}
+    ids = drafts(3, "space_type='phong_khach'")
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE space SET review_status='published' WHERE id = ANY(%s)", (ids,))
+        published = {r[0] for r in c.execute("SELECT id FROM space WHERE review_status='published'")}
+    try:
+        r = client.post("/chat", json=q).json()
+        folders = [p["folder"] for p in r["projects"]]
+        assert 1 <= len(folders) <= 3 and len(set(folders)) == len(folders)
+        photos = [a for p in r["projects"] for a in p["anh"]]
+        assert all(1 <= len(p["anh"]) <= 2 for p in r["projects"]) and {a["id"] for a in photos} <= published
+        assert r["images"] == photos  # older clients see the cards' photos
+        assert all(a["relative_path"].split("/")[0] == p["folder"] for p in r["projects"] for a in p["anh"])
+        assert any(k["chieu"] == "khong_gian" for k in r["projects"][0]["khop"])  # the room asked for is matched
+    finally:
+        with psycopg.connect(DSN) as c:
+            c.execute("DELETE FROM lead WHERE conversation @> '[{\"content\": \"%s\"}]'::jsonb" % q["message"])
+
+
+def test_small_talk_and_handoff_have_no_projects():
+    assert client.post("/chat", json={"message": "xin chào"}).json()["projects"] == []

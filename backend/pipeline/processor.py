@@ -11,6 +11,7 @@ import time
 from typing import List, Optional
 from pipeline.color_extractor import analyze_color_palette
 from pipeline.furniture_detector import FurnitureDetector
+from pipeline.hotspots import with_proposed
 from pipeline.multimodal_classifier import MultimodalClassifier
 from pipeline.schemas import SpaceRecord
 from pipeline.vision_embedder import VisionEmbedder
@@ -65,7 +66,7 @@ class SpaceImageProcessor:
             subfolder=subfolder,
             relative_path=rel_path,
             color_analysis=color_res,
-            furniture_detection=furniture_res,
+            furniture_detection=with_proposed(furniture_res, classification),  # hotspot-accuracy
             classification=classification,
             llm_usage=classification.llm_usage if classification else None,
             embedding_dimension=len(embedding_vec),
@@ -176,7 +177,7 @@ class SpaceImageProcessor:
                     subfolder=subfolder,
                     relative_path=rel_path,
                     color_analysis=color_res,
-                    furniture_detection=furniture_res,
+                    furniture_detection=with_proposed(furniture_res, classification),  # hotspot-accuracy
                     classification=classification,
                     llm_usage=u,
                     embedding_dimension=len(emb_vec),

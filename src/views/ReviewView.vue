@@ -89,18 +89,30 @@
               {{ r.ly_do_duyet.ly_do }}
             </p>
             <div v-if="isStaff" class="row g10" style="flex-wrap:wrap">
-              <select v-model="r.space_type" :aria-label="'Loại không gian ' + r.id">
-                <option v-for="t in SPACE_TYPES" :key="t" :value="t">{{ spaceLabel(t) }}</option>
-              </select>
-              <select v-model="r.design_style" :aria-label="'Phong cách ' + r.id">
-                <option v-for="s in STYLES" :key="s" :value="s">{{ s.replaceAll('_', ' ') }}</option>
-              </select>
+              <TagInput v-for="t in TYPED" :key="t.dim" v-model="r[t.col]" :values="tagValues[t.dim]" :id="t.dim + r.id"
+                        :label="t.label + ' ' + r.id" :busy="!!suggesting[r.id + t.dim]" @suggest="suggest(r, t, $event)" />
               <select v-for="d in humanDims" :key="d.id" :value="(r.tags[d.id] || [''])[0]" :aria-label="d.label + ' ' + r.id"
                       @change="tagOne(r, d.id, $event.target.value)">
                 <option value="">{{ d.label }}…</option>
                 <option v-for="o in d.options" :key="o.id" :value="o.id">{{ o.label }}</option>
               </select>
             </div>
+            <template v-for="t in TYPED" :key="'s' + t.dim">
+              <p v-if="offer[r.id + t.dim]" class="rv-offer" role="status">
+                Có phải ý bạn là <strong>{{ nameOf(t.dim, offer[r.id + t.dim].ma) }}</strong>?
+                <span v-if="offer[r.id + t.dim].ly_do" class="small">{{ offer[r.id + t.dim].ly_do }}</span>
+                <button class="btn btn-secondary" type="button" @click="useOffer(r, t)">Dùng «{{ nameOf(t.dim, offer[r.id + t.dim].ma) }}»</button>
+                <button class="btn btn-ghost" type="button" @click="suggest(r, t, offer[r.id + t.dim].text, true)">Vẫn gợi ý «{{ offer[r.id + t.dim].text }}»</button>
+              </p>
+              <p v-else-if="suggesting[r.id + t.dim]" class="small" role="status">Đang kiểm tra «{{ suggesting[r.id + t.dim] }}»…</p>
+              <p v-if="warn[r.id + t.dim]" class="small rv-warn" role="status">⚠ {{ warn[r.id + t.dim] }}</p>
+              <p v-if="r.cho_duyet_gia_tri?.[t.dim]" class="small rv-wait">
+                {{ t.label }}: chờ KTS trưởng duyệt giá trị mới «{{ r.cho_duyet_gia_tri[t.dim] }}», tạm để «Khác»
+              </p>
+            </template>
+            <p v-if="redrafted[r.id]" class="small rv-wait" role="status">
+              AI đã soạn lại mô tả và alt text theo «{{ redrafted[r.id] }}». Sửa nếu cần rồi bấm Lưu.
+            </p>
             <template v-if="canEditText">
               <div class="field"><label :for="'cap' + r.id">Mô tả</label>
                 <textarea :id="'cap' + r.id" v-model="r.caption" rows="2"></textarea></div>
@@ -116,7 +128,10 @@
 
             <div class="row g10" style="flex-wrap:wrap">
               <button v-if="canEditText || isStaff" class="btn btn-secondary" type="button" @click="save(r)">Lưu</button>
-              <button v-if="canAdvance && NEXT_STATUS[status] !== 'cleared'" class="btn btn-primary" type="button" @click="advanceOne(r)">
+              <!-- greyed until the photo is ticked: moving a photo on is a deliberate choice, not a stray click -->
+              <button v-if="canAdvance && NEXT_STATUS[status] !== 'cleared'" class="btn btn-primary" type="button"
+                      :disabled="!selected.has(r.id)" :title="selected.has(r.id) ? null : 'Tick chọn ảnh này trước'"
+                      @click="advanceOne(r)">
                 Chuyển sang «{{ STATUS_VI[NEXT_STATUS[status]] }}»
               </button>
               <template v-if="isApprover">
@@ -162,11 +177,12 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  APPROVERS, NEXT_STATUS, RETURNABLE, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
-  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, unpublishSpaces,
+  APPROVERS, NEXT_STATUS, RETURNABLE, STAFF, STATUS_VI, advanceSpaces, getSpace, getTaxonomy, hasRole,
+  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, suggestValue, toFacet, unpublishSpaces,
   uploadAll
 } from '@/api'
 import HotspotEditor from '@/components/HotspotEditor.vue'
+import TagInput from '@/components/TagInput.vue'
 
 const HUMAN = ['loai_cong_trinh', 'muc_dau_tu'] // the AI cannot see these; staff fill them per project
 
@@ -179,6 +195,36 @@ const loading = ref(false)
 const error = ref('')
 const saved = ref(null)
 const humanDims = ref([])
+const tagValues = reactive({ khong_gian: [], phong_cach: [] }) // typed with suggestions (review-tag-autocomplete)
+const TYPED = [{ dim: 'khong_gian', col: 'space_type', label: 'Loại không gian', other: 'khac' },
+  { dim: 'phong_cach', col: 'design_style', label: 'Phong cách', other: 'Khac' }]
+const nameOf = (dim, code) => tagValues[dim].find(v => v.ma_dinh_danh === code)?.ten || code
+const suggesting = reactive({}) // `${space id}${dim}` -> word being checked
+const offer = reactive({}) // `${space id}${dim}` -> { ma, ly_do, text }: "Did you mean …?"
+const warn = reactive({}) // `${space id}${dim}` -> the AI thinks this photo doesn't show the suggested word
+const redrafted = reactive({}) // space id -> word the AI rewrote the caption for (unsaved)
+
+/* A word that names no stored value: the server tries spelling, then Gemini, then saves it for the lead architect.
+   force: the reviewer saw the offer and still wants their word. */
+const suggest = (r, t, text, force = false) => run(async () => {
+  const k = r.id + t.dim
+  delete offer[k]; delete warn[k]; suggesting[k] = text
+  try {
+    const out = await suggestValue(r.id, t.dim, text, force)
+    if (out.kind === 'existing' && out.source === 'exact') r[t.col] = out.ma
+    else if (out.kind === 'existing') offer[k] = { ma: out.ma, ly_do: out.ly_do || '', text }
+    else {
+      r[t.col] = t.other; r.cho_duyet_gia_tri = { ...(r.cho_duyet_gia_tri || {}), [t.dim]: text }
+      if (out.canh_bao) warn[k] = out.canh_bao + (out.gan_nhat ? ` Gần nhất: «${nameOf(t.dim, out.gan_nhat)}».` : '')
+      if (out.caption) { // drafted in the same Gemini call; only saved when the reviewer clicks Lưu
+        r.caption = out.caption
+        if (out.alt_text) r.alt_text = out.alt_text
+        redrafted[r.id] = text
+      }
+    }
+  } finally { delete suggesting[k] }
+})
+const useOffer = (r, t) => { r[t.col] = offer[r.id + t.dim].ma; delete offer[r.id + t.dim] }
 
 const isStaff = computed(() => hasRole(STAFF))
 // architects send drafts to review; only the lead architect approves, clears and publishes
@@ -234,7 +280,7 @@ function save(r) {
     ? { space_type: r.space_type, design_style: r.design_style, caption: r.caption, alt_text: r.alt_text,
         materials: r.materialsText.split(',').map(m => m.trim()).filter(Boolean) }
     : { caption: r.caption, alt_text: r.alt_text }
-  return run(async () => { await reviewSpace(r.id, body); saved.value = r.id })
+  return run(async () => { await reviewSpace(r.id, body); saved.value = r.id; delete redrafted[r.id] })
 }
 
 const tagOne = (r, dimension, value) => run(async () => {
@@ -325,7 +371,10 @@ async function confirmMove() {
 watch(onlyReturned, load)
 watch(status, load, { immediate: true })
 getTaxonomy()
-  .then(dims => { humanDims.value = dims.filter(d => HUMAN.includes(d.ma_dinh_danh)).map(toFacet) })
+  .then(dims => {
+    humanDims.value = dims.filter(d => HUMAN.includes(d.ma_dinh_danh)).map(toFacet)
+    for (const d of dims) if (d.ma_dinh_danh in tagValues) tagValues[d.ma_dinh_danh] = d.values
+  })
   .catch(() => {}) // without the taxonomy the tag selects just stay hidden
 </script>
 
@@ -346,6 +395,10 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .rv-outcome legend { padding: 0 4px; color: var(--dim) }
 .rv-outcome input { accent-color: var(--accent) }
 .rv-reason.is-mo_lai { border-left-color: var(--success) }
+.rv-offer { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px }
+.rv-offer .small { flex-basis: 100%; color: var(--dim) }
+.rv-wait { margin: 0; color: var(--warn) }
+.rv-warn { margin: 0; color: var(--danger) }
 .rv-by { color: var(--dim); font-size: 13px }
 .rv-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); color: var(--ink);
   padding: 20px; width: min(520px, calc(100vw - 32px)) }

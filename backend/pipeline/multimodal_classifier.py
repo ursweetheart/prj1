@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
+from pipeline import taxonomy
+from pipeline.hotspots import CATEGORIES, MAX_ITEMS
 from pipeline.color_extractor import ColorAnalysisResult
 from pipeline.schemas import (
     FurnitureDetectionResult,
@@ -21,18 +23,11 @@ from pipeline.schemas import (
 SYSTEM_PROMPT = """Bạn là chuyên gia thẩm định và phân loại kiến trúc nội thất cao cấp của D3 Studio.
 Nhiệm vụ của bạn là phân tích ảnh không gian nội thất kết hợp với các dữ liệu đặc trưng đã trích xuất (Bảng màu, Đồ vật nội thất phát hiện được) để gán nhãn đa chiều (Multi-facet) CHUẨN XÁC theo cây taxonomy của D3 Studio:
 
-1. KHÔNG GIAN (space_type):
-   - phong_khach, phong_ngu_master, phong_ngu_phu, bep_va_an, phong_lam_viec, sanh_thong_tang, ban_cong, phong_tam, lounge_thuong_mai, khac.
+1. KHÔNG GIAN (space_type), chọn đúng một mã:
+{khong_gian}
 
-2. PHONG CÁCH CHÍNH (design_style):
-   - Indochine: Đậm nét Á Đông, hoa văn kỷ hà, tranh sen/áo dài, gốm sứ, gỗ tự nhiên sẫm màu, mây tre đan.
-   - Japandi: Kết hợp Nhật Bản và Bắc Âu, gỗ sáng, đường nét thanh mảnh, bình dị, thanh tịnh.
-   - Wabi_sabi: Thô mộc tự nhiên, tường vôi/sơn hiệu ứng be/xám, đồ thủ công, bất toàn, tối giản.
-   - Hien_dai: Tinh gọn, công năng, kính phẳng, kim loại, bề mặt bóng mờ, đèn led định hình.
-   - Tan_co_dien: Phào chỉ tường, đèn chùm pha lê, bàn ghế uốn lượn mềm mại, sang trọng quý phái.
-   - Luxury: Đá cẩm thạch bóng, kim loại mạ vàng/titan, da cao cấp, kính khói, ánh sáng đa tầng lộng lẫy.
-   - Toi_gian: Hạn chế tối đa chi tiết thừa, mảng khối lớn, màu sắc trung tính nhẹ nhàng.
-   - Scandinavian: Tông trắng/xám sáng, gỗ sồi sáng, ấm cúng (hygge), vải dệt thô.
+2. PHONG CÁCH CHÍNH (design_style), chọn đúng một mã:
+{phong_cach}
 
 3. VẬT LIỆU CHỦ ĐẠO & MÔ TẢ CHẤT LIỆU (materials & materials_description):
    - materials: Danh sách 2-5 vật liệu chính nhìn thấy trong ảnh.
@@ -42,8 +37,31 @@ Nhiệm vụ của bạn là phân tích ảnh không gian nội thất kết h�
    - alt_text: Tiếng Việt, ngắn gọn, cấu trúc '[Không gian] phong cách [Phong cách] [Vật liệu chính] D3 Studio'.
    - caption: 15-30 từ tiếng Việt mô tả cảm xúc và điểm nhấn thiết kế của không gian.
 
+5. MÓN NỘI THẤT CHÍNH (items): tối đa 8 món nội thất / trang trí lớn nhìn rõ trong ảnh (sofa, ghế, giường, bàn, tủ, kệ,
+   đèn, thảm, rèm, gương, tranh, cây...). KHÔNG liệt kê đồ vặt (chai, cốc, bát, sách, điều khiển, đồ trên bàn).
+   - ten: tên tiếng Việt ngắn, cụ thể (vd "Sofa vải xám", "Đèn chùm pha lê", "Thảm len kem").
+   - loai: đúng một trong: {loai}.
+   - diem: [y, x] là MỘT ĐIỂM NẰM TRÊN CHÍNH MÓN ĐỒ (không phải khoảng trống cạnh nó), thang 0-1000, y tính từ trên
+     xuống, x tính từ trái sang.
+
+Ghi space_type và design_style bằng MÃ ở đầu mỗi dòng. Nếu ảnh không khớp rõ với mã nào, chọn mã "Khác".
 BẮT BUỘC trả về đúng định dạng JSON tuân thủ schema, không thêm text giải thích ngoài JSON.
 """
+
+
+def _value_lines(dim: str) -> str:
+    """'   - <ma>: <ten>. <mo_ta>' for every stored value of a dimension (the list staff edit at /quan-tri/phan-loai)."""
+    lines = []
+    for ma, v in taxonomy.labelled().get(dim, {}).get("values", {}).items():
+        desc = f". {v['mo_ta']}" if v.get("mo_ta") else ""
+        lines.append(f"   - {ma}: {v['ten']}{desc}")
+    return "\n".join(lines)
+
+
+def system_prompt() -> str:
+    """Built per call, so a value added or described by staff reaches the next photo without a restart."""
+    return SYSTEM_PROMPT.format(khong_gian=_value_lines("khong_gian"), phong_cach=_value_lines("phong_cach"),
+                                loai=", ".join(CATEGORIES))
 
 
 def build_evidence_prompt(
@@ -75,7 +93,8 @@ Hãy dựa vào ảnh và dữ liệu bằng chứng trên để phân loại kh
   "seo_metadata": {{
     "caption": "...",
     "alt_text": "..."
-  }}
+  }},
+  "items": [{{"ten": "Sofa vải xám", "loai": "sofa", "diem": [640, 420]}}]
 }}
 """
     return prompt
@@ -187,7 +206,7 @@ class MultimodalClassifier:
                 {
                     "role": "user",
                     "parts": [
-                        {"text": SYSTEM_PROMPT + "\n\n" + prompt},
+                        {"text": system_prompt() + "\n\n" + prompt},
                         {
                             "inline_data": {
                                 "mime_type": mime_type,
@@ -240,7 +259,7 @@ class MultimodalClassifier:
                 {
                     "role": "user",
                     "parts": [
-                        {"text": SYSTEM_PROMPT + "\n\n" + prompt},
+                        {"text": system_prompt() + "\n\n" + prompt},
                         {
                             "inline_data": {
                                 "mime_type": mime_type,
@@ -303,52 +322,44 @@ class MultimodalClassifier:
         )
 
     @staticmethod
-    def _normalize_parsed_data(parsed: dict) -> dict:
-        space_labels = {
-            "phong_khach": "Phòng Khách",
-            "phong_ngu_master": "Phòng Ngủ Master",
-            "phong_ngu_phu": "Phòng Ngủ Phụ",
-            "bep_va_an": "Phòng Bếp & Ăn",
-            "phong_lam_viec": "Phòng Làm Việc",
-            "sanh_thong_tang": "Sảnh Thông Tầng",
-            "ban_cong": "Ban Công",
-            "phong_tam": "Phòng Tắm",
-            "lounge_thuong_mai": "Lounge Thương Mại",
-            "khac": "Không gian khác",
-        }
-        style_map = {
-            "indochine": "Indochine",
-            "japandi": "Japandi",
-            "wabi_sabi": "Wabi_sabi",
-            "wabi-sabi": "Wabi_sabi",
-            "wabisabi": "Wabi_sabi",
-            "hien_dai": "Hien_dai",
-            "hiendai": "Hien_dai",
-            "modern": "Hien_dai",
-            "tan_co_dien": "Tan_co_dien",
-            "tancodien": "Tan_co_dien",
-            "neo_classic": "Tan_co_dien",
-            "luxury": "Luxury",
-            "toi_gian": "Toi_gian",
-            "toigian": "Toi_gian",
-            "minimalism": "Toi_gian",
-            "minimalist": "Toi_gian",
-            "scandinavian": "Scandinavian",
-        }
-        st = str(parsed.get("space_type", "phong_khach")).lower().strip()
-        if st not in space_labels:
-            st = "phong_khach"
-        parsed["space_type"] = st
-        if not parsed.get("space_type_label"):
-            parsed["space_type_label"] = space_labels.get(st, "Không gian nội thất")
+    def _label(dim: str, ma: str) -> str:
+        return taxonomy.labelled().get(dim, {}).get("values", {}).get(ma, {}).get("ten") or "Không gian nội thất"
 
-        ds = str(parsed.get("design_style", "Hien_dai")).lower().strip()
-        parsed["design_style"] = style_map.get(ds, "Hien_dai")
+    @staticmethod
+    def _parse_items(raw) -> list[dict]:
+        """hotspot-accuracy: [{ten, loai, diem: [y, x] on 0-1000}] -> [{ten, loai, x, y} on 0-1]. Entries with an unknown
+        category, no name, or a point off the photo are dropped; at most MAX_ITEMS kept, in the AI's order."""
+        out = []
+        for it in raw if isinstance(raw, list) else []:
+            if not isinstance(it, dict):
+                continue
+            ten, loai, diem = str(it.get("ten") or "").strip()[:120], it.get("loai"), it.get("diem")
+            if not ten or loai not in CATEGORIES or not isinstance(diem, (list, tuple)) or len(diem) != 2:
+                continue
+            try:
+                y, x = float(diem[0]), float(diem[1])
+            except (TypeError, ValueError):
+                continue
+            if 0 <= x <= 1000 and 0 <= y <= 1000:
+                out.append({"ten": ten, "loai": loai, "x": round(x / 1000, 3), "y": round(y / 1000, 3)})
+        return out[:MAX_ITEMS]
+
+    @staticmethod
+    def _normalize_parsed_data(parsed: dict) -> dict:
+        # Room and style must be stored taxonomy values; an answer that fits none is "Other" with style confidence 0,
+        # so it lands in the review hints instead of silently becoming Hien_dai / phong_khach.
+        st = taxonomy.resolve("khong_gian", parsed.get("space_type")) or taxonomy.OTHER["khong_gian"]
+        parsed["space_type"] = st
+        parsed["space_type_label"] = MultimodalClassifier._label("khong_gian", st)
 
         try:
             parsed["design_style_confidence"] = float(parsed.get("design_style_confidence", 0.9))
         except Exception:
             parsed["design_style_confidence"] = 0.9
+        ds = taxonomy.resolve("phong_cach", parsed.get("design_style"))
+        if ds is None:
+            ds, parsed["design_style_confidence"] = taxonomy.OTHER["phong_cach"], 0.0
+        parsed["design_style"] = ds
 
         if not isinstance(parsed.get("materials"), list):
             parsed["materials"] = ["Gỗ tự nhiên", "Vải dệt"]
@@ -356,6 +367,8 @@ class MultimodalClassifier:
         if not parsed.get("materials_description"):
             mat_str = ", ".join(parsed["materials"])
             parsed["materials_description"] = f"Không gian kết hợp hài hòa giữa các vật liệu chủ đạo gồm {mat_str}, tạo nên chiều sâu thẩm mỹ và sự tương phản tinh tế giữa các bề mặt hoàn thiện."
+
+        parsed["items"] = MultimodalClassifier._parse_items(parsed.get("items"))
 
         if not isinstance(parsed.get("seo_metadata"), dict):
             parsed["seo_metadata"] = {
@@ -436,6 +449,11 @@ class MultimodalClassifier:
             confidence = 0.85
             rationale = "Đường nét vuông vắn, không gian mở và công năng hiện đại."
             materials = ["Gỗ công nghiệp cao cấp", "Kim loại sơn tĩnh điện"]
+
+        # The rules above name fixed codes; a code staff merged away must not be saved, so check it like an AI answer.
+        space_type = taxonomy.resolve("khong_gian", space_type) or taxonomy.OTHER["khong_gian"]
+        if taxonomy.resolve("phong_cach", style) is None:
+            style, confidence = taxonomy.OTHER["phong_cach"], 0.0
 
         # 3. Generate SEO Metadata
         caption = f"Thiết kế {space_label.lower()} phong cách {style} với tông {color_res.temperature} sang trọng, do D3 Studio thực hiện."
