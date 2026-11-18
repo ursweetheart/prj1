@@ -607,3 +607,25 @@ ALTER TABLE space_text ADD COLUMN IF NOT EXISTS mo_hinh text;              -- cl
 UPDATE space s SET ngay_xuat_ban = (SELECT max(r.at) FROM review_log r WHERE r.space_id = s.id AND r.action = 'advance'
                                      AND r.detail->>'to' = 'published')
  WHERE s.review_status = 'published' AND s.ngay_xuat_ban IS NULL;
+
+-- ── visitor-touchpoints (seq-13, BFD 2.3, seq-9, act-4, seq-5/seq-7 SMS) ───────────────────────────────────────────
+-- BFD 2.3: a shared snapshot of a saved collection ('chia_se'): read-only, a share code, no owner needed
+ALTER TABLE bo_suu_tap DROP CONSTRAINT IF EXISTS bo_suu_tap_loai_check;
+ALTER TABLE bo_suu_tap ADD CONSTRAINT bo_suu_tap_loai_check CHECK (loai IN ('dang_luu', 'da_gui', 'chia_se'));
+ALTER TABLE bo_suu_tap DROP CONSTRAINT IF EXISTS bo_suu_tap_check;
+ALTER TABLE bo_suu_tap ADD CONSTRAINT bo_suu_tap_check CHECK ((loai IN ('da_gui', 'chia_se')) = (ma_chia_se IS NOT NULL));
+ALTER TABLE bo_suu_tap DROP CONSTRAINT IF EXISTS bo_suu_tap_check1;
+ALTER TABLE bo_suu_tap ADD CONSTRAINT bo_suu_tap_check1 CHECK (loai IN ('da_gui', 'chia_se') OR nguoi_dung_id IS NOT NULL);
+-- act-4: a chat lead outside working hours is announced to the team when the next working period starts
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS thong_bao_luc timestamptz;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS da_thong_bao boolean NOT NULL DEFAULT true;  -- existing leads were notified
+-- seq-5 b11 / seq-7 b9: every SMS attempt, the number masked
+CREATE TABLE IF NOT EXISTS tin_nhan_sms (
+  id serial PRIMARY KEY,
+  lead_id int REFERENCES lead(id) ON DELETE SET NULL,
+  so_che text NOT NULL,
+  noi_dung text NOT NULL,
+  trang_thai text NOT NULL CHECK (trang_thai IN ('da_gui', 'chua_cau_hinh', 'loi')),
+  loi text,
+  luc timestamptz NOT NULL DEFAULT now()
+);

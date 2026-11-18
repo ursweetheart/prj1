@@ -168,6 +168,8 @@ export function projectFilterParams(sel = {}, area = [], sort = 'moi_nhat') {
   return pairs
 }
 export const filterProjects = (sel, area, sort) => get('/projects/filter', projectFilterParams(sel, area, sort))
+// BFD 2.3 (visitor-touchpoints): a read-only snapshot of the current collection -> {ma, so_anh}
+export const shareCollection = items => request('POST', '/collections/share', { body: { items } })
 export const getTaxonomy = () => get('/taxonomy')
 // taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
 export const getTaxonomyAdmin = () => get('/taxonomy/admin')

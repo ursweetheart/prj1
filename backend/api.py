@@ -29,7 +29,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (behaviour, explain, home_suggestions, project_filter, image_sizes, intake, space_knowledge, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, explain, home_suggestions, hours, project_filter, image_sizes, intake, space_knowledge, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -85,6 +85,8 @@ def _weekly_once():
         _last_purge = now
         if n:
             weekly_report.log.info("purged %d conversations older than %d days", n, conversations.KEEP_DAYS)
+    for lead_id in notify.due_leads(now):  # act-4: chat leads that arrived outside working hours
+        notify.notify_new_lead(lead_id)
     if _on("D3_NIGHTLY"):  # seq-4 loop "Hằng đêm": from 01:00 UTC+7, once yesterday is missing from the analytics store
         rollup.due_and_run(now)
     if _on("D3_WEEKLY_REPORT") and weekly_report.due(now):
@@ -843,11 +845,15 @@ def chat(body: Chat, tasks: BackgroundTasks):
         out = respond(body.message, stored or body.history, body.contact, body.phien_id, body.gui_ho_so,
                       rang_buoc=rang_buoc, lead_history=body.history or stored)
         blocked = out.pop("chu_de_cam", None)  # staff only: never in the public reply
+        if out.get("lead_id") and (opens := hours.next_open()):  # act-4: outside working hours
+            out["answer"] = f"{out['answer']} {hours.sentence(opens)}"
+            out["lien_he_luc"] = opens.isoformat()
+            c.execute("UPDATE lead SET thong_bao_luc = %s, da_thong_bao = false WHERE id = %s", (opens, out["lead_id"]))
         conversations.add_turn(c, hid, body.message, out["answer"], out["sources"], out.get("diem_cao_nhat"),
                                out["answered"], out["rang_buoc"], blocked)
         if out.get("lead_id"):
             conversations.link_lead(c, hid, out["lead_id"], handoff=not out["answered"])
-    if out.get("lead_id"):
+    if out.get("lead_id") and not out.get("lien_he_luc"):  # outside hours: sent when the next working period starts
         tasks.add_task(notify.notify_new_lead, out["lead_id"])
     return {**out, "hoi_thoai_id": hid}
 
@@ -1026,6 +1032,27 @@ def merge_collection(body: Merge, user=Depends(require(*ROLES))):
         return bo_suu_tap.merge(c, user["id"], [i.model_dump() for i in body.items])
 
 
+class ShareItem(BaseModel):
+    space_id: int
+    ghi_chu: Optional[str] = Field(default=None, max_length=bo_suu_tap.MAX_NOTE)
+
+
+class ShareCollection(BaseModel):
+    items: list[ShareItem] = Field(min_length=1, max_length=bo_suu_tap.MAX_ITEMS)
+
+
+@app.post("/collections/share", status_code=201, dependencies=[Depends(limit("collection_share", 10, 60))])
+def share_collection(body: ShareCollection):
+    """BFD 2.3 "Chia sẻ bộ sưu tập": a snapshot of the visitor's current collection (signed in or not), published
+    photos only, readable at /bo-suu-tap/xem/<code>."""
+    with _db() as c:
+        keep = set(bo_suu_tap.published(c, [i.space_id for i in body.items]))
+        chosen = [i.model_dump() for i in body.items if i.space_id in keep]
+        if not chosen:
+            raise HTTPException(422, "Bộ sưu tập chưa có ảnh nào đã đăng để chia sẻ.")
+        return {"ma": bo_suu_tap.share_copy(c, chosen), "so_anh": len(chosen)}
+
+
 @app.get("/collections/shared/{code}")
 def shared_collection(code: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,64}$")):
     """Read-only view of a sent brief: photos, notes, summary; never the sender's name or contact."""
@@ -1137,7 +1164,9 @@ class EstimateIn(BaseModel):
 def post_estimate(body: EstimateIn):
     """Public. Arithmetic on the price table; nothing is stored."""
     with _db() as c:
-        return estimate.estimate(c, body.loai_nha, body.dien_tich_m2, body.so_phong_ngu, body.goi)
+        out = estimate.estimate(c, body.loai_nha, body.dien_tich_m2, body.so_phong_ngu, body.goi)
+        out["du_an_goi_y"] = estimate.budget_projects(c, body.loai_nha, out["tong"])  # seq-9 b6-b7
+        return out
 
 
 class EstimateLeadIn(LeadIn, EstimateIn):

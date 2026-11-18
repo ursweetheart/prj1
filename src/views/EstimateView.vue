@@ -95,15 +95,16 @@
         </form>
       </div>
 
-      <section v-if="similar.length" class="est-projects" aria-labelledby="est-proj-h">
-        <h2 id="est-proj-h" class="est-label">Dự án cùng loại của D3</h2>
+      <!-- seq-9 b6-b7 (visitor-touchpoints): real projects in the same budget range, else of the same type -->
+      <section v-if="result?.du_an_goi_y?.ds.length" class="est-projects" aria-labelledby="est-proj-h">
+        <h2 id="est-proj-h" class="est-label">{{ result.du_an_goi_y.nhan }}</h2>
         <div class="projects-grid">
-          <router-link v-for="p in similar" :key="p.slug" class="project" :to="'/du-an/' + p.slug">
+          <router-link v-for="p in result.du_an_goi_y.ds" :key="p.slug" class="project"
+                       :to="p.co_trang ? '/du-an/' + p.slug : '/khong-gian/' + p.anh.id">
             <div class="project-img">
-              <img :src="p.cover" :width="p.images[0].w" :height="p.images[0].h" alt="" loading="lazy" decoding="async">
+              <img :src="imageUrl(p.anh.relative_path)" alt="" loading="lazy" decoding="async">
             </div>
-            <h3 class="project-name">{{ p.name }}</h3>
-            <p class="project-meta">{{ LOAI_NAME[p.loai] }}</p>
+            <h3 class="project-name">{{ p.ten }}</h3>
           </router-link>
         </div>
       </section>
@@ -113,18 +114,14 @@
 
 <script setup>
 /* Ước tính chi phí (UC10, seq-9, act-6): số học trên bảng đơn giá, không gọi AI, cùng đầu vào cho cùng kết quả. */
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { consent, estimate, sendEstimate, trackEvent } from '@/api'
-import { LOAI_NAME, PROJECTS_LIST } from '@/data/projects'
+import { consent, estimate, imageUrl, sendEstimate, trackEvent } from '@/api'
 import { formatRange } from '@/lib/money'
 
 const HOUSES = [{ v: 'can_ho', t: 'Căn hộ / Chung cư' }, { v: 'nha_pho', t: 'Nhà phố' }, { v: 'biet_thu', t: 'Biệt thự' },
                 { v: 'van_phong', t: 'Văn phòng' }, { v: 'thuong_mai', t: 'Thương mại / Showroom' }]
 const PACKAGES = [{ v: 'co_ban', t: 'Cơ bản' }, { v: 'tieu_chuan', t: 'Tiêu chuẩn' }, { v: 'cao_cap', t: 'Cao cấp' }]
-// building type -> project types on the site (projects carry no budget yet, so only the type is matched)
-const PROJECT_TYPES = { can_ho: ['chung-cu'], nha_pho: ['nha-pho'], biet_thu: ['villa'], van_phong: ['van-phong'],
-                        thuong_mai: ['showroom', 'lounge', 'fnb'] }
 
 const route = useRoute()
 const consented = consent.analytics()
@@ -143,8 +140,6 @@ const sending = ref(false)
 const sendErr = ref('')
 const sent = ref('')
 
-const similar = computed(() => asked.value
-  ? PROJECTS_LIST.filter(p => PROJECT_TYPES[asked.value.loai_nha].includes(p.loai)).slice(0, 3) : [])
 const label = (list, v) => list.find(o => o.v === v)?.t || v
 const describe = a => [label(HOUSES, a.loai_nha), a.dien_tich_m2 + ' m²', a.so_phong_ngu + ' phòng ngủ', label(PACKAGES, a.goi)].join(' · ')
 

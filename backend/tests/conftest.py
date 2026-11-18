@@ -17,6 +17,13 @@ def _fresh_rate_limits():
     ratelimit.reset()  # tests share one client IP
 
 
+@pytest.fixture(autouse=True)
+def _always_working_hours(monkeypatch):
+    """act-4 (visitor-touchpoints): a chat lead outside working hours is deferred; tests must not depend on the clock.
+    test_hours.py sets its own times."""
+    monkeypatch.setenv("D3_GIO_LAM_VIEC", "T2-CN 00:00-23:59")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _drop_test_conversations():
     """Every POST /chat now stores a conversation (chat-history). Tests that chat without cleaning up would leave them

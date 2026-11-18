@@ -92,6 +92,17 @@ def send_copy(c, user_id, chosen: list[dict], tom_tat: dict) -> tuple[int, str]:
     return cid, code
 
 
+def share_copy(c, chosen: list[dict]) -> str:
+    """BFD 2.3 (visitor-touchpoints): a read-only snapshot of a saved collection with a share code. No owner and no
+    summary: anyone with the link sees these photos and notes, and later changes to the collection don't reach it."""
+    code = secrets.token_urlsafe(12)
+    cid = c.execute("INSERT INTO bo_suu_tap (loai, ma_chia_se) VALUES ('chia_se', %s) RETURNING id", (code,)).fetchone()["id"]
+    for it in chosen:
+        c.execute("INSERT INTO bo_suu_tap_anh (bo_suu_tap_id, space_id, ghi_chu) VALUES (%s, %s, %s)",
+                  (cid, it["space_id"], _clean(it.get("ghi_chu"))))
+    return code
+
+
 def sent_items(c, coll_id: int) -> list[dict]:
     """Photos of a sent copy with their notes, as sent (a space unpublished later is left out)."""
     return c.execute(
@@ -102,7 +113,7 @@ def sent_items(c, coll_id: int) -> list[dict]:
 
 def shared(c, code: str) -> dict | None:
     """The read-only view of a sent brief: photos, notes, summary. No sender data."""
-    row = c.execute("SELECT id, tom_tat, created_at FROM bo_suu_tap WHERE loai = 'da_gui' AND ma_chia_se = %s",
+    row = c.execute("SELECT id, tom_tat, created_at FROM bo_suu_tap WHERE loai IN ('da_gui', 'chia_se') AND ma_chia_se = %s",
                     (code,)).fetchone()
     if not row:
         return None
