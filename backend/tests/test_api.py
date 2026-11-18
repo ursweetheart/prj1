@@ -43,7 +43,7 @@ def test_similar_same_type_excludes_self(as_role):
 
 def test_text_search_vietnamese(as_role):
     h = as_role("admin")
-    hits = client.get("/search", params={"q": "phòng ngủ ấm áp tông gỗ", "space_type": "phong_ngu_master"}, headers=h).json()
+    hits = client.get("/search", params={"q": "phòng ngủ ấm áp tông gỗ", "space_type": "phong_ngu_master"}, headers=h).json()["ket_qua"]
     assert hits and all(x["space_type"] == "phong_ngu_master" for x in hits)
     assert client.get("/search", params={"q": "x", "space_type": "bogus"}, headers=h).status_code == 422
 
@@ -82,7 +82,7 @@ from pathlib import Path
 
 import api
 
-HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id", "kich_thuoc", "chieu_rong"}  # + the optimised copies (publishing-workflow)
+HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id", "kich_thuoc", "chieu_rong", "ly_do"}  # + the optimised copies (publishing-workflow)
 
 
 def _first(where="TRUE"):
@@ -101,8 +101,9 @@ def test_photo_search_staff_gets_hits_and_nothing_is_stored(as_role):
     with psycopg.connect(DSN) as c:
         before = files(), c.execute("SELECT count(*) FROM space").fetchone()[0]
     r = _upload(Path("image_d3", path).read_bytes(), headers=h)
-    assert r.status_code == 200 and r.json() and all(set(x) == HIT_KEYS for x in r.json())
-    assert r.json()[0]["score"] >= 0.99  # the photo itself, or a stored duplicate tied with it
+    hits = r.json()["ket_qua"]  # search-explanations: {noi_that, dac_diem, ket_qua}
+    assert r.status_code == 200 and r.json()["noi_that"] is True and hits and all(set(x) == HIT_KEYS for x in hits)
+    assert hits[0]["score"] >= 0.99  # the photo itself, or a stored duplicate tied with it
     with psycopg.connect(DSN) as c:
         assert (files(), c.execute("SELECT count(*) FROM space").fetchone()[0]) == before
 
@@ -112,7 +113,7 @@ def test_photo_search_visitor_sees_only_published(drafts):
     with psycopg.connect(DSN) as c:
         c.execute("UPDATE space SET review_status='published' WHERE id=%s", (sid,))
         path = c.execute("SELECT relative_path FROM space WHERE id=%s", (sid,)).fetchone()[0]
-    hits = _upload(Path("image_d3", path).read_bytes()).json()
+    hits = _upload(Path("image_d3", path).read_bytes()).json()["ket_qua"]
     assert sid in [x["id"] for x in hits]
     with psycopg.connect(DSN) as c:
         status = c.execute("SELECT DISTINCT review_status FROM space WHERE id = ANY(%s)", ([x["id"] for x in hits],)).fetchall()

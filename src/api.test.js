@@ -145,3 +145,28 @@ describe('imageSrcset', () => {
     expect(imageSrcset({ relative_path: 'p/a.jpg' })).toBe('')
   })
 })
+
+// search-explanations 3.1: the API's object answer -> the list for callers, the rest in lastSearch
+describe('search answers', () => {
+  it('keeps returning the list and keeps the constraints and hint aside', async () => {
+    const { searchSpaces, lastSearch, toCard } = await load()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({
+      ket_qua: [{ id: 1, relative_path: 'p/a.jpg', space_type: 'phong_khach', design_style: 'Japandi', ly_do: ['Gỗ tự nhiên'] }],
+      rang_buoc: [{ chieu: 'khong_gian', ma: 'phong_khach', ten: 'Phòng khách' }], goi_y: null }) })))
+    const rows = await searchSpaces('phòng khách gỗ')
+    expect(rows.map(r => r.id)).toEqual([1])
+    expect(lastSearch.rang_buoc[0].ten).toBe('Phòng khách')
+    expect(toCard(rows[0]).why).toEqual(['Gỗ tự nhiên'])
+  })
+})
+
+// search-explanations 2.2: project filter query
+describe('projectFilterParams', () => {
+  it('repeats a dimension for several values and leaves defaults out', async () => {
+    const { projectFilterParams } = await load()
+    const pairs = projectFilterParams({ phong_cach: ['Japandi', 'Indochine'], loai_cong_trinh: ['can_ho'] }, [60, ''], 'xem_nhieu')
+    expect(new URLSearchParams(pairs).toString())
+      .toBe('phong_cach=Japandi&phong_cach=Indochine&loai_cong_trinh=can_ho&dien_tich_tu=60&sap_xep=xem_nhieu')
+    expect(projectFilterParams({}, [], 'moi_nhat')).toEqual([])
+  })
+})

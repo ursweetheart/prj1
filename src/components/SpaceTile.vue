@@ -9,6 +9,7 @@
       </div>
       <h3 class="project-name">{{ name }}</h3>
       <p class="project-meta">{{ meta }}</p>
+      <p v-if="space.why?.length" class="tile-why">{{ space.why.join(' · ') }}</p>
     </router-link>
     <SaveHeart :space-id="space.apiId" overlay />
   </div>
@@ -33,4 +34,5 @@ const meta = computed(() => [props.space.space, PC_LABEL[props.space.phongcach]]
 /* the wrapper takes the card's place in the masonry columns; the link keeps its hover / focus styles */
 .space-tile-wrap { position: relative; break-inside: avoid; margin: 0 0 clamp(28px, 3vw, 40px) }
 .space-tile-wrap > .project { margin: 0 }
+.tile-why { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--dim) } /* search-explanations */
 </style>

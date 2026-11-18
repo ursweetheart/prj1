@@ -1,5 +1,11 @@
 <template>
   <div class="facets">
+    <div class="field facet-sort"><!-- BFD 1.2: sort the results (search-explanations) -->
+      <label :for="sortId" class="meta">Sắp xếp</label>
+      <select :id="sortId" v-model="browseSort.key" class="sort-select">
+        <option v-for="s in SORTS" :key="s.id" :value="s.id">{{ s.label }}</option>
+      </select>
+    </div>
     <div v-for="f in shown" :key="f.id">
       <div class="facet-h">
         <span class="meta">{{ f.label }}</span>
@@ -26,6 +32,9 @@
 
 <script setup>
 import { computed, reactive } from 'vue'
+import { browseSort, SORTS } from '@/composables/useBrowse'
+
+const sortId = 'sort-' + Math.random().toString(36).slice(2, 8) // the panel is shown twice (desktop, drawer)
 
 const props = defineProps({
   facets: Array,
@@ -48,3 +57,10 @@ function hidden(f) {
   return Math.max(0, f.options.length - 6)
 }
 </script>
+
+<style scoped>
+.facet-sort { margin-bottom: 18px }
+.sort-select { font: inherit; padding: 8px 10px; min-height: 40px; width: 100%; background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius-md); color-scheme: dark }
+.sort-select:focus-visible { box-shadow: var(--focus-ring); outline: none; border-color: var(--accent) }
+</style>

@@ -10,7 +10,7 @@ from pipeline.store import DSN
 
 COLS = "relative_path, space_type, design_style, 1 - (embedding <=> %(v)s) AS score, id"
 WHERE = ("WHERE (%(t)s::text IS NULL OR space_type = %(t)s) AND (%(x)s::text IS NULL OR relative_path <> %(x)s) "
-         "AND (NOT %(p)s OR review_status = 'published')")
+         "AND (%(s)s::text IS NULL OR design_style = %(s)s) AND (NOT %(p)s OR review_status = 'published')")
 
 
 MAX_K = 24
@@ -30,7 +30,7 @@ def _query(conn, vec, space_type, k, exclude=None, published_only=False):
     k = max(1, min(k, MAX_K))
     return conn.execute(
         f"SELECT {COLS} FROM space {WHERE} ORDER BY embedding <=> %(v)s LIMIT %(k)s",
-        {"v": vec, "t": space_type, "k": k, "x": exclude, "p": published_only},
+        {"v": vec, "t": space_type, "k": k, "x": exclude, "p": published_only, "s": None},
     ).fetchall()
 
 
@@ -42,14 +42,17 @@ def similar_to(relative_path: str, k: int = 6, published_only: bool = False):
         return _query(conn, row[0], row[1], k, exclude=relative_path, published_only=published_only) if row else []
 
 
-def by_text(text: str, space_type: str | None = None, k: int = 6, published_only: bool = False):
-    """Rows like _query's, at most PER_PROJECT per project so one project's shots don't fill the page."""
+def by_text(text: str, space_type: str | None = None, k: int = 6, published_only: bool = False,
+            design_style: str | None = None):
+    """Rows like _query's, at most PER_PROJECT per project so one project's shots don't fill the page.
+    space_type / design_style: hard filters (seq-11 b7, taken from the description by pipeline/explain.py)."""
     k = max(1, min(k, MAX_K))
     vec = np.asarray(_embedder().embed_text(text), dtype=np.float32)
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         rows = conn.execute(f"SELECT {COLS}, subfolder FROM space {WHERE} ORDER BY embedding <=> %(v)s LIMIT %(n)s",
-                            {"v": vec, "t": space_type, "x": None, "p": published_only, "n": 4 * MAX_K}).fetchall()
+                            {"v": vec, "t": space_type, "x": None, "p": published_only, "n": 4 * MAX_K,
+                             "s": design_style}).fetchall()
     kept, per = [], Counter()
     for r in rows:  # best first
         if per[r[5]] < PER_PROJECT:
@@ -60,15 +63,21 @@ def by_text(text: str, space_type: str | None = None, k: int = 6, published_only
     return kept
 
 
-def by_image(fp, space_type: str | None = None, k: int = 6, published_only: bool = False):
-    """fp: path or file object; the photo is only embedded, never stored. Rows like _query's, minus
-    weak matches, near-duplicates of a better hit, and a project's shots beyond PER_PROJECT."""
+def embed_photo(fp):
+    """fp: path or file object; decode errors (OSError) propagate. The photo is only embedded, never stored."""
+    return np.asarray(_embedder().embed_image(fp), dtype=np.float32)
+
+
+def by_image(fp, space_type: str | None = None, k: int = 6, published_only: bool = False, vec=None):
+    """Rows like _query's, minus weak matches, near-duplicates of a better hit, and a project's shots beyond
+    PER_PROJECT. vec: the photo's embedding when the caller already has it (search-explanations)."""
     k = max(1, min(k, MAX_K))
-    vec = np.asarray(_embedder().embed_image(fp), dtype=np.float32)  # decode errors (OSError) propagate
+    vec = embed_photo(fp) if vec is None else vec
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         rows = conn.execute(f"SELECT {COLS}, subfolder, embedding FROM space {WHERE} ORDER BY embedding <=> %(v)s LIMIT %(n)s",
-                            {"v": vec, "t": space_type, "x": None, "p": published_only, "n": 4 * MAX_K}).fetchall()
+                            {"v": vec, "t": space_type, "x": None, "p": published_only, "n": 4 * MAX_K,
+                             "s": None}).fetchall()
     kept, embs, per = [], [], Counter()
     for r in rows:  # best first
         if r[3] < MIN_IMAGE_SCORE or len(kept) == k:

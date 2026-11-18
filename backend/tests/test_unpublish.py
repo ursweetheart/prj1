@@ -142,7 +142,7 @@ def test_taken_down_photo_leaves_every_public_place(photos, as_role):
         after = places()
         assert not any(after.values()), after
         assert client.get(f"/spaces/{sid}").status_code == 404
-        text = client.get("/search", params={"q": caption or "phòng khách", "k": 24}).json()
+        text = client.get("/search", params={"q": caption or "phòng khách", "k": 24}).json()["ket_qua"]
         assert sid not in {r["id"] for r in text}
         with psycopg.connect(DSN) as c:  # published again: it is back where it was saved or sent
             c.execute("UPDATE space SET review_status = 'published' WHERE id = %s", (sid,))

@@ -56,7 +56,7 @@ def test_anonymous_and_visitor_see_only_published(as_role):
             listed = client.get("/spaces", params={"limit": 200}, headers=h).json()
             assert all(r["review_status"] == "published" for r in listed)
             assert client.get("/spaces", params={"review_status": "draft"}, headers=h).json() == []
-            hits = client.get("/search", params={"q": "phòng khách", "k": 24}, headers=h).json()
+            hits = client.get("/search", params={"q": "phòng khách", "k": 24}, headers=h).json()["ket_qua"]
             assert sid not in [x["id"] for x in hits]
         assert client.get(f"/spaces/{sid}", headers=as_role("architect")).status_code == 200
         for _ in range(5):  # draft -> editing -> in_review -> approved -> cleared -> published

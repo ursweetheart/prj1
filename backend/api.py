@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 import psycopg
+from pgvector.psycopg import register_vector
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,11 +29,11 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (behaviour, home_suggestions, image_sizes, intake, space_knowledge, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, explain, home_suggestions, project_filter, image_sizes, intake, space_knowledge, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
-from pipeline.search import by_image, by_text, similar_to
+from pipeline.search import MIN_IMAGE_SCORE, by_image, by_text, embed_photo, similar_to
 from pipeline.store import DSN, save_records
 from ratelimit import check as rate_check, limit
 
@@ -181,10 +182,12 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
     if not staff:
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
-        return c.execute(
-            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
+        return c.execute(  # hang_xem: rank by views in the last 30 processed days, for sorting (search-explanations)
+            "WITH hx AS (SELECT k.space_id, rank() OVER (ORDER BY sum(k.so_xem) DESC) AS hang_xem FROM tk_khong_gian_ngay k "
+            "            WHERE k.ngay > (SELECT max(ngay) FROM tk_ngay) - 30 GROUP BY k.space_id HAVING sum(k.so_xem) > 0) "
+            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}, hx.hang_xem"
             + (", ly_do_duyet, " + AI_FIELDS + ", " + PENDING_VALUE if staff else "") + " "  # staff-only: review reason, AI proposal, suggestions
-            "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
+            "FROM space LEFT JOIN hx ON hx.space_id = space.id WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
@@ -209,7 +212,10 @@ def similar(space_id: int, k: int = 6, user=Depends(optional_user)):
     staff = _is_staff(user)
     if not row or (row["review_status"] != "published" and not staff):
         raise HTTPException(404, "space not found")
-    return _hits(similar_to(row["relative_path"], min(k, 24), published_only=not staff))
+    hits = _hits(similar_to(row["relative_path"], min(k, 24), published_only=not staff))
+    with _db() as c:  # seq-2 b9-b10: why each one is similar, from the labels it shares with this photo
+        why = explain.shared_reasons(c, space_id, [h["id"] for h in hits])
+    return [{**h, "ly_do": why.get(h["id"], [])} for h in hits]
 
 
 @app.get("/projects/{folder}/spaces")
@@ -254,6 +260,18 @@ def list_projects(user=Depends(optional_user)):
     return rows
 
 
+@app.get("/projects/filter", dependencies=[Depends(limit("projects", 120, 60))])
+def projects_filter(phong_cach: list[str] = Query(default=[]), loai_cong_trinh: list[str] = Query(default=[]),
+                    muc_dau_tu: list[str] = Query(default=[]), dien_tich_tu: Optional[float] = Query(default=None, ge=0),
+                    dien_tich_den: Optional[float] = Query(default=None, ge=0),
+                    sap_xep: Literal["moi_nhat", "dien_tich", "xem_nhieu"] = "moi_nhat", limit: int = Query(default=60, ge=1, le=60)):
+    """seq-10, BFD 1.1-1.2: published projects matching every filter, counts per value, a loosening suggestion when
+    nothing matches, sorted. Public."""
+    with _db() as c:
+        return project_filter.filter_projects(c, {"phong_cach": phong_cach, "loai_cong_trinh": loai_cong_trinh,
+                                                   "muc_dau_tu": muc_dau_tu}, (dien_tich_tu, dien_tich_den), sap_xep, limit)
+
+
 @app.get("/projects/{slug}", dependencies=[Depends(limit("projects", 120, 60))])
 def get_project(slug: str = PathParam(pattern=SLUG), user=Depends(optional_user)):
     staff = _is_staff(user)
@@ -295,27 +313,60 @@ def save_project(body: ProjectDetailsIn, slug: str = PathParam(pattern=SLUG), us
         return c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
 
 
+WEAK_TEXT_SCORE = 0.10  # calibrated on 11 queries (search-explanations/tasks.md): vague / unrelated ones scored 0.03-0.09
+INTERIOR_MIN = 0.5      # zero-shot interior share: library photos >= 0.92, logo / text / grey / noise <= 0.012
+NOT_INTERIOR = "Ảnh này có vẻ không phải ảnh nội thất. Bạn thử một ảnh chụp căn phòng khác nhé."
+WEAK_HINT = "Ít kết quả thật sát. Bạn thử mô tả cụ thể hơn: loại phòng, phong cách, vật liệu hoặc màu sắc."
+
+
 @app.get("/search")
 def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(optional_user)):
+    """seq-11: room type / style named in the description become hard filters (an explicit space_type wins), the rest
+    is compared by meaning; each result says which of its labels the description named; weak matches get a hint."""
     _check_value("khong_gian", "space_type", space_type)
-    return _hits(by_text(q, space_type, min(k, 24), published_only=not _is_staff(user)))
+    found, rest = explain.parse_query(q)
+    cons = [c for c in found if not (space_type and c["chieu"] == "khong_gian")]
+    room = space_type or next((c["ma"] for c in cons if c["chieu"] == "khong_gian"), None)
+    style = next((c["ma"] for c in cons if c["chieu"] == "phong_cach"), None)
+    rows = by_text(rest or q, room, min(k, 24), published_only=not _is_staff(user), design_style=style)
+    hits = _hits(rows)
+    with _db() as c:
+        why = explain.text_reasons(c, q, cons, [h["id"] for h in hits])
+    weak = not rows or (not cons and rows[0][3] < WEAK_TEXT_SCORE)
+    return {"ket_qua": [{**h, "ly_do": why.get(h["id"], [])} for h in hits], "rang_buoc": cons,
+            "goi_y": WEAK_HINT if weak else None}
 
 
 @app.post("/search/image", dependencies=[Depends(limit("search_image", 10, 60))])
 def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(None), k: int = 6,
                  user=Depends(optional_user)):
-    """Spaces that look like the uploaded photo; the photo is embedded in memory and never stored."""
+    """seq-8: the photo is embedded in memory and never stored. Not an interior -> a polite refusal and no results;
+    otherwise its likely style and tone (from the closest library photos) and the results with reasons."""
     if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
         raise HTTPException(415, "Chỉ nhận ảnh JPG, PNG hoặc WEBP.")
     _check_value("khong_gian", "space_type", space_type)
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Ảnh quá lớn, tối đa 8 MB.")
+    staff = _is_staff(user)
     try:
-        hits = by_image(io.BytesIO(data), space_type, k, published_only=not _is_staff(user))
+        vec = embed_photo(io.BytesIO(data))
     except (OSError, Image.DecompressionBombError):  # not an image, truncated, or a decompression bomb
         raise HTTPException(415, "Không đọc được ảnh này, hãy thử một ảnh JPG, PNG hoặc WEBP khác.")
-    return _hits(hits)
+    with _db() as c:
+        register_vector(c)
+        best = c.execute("SELECT 1 - (embedding <=> %s) AS s FROM space WHERE embedding IS NOT NULL "
+                         "ORDER BY embedding <=> %s LIMIT 1", (vec, vec)).fetchone()
+        if explain.interior_score(vec) < INTERIOR_MIN or not best or best["s"] < MIN_IMAGE_SCORE:
+            return {"noi_that": False, "thong_bao": NOT_INTERIOR, "dac_diem": {}, "ket_qua": []}
+        traits = explain.traits(c, vec, published_only=not staff)
+    hits = _hits(by_image(None, space_type, k, published_only=not staff, vec=vec))
+    with _db() as c:  # a result's labels that match the photo's traits
+        labs = explain.labels(c, [h["id"] for h in hits])
+    want = {(d, t["ma"]) for d, t in traits.items()}
+    for h in hits:
+        h["ly_do"] = ["Cùng " + explain.phrase(d, dn, vn) for d, dn, v, vn in labs.get(h["id"], []) if (d, v) in want]
+    return {"noi_that": True, "dac_diem": traits, "ket_qua": hits}
 
 
 def project_folder(name: str) -> str:

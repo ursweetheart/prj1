@@ -144,6 +144,8 @@ export const toCard = r => ({
   space: spaceLabel(r.space_type),
   img: imageUrl(r.relative_path),
   srcset: imageSrcset(r),
+  why: r.ly_do || [], // search-explanations: why this result fits (shared or named labels)
+  published: r.ngay_xuat_ban || null, viewRank: r.hang_xem ?? null, styleName: PC[r.design_style] || String(r.design_style || '').toLowerCase(), // BFD 1.2 sorts
   ratio: 'sq',
   khonggian: KG[r.space_type],
   phongcach: PC[r.design_style],
@@ -156,6 +158,16 @@ export const toFacet = d => ({
   id: d.ma_dinh_danh, label: d.ten,
   options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
 })
+/* seq-10 / BFD 1.1-1.2 (search-explanations): project filter. sel {dimension: [codes]}, area [from, to] (m2, either empty) */
+export function projectFilterParams(sel = {}, area = [], sort = 'moi_nhat') {
+  const pairs = []
+  for (const dim of ['phong_cach', 'loai_cong_trinh', 'muc_dau_tu']) for (const v of sel[dim] || []) pairs.push([dim, v])
+  if (area[0] !== undefined && area[0] !== null && area[0] !== '') pairs.push(['dien_tich_tu', String(area[0])])
+  if (area[1] !== undefined && area[1] !== null && area[1] !== '') pairs.push(['dien_tich_den', String(area[1])])
+  if (sort && sort !== 'moi_nhat') pairs.push(['sap_xep', sort])
+  return pairs
+}
+export const filterProjects = (sel, area, sort) => get('/projects/filter', projectFilterParams(sel, area, sort))
 export const getTaxonomy = () => get('/taxonomy')
 // taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
 export const getTaxonomyAdmin = () => get('/taxonomy/admin')
@@ -194,16 +206,25 @@ export const acceptValueCandidate = (id, body) => request('POST', `/taxonomy/val
 export const mapValueCandidate = (id, gia_tri_id) => request('POST', `/taxonomy/value-candidates/${id}/map`, { body: { gia_tri_id } })
 export const rejectValueCandidate = id => request('POST', `/taxonomy/value-candidates/${id}/reject`)
 
-/* dfd-2-1 1.3: a search is recorded by kind and number of results, never its words or photo */
+/* search-explanations: the API answers {ket_qua, ...}; callers keep getting the list, and the rest (constraints taken
+   from a description, a rewording hint, an uploaded photo's traits or refusal) goes to lastSearch for SearchNote.vue.
+   dfd-2-1 1.3: a search is recorded by kind and number of results, never its words or photo. */
+export const lastSearch = reactive({ kind: null, rang_buoc: [], goi_y: null, noi_that: null, thong_bao: null, dac_diem: {} })
+export const clearSearch = () => Object.assign(lastSearch, { kind: null, rang_buoc: [], goi_y: null, noi_that: null, thong_bao: null, dac_diem: {} })
 export async function searchSpaces(q, k = 12) {
-  const rows = await get('/search', { q, k })
+  const r = await get('/search', { q, k })
+  const rows = Array.isArray(r) ? r : r.ket_qua
+  Object.assign(lastSearch, { kind: 'mo_ta', rang_buoc: r.rang_buoc || [], goi_y: r.goi_y || null, noi_that: null, thong_bao: null, dac_diem: {} })
   if (String(q || '').trim()) trackEvent('tim_kiem', { doi_tuong: 'mo_ta', so_ket_qua: rows.length })
   return rows
 }
 export async function searchByImage(file, k = 12) {
   const form = new FormData()
   form.append('file', file)
-  const rows = await request('POST', '/search/image', { params: { k }, form })
+  const r = await request('POST', '/search/image', { params: { k }, form })
+  const rows = Array.isArray(r) ? r : r.ket_qua
+  Object.assign(lastSearch, { kind: 'anh', rang_buoc: [], goi_y: null, noi_that: r.noi_that ?? true,
+    thong_bao: r.thong_bao || null, dac_diem: r.dac_diem || {} })
   trackEvent('tim_kiem', { doi_tuong: 'anh', so_ket_qua: rows.length })
   return rows
 }
