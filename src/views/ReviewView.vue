@@ -80,10 +80,11 @@
         <li v-for="r in g.rows" :key="r.id" class="form-ok" style="gap:16px;flex-wrap:wrap;align-items:flex-start">
           <input v-if="canSelect" type="checkbox" :checked="selected.has(r.id)" @change="toggle(r.id)" :aria-label="'Chọn ' + r.relative_path">
           <button type="button" class="thumb" :aria-label="'Sửa điểm nóng của ' + r.relative_path" :disabled="!isStaff" @click="openHotspots(r)">
-            <img :src="imageUrl(r.relative_path)" :alt="r.alt_text" loading="lazy">
+            <img :srcset="imageSrcset(r) || null" sizes="200px" :src="imageUrl(r.relative_path)" :alt="r.alt_text" loading="lazy">
           </button>
           <div class="stack" style="flex:1;min-width:260px;gap:10px">
-            <p class="small">{{ r.relative_path }}</p>
+            <p class="small">{{ r.relative_path }}<template v-if="r.ngay_xuat_ban"> · Đăng ngày {{ dateVi(r.ngay_xuat_ban) }}</template></p>
+            <p v-if="missing[r.id]" class="small rv-warn" role="alert">Thiếu: {{ missing[r.id].join(', ') }} (bắt buộc trước khi chuyển đi)</p>
             <p v-if="r.ly_do_duyet" class="rv-reason" :class="'is-' + r.ly_do_duyet.loai">
               <strong>{{ REASON_VI[r.ly_do_duyet.loai] }}</strong>
               <span class="rv-by">· {{ r.ly_do_duyet.boi }} · {{ when(r.ly_do_duyet.luc) }}</span><br>
@@ -185,7 +186,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  APPROVERS, NEXT_STATUS, RETURNABLE, STAFF, STATUS_VI, advanceSpaces, getSpace, getTaxonomy, hasRole,
+  APPROVERS, NEXT_STATUS, RETURNABLE, imageSrcset, STAFF, STATUS_VI, advanceSpaces, getSpace, getTaxonomy, hasRole,
   imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, suggestValue, toFacet, unpublishSpaces,
   uploadAll
 } from '@/api'
@@ -237,8 +238,9 @@ const useOffer = (r, t) => { r[t.col] = offer[r.id + t.dim].ma; delete offer[r.i
 
 const isStaff = computed(() => hasRole(STAFF))
 // architects send drafts to review; only the lead architect approves, clears and publishes
-const canAdvance = computed(() => status.value in NEXT_STATUS && (status.value === 'draft' ? isStaff.value : hasRole(APPROVERS)))
-const canEditText = computed(() => isStaff.value || (hasRole(['content']) && status.value === 'in_review'))
+const canAdvance = computed(() => status.value in NEXT_STATUS && (status.value === 'draft' ? isStaff.value
+  : status.value === 'editing' ? hasRole(['content', ...APPROVERS]) : hasRole(APPROVERS)))
+const canEditText = computed(() => isStaff.value || (hasRole(['content']) && ['editing', 'in_review'].includes(status.value)))
 
 const groups = computed(() => {
   const by = {}
@@ -267,10 +269,15 @@ async function load() {
   }
 }
 
+const missing = reactive({}) // space id -> required dimensions it lacks (act-1 "Đủ các features bắt buộc?")
 async function run(fn) {
   error.value = ''
-  try { await fn() } catch (e) { error.value = e.message }
+  try { await fn() } catch (e) {
+    error.value = e.message
+    if (e.detail?.thieu) missing[e.detail.space_id] = e.detail.thieu // shown on that photo's card too
+  }
 }
+const dateVi = iso => new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
 /* ── upload ─────────────────────────────────────────────────────────── */
 const project = ref('')
@@ -334,6 +341,7 @@ const selectAll = on => { selected.clear(); if (on) rows.value.forEach(r => sele
 const selectProject = (g, on) => g.rows.forEach(r => (on ? selected.add(r.id) : selected.delete(r.id)))
 
 const advanceOne = r => run(async () => {
+  delete missing[r.id]
   await reviewSpace(r.id, { advance: true })
   rows.value = rows.value.filter(x => x.id !== r.id)
 })

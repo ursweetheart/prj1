@@ -28,15 +28,16 @@ def test_edit_text_and_materials_retags_and_logs(as_role, drafts):
     assert action == "edit" and detail["to"]["materials"] == ["gỗ óc chó"] and "caption" in detail["from"]
 
 
-def test_content_role_edits_text_only_in_review(as_role, drafts):
+def test_content_role_edits_text_and_sends_editing_to_review(as_role, drafts):
     lead, content = as_role("lead_architect"), as_role("content")
     [sid] = drafts(1)
     assert client.patch(f"/spaces/{sid}", headers=content, json={"caption": "x"}).status_code == 403  # still a draft
-    client.patch(f"/spaces/{sid}", headers=lead, json={"advance": True})
+    client.patch(f"/spaces/{sid}", headers=lead, json={"advance": True})  # -> "Chờ biên tập" (publishing-workflow)
     assert client.patch(f"/spaces/{sid}", headers=content, json={"caption": "Biên tập"}).json()["caption"] == "Biên tập"
     assert client.patch(f"/spaces/{sid}", headers=content, json={"design_style": "Japandi"}).status_code == 403
-    assert client.patch(f"/spaces/{sid}", headers=content, json={"advance": True}).status_code == 403
-    assert _space(sid, lead)["review_status"] == "in_review"
+    assert client.patch(f"/spaces/{sid}", headers=content, json={"advance": True}).json()["review_status"] == "in_review"
+    assert client.patch(f"/spaces/{sid}", headers=content, json={"caption": "Sửa thêm"}).status_code == 200  # still in review
+    assert client.patch(f"/spaces/{sid}", headers=content, json={"advance": True}).status_code == 403  # only approvers approve
 
 
 # ── 3. cleared + bulk advance ────────────────────────────────────────────────
@@ -44,7 +45,7 @@ def test_content_role_edits_text_only_in_review(as_role, drafts):
 def test_full_order_through_cleared(as_role, drafts):
     lead, arch = as_role("lead_architect"), as_role("architect")
     [sid] = drafts(1)
-    for want in ("in_review", "approved"):
+    for want in ("editing", "in_review", "approved"):
         assert client.patch(f"/spaces/{sid}", headers=lead, json={"advance": True}).json()["review_status"] == want
     assert client.patch(f"/spaces/{sid}", headers=arch, json={"advance": True, "rights_confirmed": True}).status_code == 403
     assert client.patch(f"/spaces/{sid}", headers=lead, json={"advance": True}).status_code == 422  # no rights confirmation
@@ -58,12 +59,12 @@ def test_bulk_advance_all_or_nothing(as_role, drafts):
     lead = as_role("lead_architect")
     a, b, c = drafts(3)
     r = client.post("/spaces/advance", headers=lead, json={"space_ids": [a, b, c]})
-    assert r.status_code == 200 and r.json() == {"advanced": sorted([a, b, c]), "status": ["in_review"]}
+    assert r.status_code == 200 and r.json() == {"advanced": sorted([a, b, c]), "status": ["editing"]}
     with psycopg.connect(DSN) as conn:
         conn.execute("UPDATE space SET review_status='published' WHERE id=%s", (c,))
     r = client.post("/spaces/advance", headers=lead, json={"space_ids": [a, b, c]})
     assert r.status_code == 409 and str(c) in r.json()["detail"]
-    assert [_space(x, lead)["review_status"] for x in (a, b)] == ["in_review", "in_review"]  # rolled back
+    assert [_space(x, lead)["review_status"] for x in (a, b)] == ["editing", "editing"]  # rolled back
 
 
 # ── 4. human tags ────────────────────────────────────────────────────────────

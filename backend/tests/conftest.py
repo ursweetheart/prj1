@@ -68,7 +68,12 @@ def drafts():
     fixes = []  # labelling-queue-feedback: corrections of the taken photos, put back as they were
     yield take
     with psycopg.connect(DSN) as c:
-        c.execute("DELETE FROM nhan_bi_sua WHERE space_id = ANY(%s)", ([r[0] for r in taken],))
+        ids = [r[0] for r in taken]
+        c.execute("DELETE FROM nhan_bi_sua WHERE space_id = ANY(%s)", (ids,))
+        # publishing-workflow: a test that published a draft leaves a publish date, knowledge row and queued task
+        c.execute("UPDATE space SET ngay_xuat_ban = NULL WHERE id = ANY(%s)", (ids,))  # every taken photo was a draft
+        c.execute("DELETE FROM space_text WHERE space_id = ANY(%s)", (ids,))
+        c.execute("DELETE FROM hang_doi_tac_vu WHERE loai = 'nap_tri_thuc' AND (du_lieu->>'space_id')::int = ANY(%s)", (ids,))
         for f in fixes:
             c.execute("INSERT INTO nhan_bi_sua VALUES (%s,%s,%s,%s,%s,%s,%s)", f)
         for sid, *vals in taken:

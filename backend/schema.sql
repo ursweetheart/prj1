@@ -596,3 +596,14 @@ CREATE TABLE IF NOT EXISTS goi_y_trang_chu_nhat_ky (
 CREATE TABLE IF NOT EXISTS yeu_cau_xoa_du_lieu (
   id serial PRIMARY KEY, luc timestamptz NOT NULL DEFAULT now(), so_phien int NOT NULL, so_su_kien int NOT NULL
 );
+
+-- ── publishing-workflow (seq-6, act-1, class-6 Anh / DuAn / VectorMoTa) ─────────────────────────────────────────────
+-- review_status also takes 'editing' ("Chờ biên tập", seq-6 b2): draft -> editing -> in_review -> approved -> cleared -> published
+ALTER TABLE space ADD COLUMN IF NOT EXISTS ngay_xuat_ban timestamptz;      -- seq-6 b17
+ALTER TABLE space ADD COLUMN IF NOT EXISTS kich_thuoc jsonb;               -- act-1: {"480": "_kt/480/<path>.webp", ...}
+ALTER TABLE space ADD COLUMN IF NOT EXISTS chieu_rong int;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS chieu_cao int;
+ALTER TABLE space_text ADD COLUMN IF NOT EXISTS mo_hinh text;              -- class-6 VectorMoTa.ten_mo_hinh
+UPDATE space s SET ngay_xuat_ban = (SELECT max(r.at) FROM review_log r WHERE r.space_id = s.id AND r.action = 'advance'
+                                     AND r.detail->>'to' = 'published')
+ WHERE s.review_status = 'published' AND s.ngay_xuat_ban IS NULL;

@@ -54,7 +54,7 @@ def test_review_flow_and_validation(as_role):
     orig = client.get(f"/spaces/{sid}", headers=h).json()["design_style"]
     try:
         r = client.patch(f"/spaces/{sid}", json={"advance": True, "design_style": "Japandi"}, headers=h).json()
-        assert r["review_status"] == "in_review" and r["design_style"] == "Japandi"
+        assert r["review_status"] == "editing" and r["design_style"] == "Japandi"
         assert client.patch(f"/spaces/{sid}", json={"design_style": "nope"}, headers=h).status_code == 422
     finally:  # leave the data as found
         with psycopg.connect(DSN) as c:
@@ -82,7 +82,7 @@ from pathlib import Path
 
 import api
 
-HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id"}
+HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id", "kich_thuoc", "chieu_rong"}  # + the optimised copies (publishing-workflow)
 
 
 def _first(where="TRUE"):

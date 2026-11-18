@@ -3,6 +3,7 @@
 import asyncio
 from collections import Counter
 import io
+import mimetypes
 import os
 import random
 import re
@@ -27,7 +28,7 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (behaviour, home_suggestions, intake, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, home_suggestions, image_sizes, intake, space_knowledge, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
@@ -40,7 +41,8 @@ UPLOAD_DIR = IMG_DIR / "uploads"
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD = 8 * 1024 * 1024  # photo search; nginx allows 50 MB, so this is the limit users hit
 AI_FIELDS = "space_type_ai, design_style_ai, space_type_confidence"  # seq-1 b17: the AI's proposal with its confidence
-FIELDS = "id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status"
+FIELDS = ("id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status, "
+          "ngay_xuat_ban, kich_thuoc, chieu_rong, chieu_cao")
 # taxonomy values of each space as {dimension: [value, ...]}; the portfolio filters on these
 TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
         "FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id JOIN chieu_phan_loai d ON d.id = v.chieu_id "
@@ -50,7 +52,9 @@ PENDING_VALUE = ("(SELECT COALESCE(jsonb_object_agg(u.bang_chung->>'chieu', u.te
                  "WHERE u.loai = 'gia_tri' AND u.trang_thai = 'cho_duyet' AND u.bang_chung->'space_ids' @> to_jsonb(space.id)) "
                  "AS cho_duyet_gia_tri")
 # QT-01 order; an architect confirms AI tags before anything is published
-NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
+# QT-01 / seq-6 (publishing-workflow): draft -> "Chờ biên tập" (content edits, SEO) -> "Chờ duyệt" -> ... -> published
+NEXT = {"draft": "editing", "editing": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
+ADVANCE_ROLES = {"draft": STAFF, "editing": {"content", *APPROVERS}}  # every later step: APPROVERS only
 
 
 def _check_value(dim: str, field: str, code: Optional[str]):
@@ -108,7 +112,8 @@ async def lifespan(_app):
     if os.getenv("D3_INTAKE_WORKER", "on").lower() in ("off", "0", "false", "no"):
         intake.log.info("upload queue worker: off (D3_INTAKE_WORKER)")
     elif "pytest" not in sys.modules:  # tests drive intake.process_next directly
-        worker = intake.Worker({"processor": _processor, "img_dir": IMG_DIR})
+        worker = intake.Worker({"processor": _processor, "img_dir": IMG_DIR,
+                                "after_photo": [image_sizes.after_photo]})  # act-1: optimised sizes (publishing-workflow)
         worker.start()
     yield
     if task:
@@ -124,6 +129,7 @@ if origins := [o.strip() for o in os.getenv("D3_CORS_ORIGINS", "").split(",") if
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(auth.router)
 IMG_DIR.mkdir(exist_ok=True)
+mimetypes.add_type("image/webp", ".webp")  # the optimised copies (publishing-workflow); slim images lack the entry
 app.mount("/images", StaticFiles(directory=IMG_DIR), name="images")
 
 
@@ -142,6 +148,18 @@ def _log(c, space_id, user, action, detail):
 
 def _hit(r):  # tuple from pipeline.search -> dict
     return {"relative_path": r[0], "space_type": r[1], "design_style": r[2], "score": round(float(r[3]), 4), "id": r[4]}
+
+
+def _hits(rows) -> list[dict]:
+    """Search / similar results with their optimised copies (publishing-workflow), in one lookup."""
+    out = [_hit(r) for r in rows]
+    if out:
+        with _db() as c:
+            sizes = {r["id"]: r for r in c.execute("SELECT id, kich_thuoc, chieu_rong FROM space WHERE id = ANY(%s)",
+                                                   ([h["id"] for h in out],)).fetchall()}
+        for h in out:
+            h.update({k: sizes.get(h["id"], {}).get(k) for k in ("kich_thuoc", "chieu_rong")})
+    return out
 
 
 @lru_cache(maxsize=1)
@@ -191,7 +209,7 @@ def similar(space_id: int, k: int = 6, user=Depends(optional_user)):
     staff = _is_staff(user)
     if not row or (row["review_status"] != "published" and not staff):
         raise HTTPException(404, "space not found")
-    return [_hit(r) for r in similar_to(row["relative_path"], min(k, 24), published_only=not staff)]
+    return _hits(similar_to(row["relative_path"], min(k, 24), published_only=not staff))
 
 
 @app.get("/projects/{folder}/spaces")
@@ -280,7 +298,7 @@ def save_project(body: ProjectDetailsIn, slug: str = PathParam(pattern=SLUG), us
 @app.get("/search")
 def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(optional_user)):
     _check_value("khong_gian", "space_type", space_type)
-    return [_hit(r) for r in by_text(q, space_type, min(k, 24), published_only=not _is_staff(user))]
+    return _hits(by_text(q, space_type, min(k, 24), published_only=not _is_staff(user)))
 
 
 @app.post("/search/image", dependencies=[Depends(limit("search_image", 10, 60))])
@@ -297,7 +315,7 @@ def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(
         hits = by_image(io.BytesIO(data), space_type, k, published_only=not _is_staff(user))
     except (OSError, Image.DecompressionBombError):  # not an image, truncated, or a decompression bomb
         raise HTTPException(415, "Không đọc được ảnh này, hãy thử một ảnh JPG, PNG hoặc WEBP khác.")
-    return [_hit(r) for r in hits]
+    return _hits(hits)
 
 
 def project_folder(name: str) -> str:
@@ -362,22 +380,44 @@ EDITABLE = ("space_type", "design_style", "caption", "alt_text", "materials")
 TEXT = {"caption", "alt_text"}  # all the content role may touch
 
 
+def _missing_required(c, space_id: int) -> list[str]:
+    """act-1 "Đủ các features bắt buộc?": names of required dimensions the photo has no value in."""
+    return [r["ten"] for r in c.execute(
+        "SELECT d.ten FROM chieu_phan_loai d JOIN space s ON s.id = %(s)s WHERE d.bat_buoc AND CASE d.ma_dinh_danh "
+        "  WHEN 'khong_gian' THEN COALESCE(s.space_type, '') = '' WHEN 'phong_cach' THEN COALESCE(s.design_style, '') = '' "
+        "  ELSE NOT EXISTS (SELECT 1 FROM space_gia_tri sg JOIN gia_tri_phan_loai g ON g.id = sg.gia_tri_id "
+        "                   WHERE sg.space_id = s.id AND g.chieu_id = d.id) END ORDER BY d.thu_tu, d.id", {"s": space_id}).fetchall()]
+
+
 def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str:
     """One QT-01 step with its role and rights rules. Raising inside `with _db()` rolls the transaction back."""
     if status not in NEXT:
         raise HTTPException(409, f"space {space_id}: '{status}' is the final state")
-    if status != "draft" and user["role"] not in APPROVERS:  # only the lead architect approves, clears, publishes
-        raise HTTPException(403, f"space {space_id}: approving, clearing and publishing require lead_architect")
+    if user["role"] not in ADVANCE_ROLES.get(status, APPROVERS):
+        raise HTTPException(403, f"space {space_id}: «{STATUS_VI.get(status, status)}» cannot be moved on by {user['role']}")
+    if status == "draft" and (missing := _missing_required(c, space_id)):
+        raise HTTPException(422, {"space_id": space_id, "thieu": missing, "msg": "Thiếu: " + ", ".join(missing)})
     new = NEXT[status]
     if new == "cleared" and not rights_confirmed:
         raise HTTPException(422, f"space {space_id}: confirm the client allowed publishing these photos (rights_confirmed)")
-    c.execute("UPDATE space SET review_status=%s, ly_do_duyet=NULL WHERE id=%s", (new, space_id))  # moved on: reason done
+    c.execute("UPDATE space SET review_status=%s, ly_do_duyet=NULL" + (", ngay_xuat_ban = now()" if new == "published" else "")
+              + " WHERE id=%s", (new, space_id))  # moved on: reason done; seq-6 b17: the publish date
     _log(c, space_id, user, "advance", {"from": status, "to": new, **({"rights_confirmed": True} if new == "cleared" else {})})
+    if new == "published":  # seq-6 b18: the photo joins the assistant's knowledge (queued, no Gemini call)
+        intake.enqueue(c, "nap_tri_thuc", {"space_id": space_id}, user["id"])
     return new
 
 
+def _handover(tasks: BackgroundTasks, moved: dict, rows_by_id: dict, user):
+    """seq-6 b4 / b7: tell the content staff (-> editing) and the lead architects (-> in review), once per action."""
+    for kind, status in (("bien_tap", "editing"), ("duyet", "in_review")):
+        items = [(sid, rows_by_id[sid]) for sid, st in moved.items() if st == status]
+        if items:
+            tasks.add_task(notify.notify_handover, kind, items, user["email"])
+
+
 @app.patch("/spaces/{space_id}")
-def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))):
+def review(space_id: int, body: Review, tasks: BackgroundTasks, user=Depends(require(*STAFF, "content"))):
     _check_value("khong_gian", "space_type", body.space_type)
     _check_value("phong_cach", "design_style", body.design_style)
     sent = {k: v for k, v in body.model_dump(include=set(EDITABLE)).items() if v is not None}
@@ -388,9 +428,11 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
                         "FROM space WHERE id=%s FOR UPDATE", (space_id,)).fetchone()
         if not row:
             raise HTTPException(404, "space not found")
-        if user["role"] == "content" and (body.advance or body.hotspots is not None or set(sent) - TEXT
-                                          or row["review_status"] != "in_review"):
-            raise HTTPException(403, "content editors may only edit the caption and alt text of spaces in review")
+        if user["role"] == "content" and (body.hotspots is not None or set(sent) - TEXT
+                                          or row["review_status"] not in ("editing", "in_review")
+                                          or (body.advance and row["review_status"] != "editing")):
+            raise HTTPException(403, "content editors may only edit the caption and alt text of spaces being edited or in "
+                                     "review, and send edited ones to review")
         if changes := {k: v for k, v in sent.items() if v != row[k]}:
             c.execute(f"UPDATE space SET {', '.join(k + '=%s' for k in changes)} WHERE id=%s", (*changes.values(), space_id))
             _log(c, space_id, user, "edit", {"from": {k: row[k] for k in changes}, "to": changes})
@@ -404,7 +446,9 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
             c.execute("UPDATE space SET hotspots = jsonb_set(hotspots, '{objects}', %s) WHERE id=%s", (Jsonb(kept), space_id))
             _log(c, space_id, user, "hotspots", {"kept": [h.index for h in body.hotspots], "of": len(objs)})
         if body.advance:
-            _advance(c, space_id, row["review_status"], user, body.rights_confirmed)
+            new = _advance(c, space_id, row["review_status"], user, body.rights_confirmed)
+            path = c.execute("SELECT relative_path FROM space WHERE id=%s", (space_id,)).fetchone()["relative_path"]
+            _handover(tasks, {space_id: new}, {space_id: path}, user)
         return c.execute(f"SELECT {FIELDS} FROM space WHERE id=%s", (space_id,)).fetchone()
 
 
@@ -472,19 +516,20 @@ class AdvanceMany(BaseModel):
 
 
 @app.post("/spaces/advance")
-def advance_many(body: AdvanceMany, user=Depends(require(*STAFF))):
+def advance_many(body: AdvanceMany, tasks: BackgroundTasks, user=Depends(require(*STAFF, "content"))):
     """All or nothing: one space that cannot move rolls the whole selection back, and the error names it."""
     with _db() as c:
-        rows = c.execute("SELECT id, review_status FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+        rows = c.execute("SELECT id, review_status, relative_path FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
                          (body.space_ids,)).fetchall()
         if missing := set(body.space_ids) - {r["id"] for r in rows}:
             raise HTTPException(404, f"space {min(missing)} not found")
         moved = {r["id"]: _advance(c, r["id"], r["review_status"], user, body.rights_confirmed) for r in rows}
+    _handover(tasks, moved, {r["id"]: r["relative_path"] for r in rows}, user)
     return {"advanced": sorted(moved), "status": sorted(set(moved.values()))}
 
 
 # ── Backward paths (change: review-return-reject; act-1, seq-6 b9-12) ─────────────────────────────────────
-RETURNABLE = {"in_review", "approved", "cleared"}           # -> draft ("Trả về nháp")
+RETURNABLE = {"editing", "in_review", "approved", "cleared"}  # -> draft ("Trả về nháp")
 BACK = {  # action: (allowed source statuses, target status, reason kind, log action)
     "return": (RETURNABLE, "draft", "tra_ve", "return"),
     "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
@@ -493,7 +538,7 @@ BACK = {  # action: (allowed source statuses, target status, reason kind, log ac
     "unpublish": ({"published"}, "draft", "go_xuong", "unpublish"),
     "unpublish_internal": ({"published"}, "noi_bo", "go_noi_bo", "unpublish"),
 }
-STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
+STATUS_VI = {"draft": "Nháp", "editing": "Chờ biên tập", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
              "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
 
 
@@ -524,6 +569,8 @@ def _move_back(action: str, body: MoveBack, user, tasks: BackgroundTasks) -> dic
         for r in rows:
             c.execute("UPDATE space SET review_status=%s, ly_do_duyet=%s WHERE id=%s", (target, Jsonb(shown), r["id"]))
             _log(c, r["id"], user, log_action, {"from": r["review_status"], "to": target, "reason": body.ly_do})
+            if r["review_status"] == "published":  # taken down: out of the assistant's knowledge too (publishing-workflow)
+                c.execute("DELETE FROM space_text WHERE space_id = %s", (r["id"],))
     tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows], user["email"])
     return {"moved": [r["id"] for r in rows], "status": target}
 

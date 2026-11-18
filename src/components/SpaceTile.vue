@@ -3,7 +3,9 @@
   <div class="space-tile-wrap">
     <router-link class="project space-tile" :to="'/khong-gian/' + space.apiId">
       <div class="project-img">
-        <img :src="space.img" :alt="name + ' — ' + space.space" loading="lazy" decoding="async">
+        <!-- srcset and sizes before src: Vue sets attributes in order, and a src set first starts loading the original -->
+        <img :srcset="space.srcset || null" sizes="(max-width: 640px) 50vw, (max-width: 1100px) 33vw, 25vw" :src="space.img"
+             :alt="name + ' — ' + space.space" loading="lazy" decoding="async">
       </div>
       <h3 class="project-name">{{ name }}</h3>
       <p class="project-meta">{{ meta }}</p>

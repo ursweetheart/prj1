@@ -222,3 +222,16 @@ def send_reset(user_id: int, email: str, link: str):
               "Nếu không phải bạn yêu cầu, hãy bỏ qua thư này; mật khẩu hiện tại vẫn giữ nguyên.\n\nD3 Studio")
     except Exception:
         auth_log.exception("password reset for account #%s: could not send", user_id)
+
+
+def notify_handover(kind: str, items, by: str):
+    """seq-6 b4 / b7 (publishing-workflow): kind 'bien_tap' -> content staff, 'duyet' -> lead architects; one email each."""
+    role, what = ("content", "Chờ biên tập") if kind == "bien_tap" else ("lead_architect", "Chờ duyệt")
+    with psycopg.connect(DSN) as c:
+        to = [r[0] for r in c.execute("SELECT email FROM app_user WHERE role = %s AND NOT bi_khoa", (role,)).fetchall()]
+    body = "\n".join([f"{by} vừa chuyển {len(items)} ảnh sang «{what}»:", *[f"- #{sid} {path}" for sid, path in items]])
+    for email in to:
+        if not _smtp_ready():
+            log.info("handover email skipped (email not configured): %s, %d photo(s)", email, len(items))
+            continue
+        _send(email, f"[D3] {len(items)} ảnh {what}", body)

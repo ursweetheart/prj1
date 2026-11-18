@@ -131,3 +131,17 @@ describe('takeSimilarPick', () => {
     expect(takeSimilarPick(31)).toBe(null) // used once: the list is forgotten after a pick
   })
 })
+
+// publishing-workflow 5.2: optimised copies as a srcset
+describe('imageSrcset', () => {
+  it('lists the copies by width and ends with the original at its width', async () => {
+    const { imageSrcset } = await load()
+    const s = imageSrcset({ relative_path: 'p/a b.jpg', chieu_rong: 4000, kich_thuoc: { 960: '_kt/960/p/a b.jpg.webp', 480: '_kt/480/p/a b.jpg.webp' } })
+    expect(s.split(', ').map(x => x.split(' ').pop())).toEqual(['480w', '960w', '4000w'])
+    expect(s).toContain('/images/_kt/480/p/a%20b.jpg.webp 480w')
+  })
+  it('is empty without copies', async () => {
+    const { imageSrcset } = await load()
+    expect(imageSrcset({ relative_path: 'p/a.jpg' })).toBe('')
+  })
+})

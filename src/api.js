@@ -47,7 +47,9 @@ async function request(method, path, { params, body, form } = {}) {
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
     const err = new Error(res.status === 404 ? 'Không tìm thấy dữ liệu này.'
-      : typeof detail === 'string' ? detail : 'Máy chủ không phản hồi (' + res.status + ').')
+      : typeof detail === 'string' ? detail
+        : typeof detail?.msg === 'string' ? detail.msg // e.g. {thieu: [...], msg: 'Thiếu: Phong cách'} (publishing-workflow)
+          : 'Máy chủ không phản hồi (' + res.status + ').')
     err.status = res.status
     err.detail = detail // 422: [{loc, msg}], so a form can put each error under its field
     throw err
@@ -124,6 +126,16 @@ export const imageUrl = path => ORIGIN + '/images/' + encodeURI(path)
 export const spaceLabel = type => SPACE_VI[type] || 'Không gian'
 
 /* API row -> shape SpaceCard expects */
+/* publishing-workflow (act-1): the optimised WebP copies as a srcset; the original closes the list at its own width.
+   No copies (an old photo or a search hit without them) -> '' and the <img> keeps its src. */
+export function imageSrcset(r) {
+  const sizes = Object.entries(r?.kich_thuoc || {}).sort((a, b) => a[0] - b[0])
+  if (!sizes.length) return ''
+  const list = sizes.map(([w, rel]) => `${ORIGIN}/images/${encodeURI(rel)} ${w}w`)
+  if (r.chieu_rong) list.push(`${imageUrl(r.relative_path)} ${r.chieu_rong}w`)
+  return list.join(', ')
+}
+
 export const toCard = r => ({
   id: 'ai-' + r.id,
   apiId: r.id,
@@ -131,6 +143,7 @@ export const toCard = r => ({
   projectName: r.relative_path.split('/')[0].replace(/_/g, ' '),
   space: spaceLabel(r.space_type),
   img: imageUrl(r.relative_path),
+  srcset: imageSrcset(r),
   ratio: 'sq',
   khonggian: KG[r.space_type],
   phongcach: PC[r.design_style],
@@ -307,11 +320,11 @@ export function takeSimilarPick(id) { // -> the source space when `id` was one o
 }
 
 // QT-01; 'cleared' = the client allowed publishing the photos
-export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
-export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
+export const NEXT_STATUS = { draft: 'editing', editing: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
+export const STATUS_VI = { draft: 'Nháp', editing: 'Chờ biên tập', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
   noi_bo: 'Lưu nội bộ' } // noi_bo: the client refused publishing; final, never public (review-return-reject)
 // backward paths, lead architect / admin, always with a reason (5-500 characters); all or nothing
-export const RETURNABLE = ['in_review', 'approved', 'cleared']
+export const RETURNABLE = ['editing', 'in_review', 'approved', 'cleared']
 export const returnSpaces = (ids, lyDo) => request('POST', '/spaces/return', { body: { space_ids: ids, ly_do: lyDo } })
 export const keepInternal = (ids, lyDo) => request('POST', '/spaces/keep-internal', { body: { space_ids: ids, ly_do: lyDo } })
 export const reopenSpaces = (ids, lyDo) => request('POST', '/spaces/reopen', { body: { space_ids: ids, ly_do: lyDo } })
