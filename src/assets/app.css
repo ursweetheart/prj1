@@ -278,7 +278,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 }
 .nav-links a.is-active,
 .nav-links a[aria-current="page"] {
-  color: #C01919 !important;
+  color: var(--accent) !important;
   font-weight: 700;
 }
 
@@ -322,7 +322,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 .nav-links a.is-active:focus-visible {
-  text-shadow: 0 0 14px rgba(192, 25, 25, 0.6), 0 1px 10px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 0 14px color-mix(in oklab, var(--accent) 65%, transparent), 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 .brand:focus-visible {
   transform: translateY(-4px);
@@ -335,7 +335,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
     text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
   }
   .nav-links a.is-active:hover {
-    text-shadow: 0 0 14px rgba(192, 25, 25, 0.6), 0 1px 10px rgba(0, 0, 0, 0.45);
+    text-shadow: 0 0 14px color-mix(in oklab, var(--accent) 65%, transparent), 0 1px 10px rgba(0, 0, 0, 0.45);
   }
   .brand:hover {
     transform: translateY(-4px);
