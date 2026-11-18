@@ -36,7 +36,7 @@ Phone numbers and email addresses in a visitor's message SHALL be replaced by a 
 - **THEN** it and its messages are deleted at the next daily clean-up
 
 ### Requirement: Constraints carry across the conversation
-The project type, space type, area and style a visitor mentions SHALL be collected across the conversation. A newer value SHALL replace an older one. Each answer SHALL use the collected constraints, not only those in the current message, when choosing example photos. A lead created from the chat SHALL store the collected constraints as its request.
+The project type, space type, area and style a visitor mentions SHALL be collected across the conversation. A newer value SHALL replace an older one. Each answer SHALL use the collected constraints, not only those in the current message, when choosing and ranking example projects (capability `assistant-project-results`). A lead created from the chat SHALL store the collected constraints as its request.
 
 #### Scenario: Area said earlier
 - **WHEN** a visitor first writes "chung cư 70m2" and later "phong cách wabi-sabi giá bao nhiêu"
@@ -45,6 +45,10 @@ The project type, space type, area and style a visitor mentions SHALL be collect
 #### Scenario: Visitor changes their mind
 - **WHEN** a visitor said "chung cư" and later says "à không, nhà phố"
 - **THEN** the collected project type is nhà phố
+
+#### Scenario: Earlier style ranks the projects
+- **WHEN** a visitor said "Japandi" earlier and now asks "cho mình xem phòng khách"
+- **THEN** projects with Japandi living rooms are ranked above living rooms in other styles
 
 ### Requirement: The chat box restores and can start over
 Reloading the page SHALL restore the visitor's current conversation. For a visitor who accepted data collection, the conversation SHALL also be restored on a later visit from the same browser. For one who did not, it SHALL last only as long as the browser tab. "Bắt đầu cuộc mới" SHALL start an empty conversation and delete the previous one from the server. A conversation SHALL be readable and deletable only with its own unguessable id.

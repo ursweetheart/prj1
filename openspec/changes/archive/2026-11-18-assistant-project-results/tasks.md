@@ -12,7 +12,7 @@
 
 ## 3. Chat widget
 
-- [ ] 3.1 Render project cards in `src/components/ChatWidget.vue` (design decision 5) and keep the thumbnails for any answer that has `images` but no `projects`. Verify with a production build, and on Docker: ask "phòng khách chung cư phong cách Japandi", see up to 3 cards with names and matched lines; a card for a project with a page opens `/du-an/<slug>?anh=…` on that photo, and one without opens `/khong-gian/<id>`; keyboard Tab reaches each card and Enter opens it.
+- [x] 3.1 Render project cards in `src/components/ChatWidget.vue` (design decision 5) and keep the thumbnails for any answer that has `images` but no `projects`. Verify with a production build, and on Docker: ask "phòng khách chung cư phong cách Japandi", see up to 3 cards with names and matched lines; a card for a project with a page opens `/du-an/<slug>?anh=…` on that photo, and one without opens `/khong-gian/<id>`; keyboard Tab reaches each card and Enter opens it.
 
 ## 4. Integration and docs
 

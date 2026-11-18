@@ -1,8 +1,10 @@
+# assistant-project-results Specification
+
 ## Purpose
 
 Show visitors whole projects as the assistant's examples, ranked by how much of their request each project matches, so they see where the studio has done what they want rather than scattered photos.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Examples Grouped by Project
 When an answer shows examples, the assistant SHALL group matching published photos by project and return at most 3 projects, each with its 1 to 2 best photos. A project SHALL appear at most once. Unpublished photos SHALL never be used.
@@ -30,7 +32,7 @@ Projects SHALL be ranked first by how many of the visitor's collected constraint
 A card SHALL open the project's page on its best photo when the project has a page, and otherwise the best photo's space page.
 
 #### Scenario: Project with a page
-- **WHEN** a card's project folder corresponds to a project page
+- **WHEN** a card's catalog project has a page and its best photo is one of that page's photos (see `project-catalog`)
 - **THEN** the card opens `/du-an/<slug>?anh=<best photo file>`
 
 #### Scenario: Project without a page

@@ -67,7 +67,7 @@
 
 ## 5. Run, verify, document
 
-- [ ] 5.1 On Docker:
+- [x] 5.1 On Docker:
   1. Run `python sync_projects.py --dry-run` and check the borderline pairs. Adjust the threshold only if true pairs fall below it.
   2. Run the sync.
   3. Confirm that `GET /projects` lists the matched projects, `/quan-tri/hieu-qua` shows "Hanjadin Apartment" instead of `hanjadin`, and a published matched photo shows "Chi tiết không gian" in the `/du-an/hanjadin-apartment` Lightbox.
