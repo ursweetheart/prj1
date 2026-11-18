@@ -24,7 +24,9 @@
 
     <!-- seq-5: a request from here carries this project, so the consultant knows what the visitor looked at -->
     <div class="pv-contact">
-      <ContactForm :key="project.slug" :project="project.slug" title="Tư vấn về dự án này" />
+      <ContactForm :key="project.slug" :project="project.slug" split eyebrow="Tư vấn"
+                   title="Bạn muốn một không gian như thế này?"
+                   lead="Để lại vài thông tin, kiến trúc sư D3 Studio sẽ gọi lại để trò chuyện về ngôi nhà của bạn." />
     </div>
 
     <nav class="pv-nav" aria-label="Dự án khác">

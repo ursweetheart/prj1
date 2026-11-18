@@ -575,6 +575,48 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .cta-link:hover .arrow, .cta-link:focus-visible .arrow { transform: translateX(4px) }
 .cta-link:focus-visible { outline: none }
 
+/* ─── Nút viền mảnh: lấp màu nhấn từ trái sang khi rê, mũi tên trượt ── */
+.btn-line { --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: inline-flex; align-items: center; justify-content: center; gap: 14px; padding: 15px 30px;
+  font: 500 12.5px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink); text-decoration: none; cursor: pointer;
+  border: 1px solid var(--accent); border-radius: 999px;
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 0% 100%;
+  transition: background-size .55s var(--ease), color .4s var(--ease), box-shadow .45s var(--ease), transform .45s var(--ease) }
+.btn-line:hover, .btn-line:focus-visible { background-size: 100% 100%; color: var(--accent-on); transform: translateY(-2px);
+  box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--accent) 70%, transparent) }
+.btn-line:focus-visible { outline: none; box-shadow: var(--focus-ring) }
+.btn-line .arrow { display: inline-block; font-size: 16px; letter-spacing: 0; transition: transform .45s var(--ease) }
+.btn-line:hover .arrow, .btn-line:focus-visible .arrow { transform: translateX(5px) }
+.btn-line.is-down:hover .arrow, .btn-line.is-down:focus-visible .arrow { transform: translateY(3px) }
+.btn-line:disabled { opacity: .55; cursor: progress; transform: none }
+
+/* ─── Danh sách link editorial: số thứ tự, đường kẻ mảnh, vạch nhấn chạy dưới ── */
+.link-list { --ease: cubic-bezier(0.22, 1, 0.36, 1); display: flex; flex-direction: column;
+             width: 100%; margin: 0; padding: 0; list-style: none }
+@media (min-width: 900px) { .link-list { width: 380px } }
+.ll-item { position: relative; display: grid; grid-template-columns: 34px 1fr auto; align-items: baseline;
+           gap: 12px; width: 100%; padding: 17px 0 15px; text-align: left; text-decoration: none; cursor: pointer;
+           font: inherit; color: var(--ink-2); background: none; border: 0; border-top: 1px solid var(--line-soft) }
+.ll-item:last-child { border-bottom: 1px solid var(--line-soft) }
+.ll-item::after { content: ""; position: absolute; left: 0; bottom: -1px; height: 1px; width: 100%;
+                  background: var(--accent); transform: scaleX(0); transform-origin: left;
+                  transition: transform .6s var(--ease) }
+.ll-n { font-size: 11.5px; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; color: var(--faint);
+        transition: color .4s var(--ease) }
+.ll-label { font-family: var(--font-display); font-weight: 300; font-size: clamp(18px, 1.45vw, 21px);
+            letter-spacing: -0.005em; transition: color .4s var(--ease), transform .45s var(--ease) }
+.ll-arrow { font-size: 16px; color: var(--faint); transition: transform .45s var(--ease), color .4s var(--ease) }
+.ll-item:hover::after, .ll-item:focus-visible::after { transform: scaleX(1) }
+.ll-item:hover .ll-n, .ll-item:focus-visible .ll-n { color: var(--accent) }
+.ll-item:hover .ll-label, .ll-item:focus-visible .ll-label { color: var(--ink); transform: translateX(4px) }
+.ll-item:hover .ll-arrow, .ll-item:focus-visible .ll-arrow { color: var(--accent); transform: translateX(6px) }
+.ll-item:focus-visible { outline: none }
+@media (prefers-reduced-motion: reduce) {
+  .btn-line, .btn-line .arrow, .ll-item::after, .ll-label, .ll-arrow { transition: none }
+  .btn-line:hover, .ll-item:hover .ll-label { transform: none }
+}
+
 /* ─── Thẻ công trình ──────────────────────────────────────────────── */
 .pcard { display: flex; flex-direction: column; min-width: 0 }
 .pcard .media { transition: opacity var(--motion-base) var(--ease-standard) }
