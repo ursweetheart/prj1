@@ -51,7 +51,6 @@
 
         <section class="ct-card" aria-labelledby="ct-later">
           <h2 id="ct-later" class="ct-h">Chưa sẵn sàng gọi?</h2>
-          <router-link class="pv-nav-link glow-hover" to="/uoc-tinh">Ước tính chi phí sơ bộ <span aria-hidden="true">→</span></router-link>
           <router-link class="pv-nav-link glow-hover" to="/trac-nghiem">Tìm phong cách hợp với bạn <span aria-hidden="true">→</span></router-link>
         </section>
       </aside>

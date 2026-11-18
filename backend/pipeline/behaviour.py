@@ -10,7 +10,8 @@ from psycopg.rows import tuple_row
 from pipeline.trends import last_day
 
 TYPES = ("xem_trang", "xem_du_an", "bam_CTA", "gui_form", "nhan_chatbot", "chia_se", "ap_dung_bo_loc",
-         "tim_kiem", "xem_goi_y_tuong_tu", "chon_goi_y")
+         "tim_kiem", "xem_goi_y_tuong_tu", "chon_goi_y",
+         "phong_to_anh", "chuyen_anh", "bam_hotspot")  # the last three: visitor-services-hotspots (Tùng)
 TOP = 10
 
 
@@ -23,7 +24,7 @@ def overview(conn, days: int) -> dict:
     end = last_day(conn)
     if end is None:
         return {"days": int(days), "den_ngay": None, "trang": [], "du_an": [], "cta": [], "form": {}, "chia_se": {}, "bo_loc": [],
-                "tim_kiem": {}, "goi_y": {"hien": 0, "chon": 0, "ty_le": None},
+                "tim_kiem": {}, "goi_y": {"hien": 0, "chon": 0, "ty_le": None}, "hotspot": [],
                 "dong_y": {t: 0 for t in TYPES}, "an_danh": {t: 0 for t in TYPES}, "co_du_lieu_mo_phong": demo}
     start = end - timedelta(days=int(days) - 1)
     rows = _rows(conn, "SELECT loai, trang, doi_tuong, sum(so_luot), sum(tong_dung_ms), sum(so_co_dung), sum(tong_cuon), "
@@ -61,10 +62,13 @@ def overview(conn, days: int) -> dict:
                                               "AND loai = ANY(%s) GROUP BY loai", (start, end, list(TYPES)))}
     filters = sorted(({"gia_tri": v, "so_lan": n} for v, n in count_by("ap_dung_bo_loc").items() if v),
                      key=lambda f: (-f["so_lan"], f["gia_tri"]))[:TOP]
+    # visitor-services-hotspots (Tùng): most opened hotspots, "<space id>/mon_do_<item id>" or "<space id>/<label slug>"
+    hotspots = sorted(({"doi_tuong": d, "so_lan": n} for d, n in count_by("bam_hotspot").items() if d),
+                      key=lambda h: (-h["so_lan"], h["doi_tuong"]))[:TOP]
     shown, chosen = totals["xem_goi_y_tuong_tu"], totals["chon_goi_y"]
     return {"days": int(days), "den_ngay": end.isoformat(), "trang": pages, "du_an": projects,
             "cta": sorted(cta.values(), key=lambda c: (-c["so_lan"], c["dich"])),
-            "form": count_by("gui_form"), "chia_se": count_by("chia_se"), "bo_loc": filters,
+            "form": count_by("gui_form"), "chia_se": count_by("chia_se"), "bo_loc": filters, "hotspot": hotspots,
             "tim_kiem": count_by("tim_kiem"),
             "goi_y": {"hien": shown, "chon": chosen, "ty_le": round(100 * chosen / shown) if shown else None},
             "dong_y": {t: totals.get(t, 0) for t in TYPES}, "an_danh": {t: anon.get(t, 0) for t in TYPES},

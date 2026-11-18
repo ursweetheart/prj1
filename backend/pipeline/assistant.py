@@ -274,8 +274,6 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
         out.update(answer=FALLBACK, answered=False, sources=[], images=[], projects=[], chu_de_cam=blocked)
     if answered and (req["price_intent"] or req["appointment_intent"]):
         out["answer"] += "\n\nĐể kiến trúc sư báo giá/xác nhận lịch chính xác, bạn vui lòng để lại số điện thoại hoặc email."
-    if req["price_intent"]:  # cost-estimate: a quick range from the price table, without waiting for a call
-        out["answer"] += "\n\nƯớc tính nhanh theo diện tích và gói vật liệu: /uoc-tinh"
 
     # Up to three published projects, ranked by how much of the collected request they match (never drafts: public)
     if known and answered and (req["space_type"] or req["design_style"] or req["project_type"]):

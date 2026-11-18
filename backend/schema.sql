@@ -252,7 +252,8 @@ CREATE INDEX IF NOT EXISTS bo_suu_tap_loai_created_at ON bo_suu_tap (loai, creat
 -- A quiz answer is a consented behaviour event too; the interest score does not count it (trends.py reads views/saves).
 ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
 ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem',
-  'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc'));  -- behaviour-events
+  'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc',  -- behaviour-events
+  'phong_to_anh', 'chuyen_anh', 'bam_hotspot'));  -- visitor-services-hotspots: photo interactions
 -- one saved result per account; re-scored by the server on save, suggestions re-read (unpublished ones dropped)
 CREATE TABLE IF NOT EXISTS ket_qua_trac_nghiem (
   nguoi_dung_id int PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
@@ -524,12 +525,14 @@ ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS so_ket_qua int CHECK (so_ket_qua >=
 ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
 ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem',
   'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc',
-  'tim_kiem', 'xem_goi_y_tuong_tu', 'chon_goi_y'));
+  'tim_kiem', 'xem_goi_y_tuong_tu', 'chon_goi_y',
+  'phong_to_anh', 'chuyen_anh', 'bam_hotspot'));  -- visitor-services-hotspots (Tùng), kept when this block re-adds the CHECK
 UPDATE su_kien SET loai_doi_tuong = CASE
     WHEN loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem', 'xem_goi_y_tuong_tu', 'chon_goi_y') THEN 'khong_gian'
     WHEN loai = 'xem_du_an' THEN 'du_an' WHEN loai = 'xem_trang' THEN 'trang' WHEN loai = 'bam_CTA' THEN 'lien_ket'
     WHEN loai = 'gui_form' THEN 'form' WHEN loai = 'tim_kiem' THEN 'tim_kiem' WHEN loai = 'chia_se' THEN 'bo_suu_tap'
-    WHEN loai = 'ap_dung_bo_loc' THEN 'bo_loc' WHEN loai = 'nhan_chatbot' THEN 'tro_ly' END
+    WHEN loai = 'ap_dung_bo_loc' THEN 'bo_loc' WHEN loai = 'nhan_chatbot' THEN 'tro_ly'
+    WHEN loai IN ('phong_to_anh', 'chuyen_anh') THEN 'anh_du_an' WHEN loai = 'bam_hotspot' THEN 'diem_nong' END
  WHERE loai_doi_tuong IS NULL;
 CREATE INDEX IF NOT EXISTS su_kien_phien_luc ON su_kien (phien_id, created_at);
 CREATE INDEX IF NOT EXISTS su_kien_luc ON su_kien (created_at);

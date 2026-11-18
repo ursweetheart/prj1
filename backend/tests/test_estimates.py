@@ -180,9 +180,10 @@ def test_leads_filter_estimate(no_mail, cleanup, as_role):
 
 
 # ── 2.5 chat ───────────────────────────────────────────────────────────────────
-def test_price_answer_points_to_the_estimate(cleanup):
+def test_price_answer_no_longer_points_to_the_estimate_page(cleanup):
+    # the estimate page was removed from the site (Tùng, 9399c77): the assistant must not link to it
     out = client.post("/chat", json={"message": "chung cư 70m2 làm nội thất hết bao nhiêu"}).json()
-    assert "/uoc-tinh" in out["answer"]
+    assert "/uoc-tinh" not in out["answer"]
     with psycopg.connect(DSN) as c:
         c.execute("DELETE FROM lead WHERE conversation @> %s::jsonb",
                   (json.dumps([{"content": "chung cư 70m2 làm nội thất hết bao nhiêu"}]),))

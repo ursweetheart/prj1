@@ -4,7 +4,7 @@
 | :-- | :-- |
 | **Dự án** | Website portfolio thiết kế nội thất tích hợp AI (mã PRJ1-INTERIOR-WEB) |
 | **Nhóm** | Nhóm 6: Phạm Việt Tùng, Trần Xuân Bằng, Trần Xuân Tuấn |
-| **Cập nhật** | 15/11/2026 |
+| **Cập nhật** | 16/11/2026 |
 | **Phiên bản code** | nhánh `main`, commit `1d72fc8` (repo `github.com/ursweetheart/prj1`) |
 | **Bản tĩnh** | https://ursweetheart.github.io/prj1/ (không có backend nên các chức năng AI không chạy) |
 
@@ -414,7 +414,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | :-- | :-- | :-- | :-- |
 | 0.1 | ✓ **Backend** (change `project-catalog`): bảng `du_an` (65 dự án: 64 của trang + 1 thư mục), `sync_projects.py` nối 129 ảnh trang với ảnh đã có trong DB theo embedding (điểm khớp ≥ 0,996, không gọi Gemini), `GET /projects`, `GET/PUT /projects/{slug}`. **Còn lại (Tùng):** `/du-an` đọc API, `src/lib/projectSpaces.js` khớp ảnh theo `anh_trang`. Mô tả cũ: **Thống nhất một nguồn dữ liệu dự án.** Hiện `/du-an` đọc 64 dự án tĩnh trong `src/data/projects.js`, còn tìm kiếm, lọc, chat và duyệt dùng 152 ảnh trong DB. Đề xuất: tạo bảng `du_an` (slug, tên, loại, năm, mô tả) và nạp 64 dự án vào DB qua `ingest`. Trang `/du-an` đọc API khi có backend, dùng file tĩnh khi chạy trên GitHub Pages | class-1, seq-10 | một dự án tải lên ở `/quan-tri` và được đăng sẽ hiện ở `/du-an` |
 | 0.2 | **Đưa trang lọc và tìm kiếm trở lại.** Bỏ redirect `/cong-trinh → /du-an`, thêm mục menu (vd "Không gian" hoặc "Tìm kiếm"). Có thể chỉ bật khi build có backend | seq-10, seq-11, seq-8 | vào được lọc 6 chiều, tìm bằng chữ, tìm bằng ảnh từ menu |
-| 0.3 | ✓ Trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`, change `studio-pages`): giới thiệu, con số, đội ngũ, quy trình 5 bước; form tư vấn, gọi / Zalo / email (`#zalo`), văn phòng (`#ban-do`). Thông tin studio ở `src/data/studio.js`, hiện là **thông tin mẫu** có nhãn và không thành link | BFD 2, seq-5 | còn: điền thông tin thật; `/dich-vu` để Tùng làm |
+| 0.3 | ✓ Trang **Về chúng tôi** (`/ve-chung-toi`) và **Liên hệ** (`/lien-he`, change `studio-pages`): giới thiệu, con số, đội ngũ, quy trình 5 bước; form tư vấn, gọi / Zalo / email (`#zalo`), văn phòng (`#ban-do`). Thông tin studio ở `src/data/studio.js`, hiện là **thông tin mẫu** có nhãn và không thành link | BFD 2, seq-5 | còn: điền thông tin thật. ✓ `/dich-vu` (change `visitor-services-hotspots`): gói dịch vụ đang dùng từ `GET /services`, quy trình, link ước tính / trắc nghiệm / liên hệ |
 | 0.4 | Duyệt và đăng thêm ảnh để có dữ liệu demo (mục tiêu ≥ 30 ảnh đã duyệt) | act-1 | `eval_labels.py` chạy được |
 | 0.5 | Duyệt 2 đề xuất phân loại đang chờ, đánh dấu thật/sai để làm task 4.1, archive change `discover-taxonomy-dimensions` | seq-15 | change được archive |
 | 0.6 | ✓ Archive các change đã xong; `responsive-stacked-navbar` xong và đã archive (14/11/2026) | | `openspec list` không còn change nào |
@@ -431,7 +431,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 | 1.6 | Thay `kb/sample.json` bằng **bảng giá, quy trình, FAQ thật** của D3 Studio: giờ làm được ngay ở `/quan-tri/tri-thuc` (sửa từng mục, xoá dấu mẫu; mục giá cần KTS trưởng bật) | seq-3 | không còn dấu `[DỮ LIỆU MẪU]` |
 | 1.7 | ✓ **UI quản trị người dùng** (change `user-admin`): danh sách, đổi role, khoá / mở khoá, nhật ký; **mời tài khoản, quên mật khẩu** (change `account-invites-reset`) | seq-19, usecase-5 | |
 | 1.8 | ✓ Duyệt ảnh: **trả về nháp / lưu nội bộ / mở lại** kèm lý do (change `review-return-reject`), **gỡ ảnh đã đăng** (change `unpublish-photos`) | act-1, seq-6 | |
-| 1.9 | ✓ Hotspot **thêm bằng tay, kéo vị trí**, bảng **MonDo** (thư viện món đồ, change `hotspot-items`), API không gian theo món đồ | seq-14, class-1 | ✓ món đồ → gói dịch vụ (change `topic-guard-sitemap-item-services`). Còn: giao diện khách «không gian có món đồ này» và hiện dịch vụ trên thẻ điểm nóng (trang của Tùng) |
+| 1.9 | ✓ Hotspot **thêm bằng tay, kéo vị trí**, bảng **MonDo** (thư viện món đồ, change `hotspot-items`), API không gian theo món đồ | seq-14, class-1 | ✓ món đồ → gói dịch vụ (change `topic-guard-sitemap-item-services`). ✓ Thẻ điểm nóng của khách: «Không gian có món đồ này» và một dòng nhỏ tới gói dịch vụ ở `/dich-vu` (change `visitor-services-hotspots`; không giá, không nút mua) |
 
 ### Giai đoạn 2: Hoàn thiện trải nghiệm khách
 
@@ -450,7 +450,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 | # | Việc | Diagram | Xong khi |
 | :-- | :-- | :-- | :-- |
-| 3.1 | ✓ Thêm 7 loại sự kiện (change `behaviour-events`), chỉ ghi khi có đồng ý, kèm thời gian xem và độ sâu cuộn | seq-4, act-7, dfd-2-5 | còn: phóng to ảnh, chuyển ảnh, bấm hotspot (thành phần của Tùng) |
+| 3.1 | ✓ Thêm 7 loại sự kiện (change `behaviour-events`), chỉ ghi khi có đồng ý, kèm thời gian xem và độ sâu cuộn | seq-4, act-7, dfd-2-5 | ✓ `phong_to_anh`, `chuyen_anh`, `bam_hotspot` và khối «Tương tác với ảnh» trên dashboard (change `visitor-services-hotspots`) |
 | 3.2 | ✓ **InterestScore** và **Trend** (change `trend-dashboard`): xem, lưu, ảnh gửi brief; so 7 ngày với trung bình 4 tuần | act-3, seq-4 | còn: thời gian xem, chia sẻ, lead phát sinh theo giá trị |
 | 3.3 | ✓ **Dashboard xu hướng** `/quan-tri/xu-huong` (v1) | seq-18, usecase-4 | còn: phân khúc mới (phân cụm phiên) |
 | 3.4 | ✓ **Báo cáo tuần** qua email (change `weekly-report`): bộ lập lịch trong backend, mỗi tuần một lần, người nhận theo tài khoản, tự tắt được | seq-18, usecase-5 | còn: email HTML, báo cáo tháng |
@@ -474,7 +474,7 @@ Các giai đoạn xếp theo thứ tự ưu tiên. Mỗi việc ghi diagram liê
 
 1. **Hai nguồn dữ liệu dự án (phần backend đã xong).** Bảng `du_an` nối 64 dự án tĩnh với ảnh trong DB (`space.du_an_slug`, `anh_trang` = tên file ảnh trên trang). Trang chủ và `/du-an` vẫn đọc `src/data/projects.js`; `src/lib/projectSpaces.js` còn khớp ảnh theo tên file trong thư mục `<slug>` nên ảnh lưu ở thư mục cũ (`hanjadin/…`) chưa có link «Chi tiết không gian» cho tới khi đọc `anh_trang` (một dòng, file của Tùng). 496 ảnh trang chưa có trong DB: `sync_projects.py --ingest --limit N` (1 lần gọi Gemini mỗi ảnh). Xem việc 0.1.
 2. **Trang `/cong-trinh` bị ẩn** từ commit `c0fc9ee` (redirect sang `/du-an`), nên lọc 6 chiều, tìm bằng chữ, tìm bằng ảnh và link "Xem bộ lọc" ở trang Phân loại đều không truy cập được. File `CongTrinhView.vue` vẫn còn.
-3. **Link chết còn lại:** "Dịch vụ và quy trình" (`/dich-vu`) ở chân trang chưa có trang (để Tùng làm; `App.vue` đã có sẵn key `dich-vu`). `SpaceCard.vue` có link `/cong-trinh-chi-tiet#…` cũng không có route.
+3. **Link chết còn lại:** `SpaceCard.vue` có link `/cong-trinh-chi-tiet#…` cũng không có route.
 4. **`dist/`** có trong `.gitignore` nhưng vẫn bị git theo dõi. Sau mỗi `npm run build` phải `git restore dist`. Nên `git rm -r --cached dist` khi CI deploy Pages không cần nó nữa.
 5. **Rate limit lưu trong bộ nhớ** và tính theo IP. Khởi động lại là mất; phía sau proxy cần đọc `X-Forwarded-For` (`backend/ratelimit.py`).
 6. **`D3_JWT_SECRET`** phải được đặt trong `.env`. Nếu không, mỗi lần khởi động lại backend mọi người bị đăng xuất. Script chạy ngoài Docker (vd `set_role.py`) có in cảnh báo này nhưng không ảnh hưởng.

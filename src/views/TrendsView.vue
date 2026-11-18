@@ -214,6 +214,20 @@
             </ol>
             <p v-else class="small">Chưa có.</p>
           </div>
+          <div class="bh-block">
+            <h3 class="bh-h">Tương tác với ảnh</h3>
+            <ul class="bh-list">
+              <li>Phóng to ảnh dự án <span class="num">{{ bh.dong_y.phong_to_anh }}</span></li>
+              <li>Chuyển ảnh <span class="num">{{ bh.dong_y.chuyen_anh }}</span></li>
+              <li>Mở điểm món đồ <span class="num">{{ bh.dong_y.bam_hotspot }}</span></li>
+            </ul>
+            <p class="small bh-anon num">Không đồng ý: {{ bh.an_danh.phong_to_anh }} phóng to · {{ bh.an_danh.chuyen_anh }} chuyển ảnh · {{ bh.an_danh.bam_hotspot }} điểm món đồ</p>
+            <ol v-if="bh.hotspot?.length" class="bh-list" aria-label="Điểm món đồ được mở nhiều">
+              <li v-for="x in bh.hotspot" :key="x.doi_tuong">
+                <router-link :to="'/khong-gian/' + spotOf(x.doi_tuong).id">ảnh #{{ spotOf(x.doi_tuong).id }}</router-link>
+                · {{ spotOf(x.doi_tuong).what }} <span class="num">{{ x.so_lan }}</span></li>
+            </ol>
+          </div>
         </div>
       </section>
     </template>
@@ -245,6 +259,11 @@ const weekLabel = iso => { const [, m, d] = iso.split('-'); return d + '/' + m }
 
 const bh = ref(null) // behaviour-events: pages, CTAs, forms, chat, shares, filters
 const FORM_VI = { lien_he: 'liên hệ', brief: 'bộ sưu tập', uoc_tinh: 'ước tính' }
+// bam_hotspot object: "<space id>/mon_do_<item id>" or "<space id>/<label slug>"
+const spotOf = o => {
+  const [id, rest = ''] = o.split('/')
+  return { id, what: rest.startsWith('mon_do_') ? 'món đồ #' + rest.slice(7) : rest.replaceAll('_', ' ') }
+}
 async function load() {
   error.value = ''
   try { data.value = await getOverview(days.value) } catch (e) { error.value = e.message }

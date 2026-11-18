@@ -55,11 +55,10 @@
       </form>
     </section>
 
-    <button class="chat-fab glow-hover" type="button" :aria-expanded="String(open)" @click="open = !open">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 18.5V6.8A1.8 1.8 0 0 1 6.8 5h10.4A1.8 1.8 0 0 1 19 6.8v7.4a1.8 1.8 0 0 1-1.8 1.8H8.6L5 18.5z"/>
-      </svg>
-      <span>{{ open ? 'Thu gọn' : 'Hỏi trợ lý' }}</span>
+    <button class="chat-fab" :class="{ 'is-open': open }" type="button" :aria-expanded="String(open)" @click="open = !open">
+      <span class="fab-dot" aria-hidden="true"></span>
+      <span class="fab-label">{{ open ? 'Thu gọn' : 'Hỏi trợ lý' }}</span>
+      <span class="fab-arrow" aria-hidden="true">{{ open ? '×' : '→' }}</span>
     </button>
   </div>
 </template>
@@ -170,14 +169,29 @@ async function send() {
 .chat-new:hover, .chat-new:focus-visible { color: var(--ink) }
 .chat-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint) }
 /* Nút mở trợ lý: viên tối trong mờ, viền mảnh; hover giống topbar (.glow-hover) */
-.chat-fab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; cursor: pointer;
-  font: inherit; font-size: 14px; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.88);
-  background: rgba(20, 20, 19, 0.45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: var(--radius-pill);
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45) }
-.chat-fab svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5;
-  stroke-linejoin: round; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.4)) }
-.chat-fab:hover, .chat-fab:focus-visible { border-color: rgba(255, 255, 255, 0.6); color: #fff;
-  text-shadow: 0 0 14px rgba(255, 255, 255, 0.55), 0 1px 10px rgba(0, 0, 0, 0.45);
-  box-shadow: 0 0 18px rgba(255, 255, 255, 0.18); outline: none }
+/* glass pill over photos: "online" accent dot, label set like the site's eyebrows, accent edge on hover */
+.chat-fab { --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: inline-flex; align-items: center; gap: 12px; padding: 13px 20px 13px 18px; cursor: pointer;
+  font: 500 11.5px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255, 255, 255, 0.9);
+  background: rgba(20, 20, 19, 0.5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: var(--radius-pill);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  transition: border-color .45s var(--ease), box-shadow .45s var(--ease), transform .45s var(--ease), color .4s var(--ease) }
+.fab-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--accent) }
+.fab-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--accent);
+  opacity: 0; animation: fab-ping 2.8s var(--ease) infinite }
+@keyframes fab-ping { 0% { transform: scale(.5); opacity: .9 } 70%, 100% { transform: scale(1.7); opacity: 0 } }
+.fab-arrow { font-size: 14px; letter-spacing: 0; opacity: .7; transition: transform .45s var(--ease), opacity .4s var(--ease) }
+.chat-fab:hover, .chat-fab:focus-visible { color: #fff; transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--accent) 80%, white);
+  box-shadow: 0 12px 32px -14px color-mix(in oklab, var(--accent) 80%, transparent), 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
+  outline: none }
+.chat-fab:hover .fab-arrow, .chat-fab:focus-visible .fab-arrow { opacity: 1; transform: translateX(4px) }
+.chat-fab.is-open .fab-dot::after { animation: none }
+.chat-fab.is-open:hover .fab-arrow { transform: rotate(90deg) }
+@media (prefers-reduced-motion: reduce) {
+  .fab-dot::after { animation: none }
+  .chat-fab, .fab-arrow { transition: none }
+  .chat-fab:hover, .chat-fab:focus-visible { transform: none }
+}
 </style>

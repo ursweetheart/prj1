@@ -709,9 +709,11 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
 # about one published photo: stored with that photo's taxonomy values at that moment (class-4 note)
 PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_goi_y_tuong_tu", "chon_goi_y")
 EVENT_TYPES = Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
-                      "nhan_chatbot", "chia_se", "ap_dung_bo_loc", "tim_kiem", "xem_goi_y_tuong_tu", "chon_goi_y"]
+                      "nhan_chatbot", "chia_se", "ap_dung_bo_loc", "tim_kiem", "xem_goi_y_tuong_tu", "chon_goi_y",
+                      "phong_to_anh", "chuyen_anh", "bam_hotspot"]  # the last three: visitor-services-hotspots (Tùng)
 OBJECT_KIND = {"xem_du_an": "du_an", "xem_trang": "trang", "bam_CTA": "lien_ket", "gui_form": "form", "tim_kiem": "tim_kiem",
                "chia_se": "bo_suu_tap", "ap_dung_bo_loc": "bo_loc", "nhan_chatbot": "tro_ly",
+               "phong_to_anh": "anh_du_an", "chuyen_anh": "anh_du_an", "bam_hotspot": "diem_nong",
                **{k: "khong_gian" for k in PHOTO_EVENTS}}  # class-4 SuKien.loai_doi_tuong
 SESSION_ID = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser tokens, never tied to an account
 VN_DAY = "(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date"  # analytics days are UTC+7 dates (tracking-pipeline)
@@ -1648,6 +1650,25 @@ def _kn(call):
         raise HTTPException(422, str(e))
 
 
+SAMPLE_MARK = "[DỮ LIỆU MẪU]"
+
+
+@app.get("/services")
+def services_public():
+    """Public: the service packages in use, for /dich-vu (visitor-services-hotspots). Title and text only; the sample
+    marker becomes a flag so the page can show its own badge."""
+    with _db() as c:
+        rows = c.execute("SELECT id, title, content FROM kb_chunk WHERE kind = 'service' AND trang_thai = 'dang_dung' "
+                         "ORDER BY title").fetchall()
+    out = []
+    for r in rows:
+        text = r["content"].strip()
+        mau = text.startswith(SAMPLE_MARK)
+        out.append({"id": r["id"], "title": r["title"], "content": text[len(SAMPLE_MARK):].strip() if mau else text,
+                    "mau": mau})
+    return out
+
+
 @app.get("/knowledge")
 def knowledge_list(q: Optional[str] = Query(default=None, max_length=200),
                    trang_thai: Optional[Literal[knowledge.STATUSES]] = None, user=Depends(require(*KNOWLEDGE))):
@@ -1720,7 +1741,7 @@ def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
 
 
 # ── Sitemap (seq-6 b18, roadmap 4.5; change topic-guard-sitemap-item-services) ─
-SITEMAP_PAGES = ("", "du-an", "khong-gian", "uoc-tinh", "trac-nghiem", "lien-he", "ve-chung-toi")
+SITEMAP_PAGES = ("", "du-an", "khong-gian", "trac-nghiem", "lien-he", "ve-chung-toi")  # /uoc-tinh removed from the site (Tùng)
 SITEMAP_FOLDER = re.compile(r"^[a-z0-9_]{1,60}$")
 
 
