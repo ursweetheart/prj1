@@ -61,10 +61,17 @@ def test_cap_and_order_merged_then_ai_only_then_detector_only():
     assert [o.label_vi for o in out[:2]] == ["Giường", "Ghế gỗ"]  # larger box first
 
 
-def test_without_ai_items_the_detector_alone_is_cleaned_and_capped():
-    many = [box("chair", 0.9, 0.1 * i, 0.1, 0.1 * i + 0.05, 0.2) for i in range(9)]
+def test_without_ai_items_the_detector_alone_keeps_one_point_per_kind():
+    many = [box("chair", 0.9, 0.1 * i, 0.1, 0.1 * i + 0.05, 0.2) for i in range(9)] + [SOFA]
     out = propose(many, [])
-    assert len(out) == 6 and all(o.nguon_ai == "yolo" for o in out)
+    assert sorted(o.label for o in out) == ["chair", "couch"] and all(o.nguon_ai == "yolo" for o in out)
+
+
+def test_identical_items_get_one_point_different_ones_keep_theirs():
+    chairs = [item("Ghế ăn bọc vải kem", "ghe", 0.2 + 0.1 * i, 0.7) for i in range(4)]
+    out = propose([box("chair", 0.9, 0.85, 0.6, 0.95, 0.9)],  # a detector chair: the AI already named the chairs
+                  chairs + [item("ghế ăn  bọc vải KEM", "ghe", 0.6, 0.7), item("Ghế thư giãn cam", "ghe", 0.9, 0.5)])
+    assert [o.label_vi for o in out] == ["Ghế ăn bọc vải kem", "Ghế thư giãn cam"]
 
 
 def test_a_box_serves_one_item():

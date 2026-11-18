@@ -76,9 +76,16 @@ def propose(detected: list, items: list) -> list:
     solo = [o.model_copy(update={"nguon_ai": "yolo"}) for i, o in enumerate(kept)
             if i not in used and o.label in FURNITURE and (o.confidence or 0) >= MIN_ALONE]
 
-    # 6. order and cap
+    # 6. order, one point per distinct item (six identical dining chairs are one item), cap
     by_size = lambda o: -_area(o.bbox)  # noqa: E731
-    return (sorted(merged, key=by_size) + alone + sorted(solo, key=by_size))[:MAX_HOTSPOTS]
+    named = {o.label for o in merged + alone}
+    out, seen = [], set()
+    for o in sorted(merged, key=by_size) + alone + [o for o in sorted(solo, key=by_size) if o.label not in named]:
+        key = " ".join(o.label_vi.lower().split()) if o.nguon_ai != "yolo" and o.label_vi else o.label
+        if key not in seen:
+            seen.add(key)
+            out.append(o)
+    return out[:MAX_HOTSPOTS]
 
 
 def with_proposed(furniture_res, classification):

@@ -39,6 +39,7 @@ Nhiệm vụ của bạn là phân tích ảnh không gian nội thất kết h�
 
 5. MÓN NỘI THẤT CHÍNH (items): tối đa 8 món nội thất / trang trí lớn nhìn rõ trong ảnh (sofa, ghế, giường, bàn, tủ, kệ,
    đèn, thảm, rèm, gương, tranh, cây...). KHÔNG liệt kê đồ vặt (chai, cốc, bát, sách, điều khiển, đồ trên bàn).
+   Món giống hệt nhau chỉ liệt kê MỘT lần (6 ghế ăn cùng mẫu là 1 mục); món khác mẫu thì liệt kê riêng.
    - ten: tên tiếng Việt ngắn, cụ thể (vd "Sofa vải xám", "Đèn chùm pha lê", "Thảm len kem").
    - loai: đúng một trong: {loai}.
    - khung: [ymin, xmin, ymax, xmax] là khung bao sát món đồ, thang 0-1000, y tính từ trên xuống, x tính từ trái sang.
