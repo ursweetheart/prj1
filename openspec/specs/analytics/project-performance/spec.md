@@ -14,7 +14,7 @@ Project results SHALL be visible to architects, the lead architect, admin and sa
 - **THEN** the server answers 403
 
 ### Requirement: One row per published project
-For a period of the last 30 or 90 days, `/quan-tri/hieu-qua` SHALL list every project (photo folder) with at least one published photo, with:
+For a period of the last 30 or 90 days, `/quan-tri/hieu-qua` SHALL list every catalog project (see `project-catalog`) with at least one published photo, under its project name, with:
 - its number of published photos;
 - the date its first photo was published;
 - consented views and saves of its published photos in the period;
@@ -28,12 +28,20 @@ The list SHALL be ordered with "Cần xem lại" first, then by views.
 - **WHEN** in the last 30 days a project's published photos were viewed 12 times and saved 3 times by consenting visitors
 - **THEN** its row shows 12 views, 3 saves and a save rate of 25%
 
+#### Scenario: Named by the catalog
+- **WHEN** the spaces of folder `hanjadin` are matched to the site project `hanjadin-apartment`
+- **THEN** one row "Hanjadin Apartment" is listed, not a row `hanjadin`
+
 ### Requirement: Leads per project
-A lead SHALL count for a project when its context names that project's page, when its context names one of the project's photos, or when its brief sent one of the project's photos. A lead SHALL count once per project, and a lead touching two projects SHALL count once for each.
+A lead SHALL count for a project when its context names that project's page (`/du-an/<slug>` or the project's slug), when its context names one of the project's photos, or when its brief sent one of the project's photos. A lead SHALL count once per project, and a lead touching two projects SHALL count once for each.
 
 #### Scenario: Brief with photos of two projects
 - **WHEN** a brief sends two photos of project A and one of project B
 - **THEN** A and B each count that lead once
+
+#### Scenario: Lead from a project page
+- **WHEN** a visitor sends the contact form on `/du-an/hanjadin-apartment`, whose photos are stored in folder `hanjadin`
+- **THEN** the lead counts for Hanjadin Apartment
 
 ### Requirement: Attention status after 30 days
 A project whose first photo was published at least 30 days ago SHALL be "Cần xem lại" when its views in the last 30 days are below half the median views of all such projects, and "Ổn" otherwise. A project published less than 30 days ago SHALL be "Đang theo dõi" with the number of days left. With fewer than 3 projects old enough to compare, no project SHALL be marked "Cần xem lại".

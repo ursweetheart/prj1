@@ -19,6 +19,7 @@
         <input id="pw" v-model="password" type="password" minlength="8" maxlength="128" required
                :autocomplete="isRegister ? 'new-password' : 'current-password'">
         <span v-if="isRegister" class="field-help">Tối thiểu 8 ký tự.</span>
+        <router-link v-else to="/quen-mat-khau" class="field-help lg-forgot">Quên mật khẩu?</router-link>
       </div>
       <p v-if="error" class="field-err" role="alert">{{ error }}</p>
       <button class="btn btn-primary" :disabled="busy">{{ isRegister ? 'Đăng ký' : 'Đăng nhập' }}</button>
@@ -59,3 +60,8 @@ async function submit() {
   } catch (e) { error.value = e.message } finally { busy.value = false }
 }
 </script>
+
+<style scoped>
+.lg-forgot { justify-self: start; color: var(--dim) }
+.lg-forgot:hover, .lg-forgot:focus-visible { color: var(--ink) }
+</style>

@@ -46,6 +46,12 @@
       <button v-if="canReturn" class="btn btn-secondary" type="button" :disabled="!selected.size"
               @click="ask('return', [...selected], $event)">Trả về nháp {{ selected.size }} mục</button>
     </div>
+    <!-- unpublish-photos: on "Đã đăng", the lead architect / admin can take photos down (with a reason) -->
+    <div v-if="canUnpublish && rows.length" class="row g10" style="margin-top:16px;flex-wrap:wrap;align-items:center">
+      <label class="row g10 small"><input type="checkbox" :checked="selected.size === rows.length" @change="selectAll($event.target.checked)"> Chọn tất cả</label>
+      <button class="btn btn-secondary" type="button" :disabled="!selected.size"
+              @click="ask('unpublish', [...selected], $event)">Gỡ khỏi website {{ selected.size }} mục</button>
+    </div>
     <label v-if="status === 'draft'" class="row g10 small" style="margin-top:14px">
       <input v-model="onlyReturned" type="checkbox"> Chỉ ảnh bị trả về
     </label>
@@ -56,7 +62,7 @@
 
     <section v-for="g in groups" :key="g.project" style="margin-top:28px">
       <div class="row g10" style="flex-wrap:wrap;align-items:center">
-        <label v-if="canAdvance" class="row g10"><input type="checkbox" :checked="g.rows.every(r => selected.has(r.id))"
+        <label v-if="canSelect" class="row g10"><input type="checkbox" :checked="g.rows.every(r => selected.has(r.id))"
                @change="selectProject(g, $event.target.checked)" :aria-label="'Chọn cả dự án ' + g.project"></label>
         <h2 :id="'p-' + g.project" class="h-4 rv-anchor" style="margin:0">{{ g.project.replaceAll('_', ' ') }} <span class="small num">· {{ g.rows.length }}</span></h2>
         <template v-if="isStaff">
@@ -71,7 +77,7 @@
 
       <ul class="stack" style="margin-top:12px;gap:14px;list-style:none;padding:0">
         <li v-for="r in g.rows" :key="r.id" class="form-ok" style="gap:16px;flex-wrap:wrap;align-items:flex-start">
-          <input v-if="canAdvance" type="checkbox" :checked="selected.has(r.id)" @change="toggle(r.id)" :aria-label="'Chọn ' + r.relative_path">
+          <input v-if="canSelect" type="checkbox" :checked="selected.has(r.id)" @change="toggle(r.id)" :aria-label="'Chọn ' + r.relative_path">
           <button type="button" class="thumb" :aria-label="'Sửa điểm nóng của ' + r.relative_path" :disabled="!isStaff" @click="openHotspots(r)">
             <img :src="imageUrl(r.relative_path)" :alt="r.alt_text" loading="lazy">
           </button>
@@ -83,18 +89,30 @@
               {{ r.ly_do_duyet.ly_do }}
             </p>
             <div v-if="isStaff" class="row g10" style="flex-wrap:wrap">
-              <select v-model="r.space_type" :aria-label="'Loại không gian ' + r.id">
-                <option v-for="t in SPACE_TYPES" :key="t" :value="t">{{ spaceLabel(t) }}</option>
-              </select>
-              <select v-model="r.design_style" :aria-label="'Phong cách ' + r.id">
-                <option v-for="s in STYLES" :key="s" :value="s">{{ s.replaceAll('_', ' ') }}</option>
-              </select>
+              <TagInput v-for="t in TYPED" :key="t.dim" v-model="r[t.col]" :values="tagValues[t.dim]" :id="t.dim + r.id"
+                        :label="t.label + ' ' + r.id" :busy="!!suggesting[r.id + t.dim]" @suggest="suggest(r, t, $event)" />
               <select v-for="d in humanDims" :key="d.id" :value="(r.tags[d.id] || [''])[0]" :aria-label="d.label + ' ' + r.id"
                       @change="tagOne(r, d.id, $event.target.value)">
                 <option value="">{{ d.label }}…</option>
                 <option v-for="o in d.options" :key="o.id" :value="o.id">{{ o.label }}</option>
               </select>
             </div>
+            <template v-for="t in TYPED" :key="'s' + t.dim">
+              <p v-if="offer[r.id + t.dim]" class="rv-offer" role="status">
+                Có phải ý bạn là <strong>{{ nameOf(t.dim, offer[r.id + t.dim].ma) }}</strong>?
+                <span v-if="offer[r.id + t.dim].ly_do" class="small">{{ offer[r.id + t.dim].ly_do }}</span>
+                <button class="btn btn-secondary" type="button" @click="useOffer(r, t)">Dùng «{{ nameOf(t.dim, offer[r.id + t.dim].ma) }}»</button>
+                <button class="btn btn-ghost" type="button" @click="suggest(r, t, offer[r.id + t.dim].text, true)">Vẫn gợi ý «{{ offer[r.id + t.dim].text }}»</button>
+              </p>
+              <p v-else-if="suggesting[r.id + t.dim]" class="small" role="status">Đang kiểm tra «{{ suggesting[r.id + t.dim] }}»…</p>
+              <p v-if="warn[r.id + t.dim]" class="small rv-warn" role="status">⚠ {{ warn[r.id + t.dim] }}</p>
+              <p v-if="r.cho_duyet_gia_tri?.[t.dim]" class="small rv-wait">
+                {{ t.label }}: chờ KTS trưởng duyệt giá trị mới «{{ r.cho_duyet_gia_tri[t.dim] }}», tạm để «Khác»
+              </p>
+            </template>
+            <p v-if="redrafted[r.id]" class="small rv-wait" role="status">
+              AI đã soạn lại mô tả và alt text theo «{{ redrafted[r.id] }}». Sửa nếu cần rồi bấm Lưu.
+            </p>
             <template v-if="canEditText">
               <div class="field"><label :for="'cap' + r.id">Mô tả</label>
                 <textarea :id="'cap' + r.id" v-model="r.caption" rows="2"></textarea></div>
@@ -105,27 +123,15 @@
             <div v-if="isStaff" class="field"><label :for="'mat' + r.id">Vật liệu (cách nhau bằng dấu phẩy)</label>
               <input :id="'mat' + r.id" v-model="r.materialsText"></div>
 
-            <div v-if="hs.id === r.id" class="stack" style="gap:8px">
-              <div class="hs-edit">
-                <img :src="imageUrl(r.relative_path)" alt="">
-                <span v-for="(o, i) in hs.objects" :key="o.index" class="dot"
-                      :style="{ left: o.hotspot_anchor[0] * 100 + '%', top: o.hotspot_anchor[1] * 100 + '%' }">{{ i + 1 }}</span>
-              </div>
-              <p v-if="!hs.objects.length" class="small">Không còn điểm nóng nào.</p>
-              <div v-for="(o, i) in hs.objects" :key="o.index" class="row g10">
-                <span class="num small">{{ i + 1 }}</span>
-                <input v-model="o.label_vi" class="txt" style="flex:1" :aria-label="'Tên món đồ ' + (i + 1)">
-                <button class="btn btn-ghost" type="button" @click="hs.objects.splice(i, 1)">Xoá</button>
-              </div>
-              <div class="row g10">
-                <button class="btn btn-secondary" type="button" @click="saveHotspots(r)">Lưu điểm nóng</button>
-                <button class="btn btn-ghost" type="button" @click="hs.id = null">Đóng</button>
-              </div>
-            </div>
+            <HotspotEditor v-if="hs.id === r.id" :space-id="r.id" :src="imageUrl(r.relative_path)" :objects="hs.objects"
+                           @saved="hs.id = null; saved = r.id" @close="hs.id = null" />
 
             <div class="row g10" style="flex-wrap:wrap">
               <button v-if="canEditText || isStaff" class="btn btn-secondary" type="button" @click="save(r)">Lưu</button>
-              <button v-if="canAdvance && NEXT_STATUS[status] !== 'cleared'" class="btn btn-primary" type="button" @click="advanceOne(r)">
+              <!-- greyed until the photo is ticked: moving a photo on is a deliberate choice, not a stray click -->
+              <button v-if="canAdvance && NEXT_STATUS[status] !== 'cleared'" class="btn btn-primary" type="button"
+                      :disabled="!selected.has(r.id)" :title="selected.has(r.id) ? null : 'Tick chọn ảnh này trước'"
+                      @click="advanceOne(r)">
                 Chuyển sang «{{ STATUS_VI[NEXT_STATUS[status]] }}»
               </button>
               <template v-if="isApprover">
@@ -133,6 +139,7 @@
                 <button v-if="status === 'approved' || status === 'cleared'" class="btn btn-ghost" type="button"
                         @click="ask('keep_internal', [r.id], $event)">Lưu nội bộ</button>
                 <button v-if="status === 'noi_bo'" class="btn btn-secondary" type="button" @click="ask('reopen', [r.id], $event)">Mở lại</button>
+                <button v-if="status === 'published'" class="btn btn-ghost" type="button" @click="ask('unpublish', [r.id], $event)">Gỡ khỏi website</button>
               </template>
               <span v-if="saved === r.id" class="small" aria-live="polite">Đã lưu</span>
             </div>
@@ -145,6 +152,11 @@
     <dialog ref="dlgEl" class="rv-dialog" aria-labelledby="rv-dlg-h" @close="onDialogClose">
       <form v-if="dlg.action" class="stack" style="gap:12px" @submit.prevent="confirmMove">
         <h2 id="rv-dlg-h" class="h-4" style="margin:0">{{ ACTION_VI[dlg.action] }} · {{ dlg.ids.length }} ảnh</h2>
+        <fieldset v-if="dlg.action === 'unpublish'" class="rv-outcome">
+          <legend class="small">Sau khi gỡ</legend>
+          <label class="row g10"><input v-model="dlg.internal" type="radio" name="rv-outcome" :value="false"> Gỡ xuống để sửa (về Nháp)</label>
+          <label class="row g10"><input v-model="dlg.internal" type="radio" name="rv-outcome" :value="true"> Gỡ và lưu nội bộ (khách rút lại đồng ý)</label>
+        </fieldset>
         <div class="field">
           <label for="rv-reason">Lý do <span class="small">(bắt buộc, người tải ảnh lên sẽ nhận được)</span></label>
           <textarea id="rv-reason" v-model="dlg.reason" rows="3" maxlength="500" required
@@ -165,9 +177,12 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  APPROVERS, NEXT_STATUS, RETURNABLE, SPACE_TYPES, STAFF, STATUS_VI, STYLES, advanceSpaces, getSpace, getTaxonomy, hasRole,
-  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, spaceLabel, toFacet, uploadAll
+  APPROVERS, NEXT_STATUS, RETURNABLE, STAFF, STATUS_VI, advanceSpaces, getSpace, getTaxonomy, hasRole,
+  imageUrl, keepInternal, listSpaces, projectOf, reopenSpaces, returnSpaces, reviewSpace, setTags, suggestValue, toFacet, unpublishSpaces,
+  uploadAll
 } from '@/api'
+import HotspotEditor from '@/components/HotspotEditor.vue'
+import TagInput from '@/components/TagInput.vue'
 
 const HUMAN = ['loai_cong_trinh', 'muc_dau_tu'] // the AI cannot see these; staff fill them per project
 
@@ -180,6 +195,36 @@ const loading = ref(false)
 const error = ref('')
 const saved = ref(null)
 const humanDims = ref([])
+const tagValues = reactive({ khong_gian: [], phong_cach: [] }) // typed with suggestions (review-tag-autocomplete)
+const TYPED = [{ dim: 'khong_gian', col: 'space_type', label: 'Loại không gian', other: 'khac' },
+  { dim: 'phong_cach', col: 'design_style', label: 'Phong cách', other: 'Khac' }]
+const nameOf = (dim, code) => tagValues[dim].find(v => v.ma_dinh_danh === code)?.ten || code
+const suggesting = reactive({}) // `${space id}${dim}` -> word being checked
+const offer = reactive({}) // `${space id}${dim}` -> { ma, ly_do, text }: "Did you mean …?"
+const warn = reactive({}) // `${space id}${dim}` -> the AI thinks this photo doesn't show the suggested word
+const redrafted = reactive({}) // space id -> word the AI rewrote the caption for (unsaved)
+
+/* A word that names no stored value: the server tries spelling, then Gemini, then saves it for the lead architect.
+   force: the reviewer saw the offer and still wants their word. */
+const suggest = (r, t, text, force = false) => run(async () => {
+  const k = r.id + t.dim
+  delete offer[k]; delete warn[k]; suggesting[k] = text
+  try {
+    const out = await suggestValue(r.id, t.dim, text, force)
+    if (out.kind === 'existing' && out.source === 'exact') r[t.col] = out.ma
+    else if (out.kind === 'existing') offer[k] = { ma: out.ma, ly_do: out.ly_do || '', text }
+    else {
+      r[t.col] = t.other; r.cho_duyet_gia_tri = { ...(r.cho_duyet_gia_tri || {}), [t.dim]: text }
+      if (out.canh_bao) warn[k] = out.canh_bao + (out.gan_nhat ? ` Gần nhất: «${nameOf(t.dim, out.gan_nhat)}».` : '')
+      if (out.caption) { // drafted in the same Gemini call; only saved when the reviewer clicks Lưu
+        r.caption = out.caption
+        if (out.alt_text) r.alt_text = out.alt_text
+        redrafted[r.id] = text
+      }
+    }
+  } finally { delete suggesting[k] }
+})
+const useOffer = (r, t) => { r[t.col] = offer[r.id + t.dim].ma; delete offer[r.id + t.dim] }
 
 const isStaff = computed(() => hasRole(STAFF))
 // architects send drafts to review; only the lead architect approves, clears and publishes
@@ -235,7 +280,7 @@ function save(r) {
     ? { space_type: r.space_type, design_style: r.design_style, caption: r.caption, alt_text: r.alt_text,
         materials: r.materialsText.split(',').map(m => m.trim()).filter(Boolean) }
     : { caption: r.caption, alt_text: r.alt_text }
-  return run(async () => { await reviewSpace(r.id, body); saved.value = r.id })
+  return run(async () => { await reviewSpace(r.id, body); saved.value = r.id; delete redrafted[r.id] })
 }
 
 const tagOne = (r, dimension, value) => run(async () => {
@@ -258,13 +303,8 @@ const hs = reactive({ id: null, objects: [] })
 
 const openHotspots = r => run(async () => {
   const s = await getSpace(r.id)
-  hs.objects = ((s.hotspots && s.hotspots.objects) || []).map((o, index) => ({ ...o, index, label_vi: o.label_vi || o.label }))
+  hs.objects = (s.hotspots && s.hotspots.objects) || [] // HotspotEditor saves through PUT /spaces/{id}/hotspots
   hs.id = r.id
-})
-
-const saveHotspots = r => run(async () => {
-  await reviewSpace(r.id, { hotspots: hs.objects.map(o => ({ index: o.index, label_vi: o.label_vi })) })
-  hs.id = null; saved.value = r.id
 })
 
 /* ── advance ────────────────────────────────────────────────────────── */
@@ -288,17 +328,22 @@ const advanceSelected = () => run(async () => {
 /* ── backward paths: return to draft, keep internal, reopen (review-return-reject) ── */
 const isApprover = computed(() => hasRole(APPROVERS))
 const canReturn = computed(() => isApprover.value && RETURNABLE.includes(status.value))
+const canUnpublish = computed(() => isApprover.value && status.value === 'published')
+const canSelect = computed(() => canAdvance.value || canUnpublish.value)
 const onlyReturned = ref(false)
 const moved = ref('')
-const REASON_VI = { tra_ve: 'Bị trả về', noi_bo: 'Lưu nội bộ', mo_lai: 'Mở lại' }
-const ACTION_VI = { return: 'Trả về nháp', keep_internal: 'Lưu nội bộ, không xuất bản', reopen: 'Mở lại về nháp' }
-const CALL = { return: returnSpaces, keep_internal: keepInternal, reopen: reopenSpaces }
+const REASON_VI = { tra_ve: 'Bị trả về', noi_bo: 'Lưu nội bộ', mo_lai: 'Mở lại', go_xuong: 'Đã gỡ khỏi website',
+  go_noi_bo: 'Gỡ khỏi website, lưu nội bộ' }
+const ACTION_VI = { return: 'Trả về nháp', keep_internal: 'Lưu nội bộ, không xuất bản', reopen: 'Mở lại về nháp',
+  unpublish: 'Gỡ khỏi website' }
+const CALL = { return: returnSpaces, keep_internal: keepInternal, reopen: reopenSpaces,
+  unpublish: (ids, reason) => unpublishSpaces(ids, reason, dlg.internal) }
 const when = t => (t ? new Date(t).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : '')
 const dlgEl = ref(null)
-const dlg = reactive({ action: '', ids: [], reason: '', error: '', busy: false, opener: null })
+const dlg = reactive({ action: '', ids: [], reason: '', error: '', busy: false, opener: null, internal: false })
 
 function ask(action, ids, e) {
-  Object.assign(dlg, { action, ids, reason: '', error: '', busy: false, opener: e?.currentTarget || null })
+  Object.assign(dlg, { action, ids, reason: '', error: '', busy: false, opener: e?.currentTarget || null, internal: false })
   nextTick(() => { dlgEl.value.showModal(); document.getElementById('rv-reason')?.focus() })
 }
 function onDialogClose() {
@@ -326,7 +371,10 @@ async function confirmMove() {
 watch(onlyReturned, load)
 watch(status, load, { immediate: true })
 getTaxonomy()
-  .then(dims => { humanDims.value = dims.filter(d => HUMAN.includes(d.ma_dinh_danh)).map(toFacet) })
+  .then(dims => {
+    humanDims.value = dims.filter(d => HUMAN.includes(d.ma_dinh_danh)).map(toFacet)
+    for (const d of dims) if (d.ma_dinh_danh in tagValues) tagValues[d.ma_dinh_danh] = d.values
+  })
   .catch(() => {}) // without the taxonomy the tag selects just stay hidden
 </script>
 
@@ -340,18 +388,21 @@ select:focus-visible, .txt:focus-visible { border-color: var(--accent); box-shad
 .thumb { padding: 0; border: 0; background: none; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden }
 .thumb img { width: 140px; height: 100px; object-fit: cover; display: block }
 .thumb:disabled { cursor: default }
-.hs-edit { position: relative; max-width: 520px }
-.hs-edit img { width: 100%; display: block; border-radius: var(--radius-sm) }
 .rv-reason { margin: 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--panel); font-size: 14px;
   color: var(--ink); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; overflow-wrap: anywhere }
-.rv-reason.is-noi_bo { border-left-color: var(--danger) }
+.rv-reason.is-noi_bo, .rv-reason.is-go_noi_bo { border-left-color: var(--danger) }
+.rv-outcome { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; margin: 0; display: grid; gap: 6px }
+.rv-outcome legend { padding: 0 4px; color: var(--dim) }
+.rv-outcome input { accent-color: var(--accent) }
 .rv-reason.is-mo_lai { border-left-color: var(--success) }
+.rv-offer { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px }
+.rv-offer .small { flex-basis: 100%; color: var(--dim) }
+.rv-wait { margin: 0; color: var(--warn) }
+.rv-warn { margin: 0; color: var(--danger) }
 .rv-by { color: var(--dim); font-size: 13px }
 .rv-dialog { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); color: var(--ink);
   padding: 20px; width: min(520px, calc(100vw - 32px)) }
 .rv-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
 .rv-dialog textarea { width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
   border-radius: var(--radius-md); padding: 10px 12px; font: inherit; color-scheme: dark }
-.dot { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%;
-  background: var(--accent); color: var(--accent-on); font-size: 12px; display: grid; place-items: center }
 </style>

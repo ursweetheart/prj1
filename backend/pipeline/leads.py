@@ -22,7 +22,9 @@ def behaviour_profile(phien_id: str, conn=None) -> dict | None:
     conn = conn or psycopg.connect(DSN)
     db = conn.cursor(row_factory=tuple_row)  # callers may hand over a dict_row connection
     try:
-        events = db.execute("SELECT space_id, gia_tri FROM su_kien WHERE phien_id = %s ORDER BY created_at DESC, id DESC",
+        # photo events only: page views, CTA clicks and the like (behaviour-events) are not "views" of a space
+        events = db.execute("SELECT space_id, gia_tri FROM su_kien WHERE phien_id = %s AND space_id IS NOT NULL "
+                            "ORDER BY created_at DESC, id DESC",
                               (phien_id,)).fetchall()
         if not events:
             return None

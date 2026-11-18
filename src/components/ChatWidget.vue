@@ -10,7 +10,22 @@
         <p v-if="!turns.length" class="small">Hỏi về giá, quy trình, thời gian thi công hoặc đặt lịch tư vấn.</p>
         <div v-for="(t, i) in turns" :key="i" class="chat-turn" :class="t.role">
           <p>{{ t.content }}</p>
-          <div v-if="t.images?.length" class="row g6" style="margin-top:8px;flex-wrap:wrap">
+          <!-- assistant-project-results: example projects, best match first -->
+          <ul v-if="t.projects?.length" class="chat-projects">
+            <li v-for="pr in t.projects" :key="pr.slug">
+              <router-link :to="projectLink(pr)" class="chat-project" @click="open = false"
+                           :aria-label="'Dự án ' + projectName(pr) + (pr.khop.length ? ', khớp ' + pr.khop.map(k => k.ten).join(', ') : '')">
+                <span class="chat-project-imgs">
+                  <img v-for="a in pr.anh" :key="a.id" :src="imageUrl(a.relative_path)" alt="" loading="lazy">
+                </span>
+                <span class="chat-project-text">
+                  <strong>{{ projectName(pr) }}</strong>
+                  <span v-if="pr.khop.length" class="small">{{ pr.khop.map(k => k.ten).join(' · ') }}</span>
+                </span>
+              </router-link>
+            </li>
+          </ul>
+          <div v-else-if="t.images?.length" class="row g6" style="margin-top:8px;flex-wrap:wrap">
             <router-link v-for="im in t.images" :key="im.id" :to="'/khong-gian/' + im.id" @click="open = false">
               <img :src="imageUrl(im.relative_path)" alt="Dự án gợi ý" loading="lazy"
                    style="width:84px;height:64px;object-fit:cover;border-radius:var(--radius-sm)">
@@ -30,10 +45,13 @@
           <input v-model="sendViews" type="checkbox">
           <span>Gửi kèm những không gian tôi đã xem cho kiến trúc sư</span>
         </label>
+        <button v-if="turns.length" class="chat-new small" type="button" :disabled="busy" @click="startOver">
+          Bắt đầu cuộc mới</button>
         <div class="row g6">
-          <input v-model="message" type="text" maxlength="1000" placeholder="Nhập câu hỏi…" aria-label="Câu hỏi" required style="flex:1">
+          <input ref="input" v-model="message" type="text" maxlength="1000" placeholder="Nhập câu hỏi…" aria-label="Câu hỏi" required style="flex:1">
           <button class="btn btn-primary" :disabled="busy">Gửi</button>
         </div>
+        <p class="chat-note">Hội thoại được lưu ẩn danh 90 ngày để cải thiện trợ lý. Đừng gửi thông tin nhạy cảm.</p>
       </form>
     </section>
 
@@ -48,7 +66,17 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
-import { consent, imageUrl, sendChat } from '@/api'
+import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
+import { fileOf, folderOf } from '@/lib/projectSpaces'
+
+/* a card opens the project page on its best photo when the project has a page and the photo is one of the page's
+   (anh_trang; or the slug's own folder), else that photo's space page. Names come from the catalog (project-catalog). */
+const projectName = pr => pr.ten || pr.folder.replaceAll('_', ' ')
+function projectLink(pr) {
+  const a = pr.anh[0]
+  const file = a.anh_trang || (pr.slug && folderOf(pr.slug) === pr.folder ? fileOf(a.relative_path) : null)
+  return pr.co_trang && file ? '/du-an/' + pr.slug + '?anh=' + encodeURIComponent(file) : '/khong-gian/' + a.id
+}
 
 const open = ref(false)
 const turns = ref([])
@@ -59,7 +87,43 @@ const error = ref('')
 const log = ref(null)
 const sendViews = ref(false)
 const consented = ref(false)
-watch(open, o => { if (o) consented.value = consent.get() === 'yes' }) // the banner may be answered meanwhile
+const input = ref(null)
+watch(open, o => {
+  if (!o) return
+  consented.value = consent.get() === 'yes' // the banner may be answered meanwhile
+  restore()
+})
+
+/* chat-history: the conversation id lives in localStorage with consent (restored on a later visit), otherwise in
+   sessionStorage (this tab only, survives a reload). Holding the id is what opens the conversation. */
+const KEY = 'd3_hoi_thoai'
+const store = () => (consent.get() === 'yes' ? localStorage : sessionStorage)
+const getId = () => { try { return store().getItem(KEY) || sessionStorage.getItem(KEY) } catch { return null } }
+function setId(id) {
+  try {
+    for (const s of [localStorage, sessionStorage]) s.removeItem(KEY)
+    if (id) store().setItem(KEY, id)
+  } catch { /* private mode: the conversation just isn't remembered */ }
+}
+let restored = false
+async function restore() {
+  if (restored || turns.value.length) return
+  restored = true
+  const id = getId()
+  if (!id) return
+  try {
+    const r = await getChat(id)
+    turns.value = r.tin_nhan.map(m => ({ role: m.vai_tro === 'khach' ? 'user' : 'assistant', content: m.noi_dung, sources: m.nguon }))
+    setId(id) // move it to localStorage if the visitor accepted the banner since
+    await nextTick(); log.value?.scrollTo(0, log.value.scrollHeight)
+  } catch (e) { if (e.status === 404) setId(null) }
+}
+async function startOver() {
+  const id = getId()
+  turns.value = []; error.value = ''; setId(null)
+  if (id) deleteChat(id).catch(() => {}) // gone from the server; a failure leaves it to the 90-day purge
+  await nextTick(); input.value?.focus()
+}
 
 async function send() {
   const text = message.value
@@ -68,8 +132,10 @@ async function send() {
   const history = turns.value.map(({ role, content }) => ({ role, content }))
   turns.value.push({ role: 'user', content: text })
   try {
-    const r = await sendChat(text, history, contact.value, consented.value && sendViews.value)
-    turns.value.push({ role: 'assistant', content: r.answer, images: r.images, sources: r.sources })
+    const r = await sendChat(text, history, contact.value, consented.value && sendViews.value, getId())
+    if (r.hoi_thoai_id) setId(r.hoi_thoai_id)
+    turns.value.push({ role: 'assistant', content: r.answer, images: r.images, projects: r.projects, sources: r.sources })
+    trackEvent('nhan_chatbot') // behaviour-events: a count only, never the text
   } catch (e) { error.value = e.message } finally {
     busy.value = false
     await nextTick(); log.value?.scrollTo(0, log.value.scrollHeight)
@@ -87,10 +153,22 @@ async function send() {
 .chat-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px }
 .chat-turn { max-width: 88%; padding: 10px 12px; border-radius: var(--radius-md); background: var(--line); white-space: pre-line }
 .chat-turn.user { align-self: flex-end; background: var(--accent); color: var(--accent-on) }
+.chat-projects { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; white-space: normal }
+.chat-project { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: var(--radius-sm);
+  background: var(--page); color: var(--ink); text-decoration: none }
+.chat-project:hover, .chat-project:focus-visible { outline: 2px solid var(--accent); outline-offset: 0 }
+.chat-project-imgs { display: flex; gap: 4px; flex: none }
+.chat-project-imgs img { width: 56px; height: 44px; object-fit: cover; border-radius: var(--radius-sm); display: block }
+.chat-project-text { display: grid; gap: 2px; min-width: 0 }
+.chat-project-text strong { overflow-wrap: anywhere }
 .chat-form { display: grid; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line) }
 .chat-form input { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; min-height: 42px; min-width: 0 }
 .chat-form input::placeholder { color: var(--faint) }
 .chat-form input:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
+.chat-new { justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--dim); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; font: inherit; font-size: 13px }
+.chat-new:hover, .chat-new:focus-visible { color: var(--ink) }
+.chat-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint) }
 /* Nút mở trợ lý: viên tối trong mờ, viền mảnh; hover giống topbar (.glow-hover) */
 .chat-fab { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; cursor: pointer;
   font: inherit; font-size: 14px; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.88);

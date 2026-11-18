@@ -44,7 +44,7 @@
           <h2 class="ps-name">
             <button type="button" class="ps-toggle" :aria-expanded="String(!!open[p.folder])"
                     :aria-controls="'ps-d-' + p.folder" @click="toggle(p.folder)">
-              <span class="ps-caret" aria-hidden="true">▸</span>{{ nameOf(p.folder) }}
+              <span class="ps-caret" aria-hidden="true">▸</span>{{ p.ten || nameOf(p.folder) }}
             </button>
           </h2>
           <p class="ps-cell"><span class="ps-k">Ảnh</span><span class="num">{{ p.so_anh }}</span></p>
@@ -58,7 +58,7 @@
             <span class="ps-badge" :class="'is-' + p.trang_thai">{{ statusText(p) }}</span></p>
         </div>
 
-        <section v-if="open[p.folder]" :id="'ps-d-' + p.folder" class="ps-detail" :aria-label="'Chi tiết ' + nameOf(p.folder)">
+        <section v-if="open[p.folder]" :id="'ps-d-' + p.folder" class="ps-detail" :aria-label="'Chi tiết ' + (p.ten || nameOf(p.folder))">
           <p v-if="detail[p.folder]?.error" class="small" style="color:var(--danger)" role="alert">{{ detail[p.folder].error }}</p>
           <p v-else-if="!detail[p.folder]?.data" class="small">Đang tải…</p>
           <template v-else>

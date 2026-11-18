@@ -119,6 +119,24 @@ def suggest(conn, chosen, shown_ids, styles, k: int = SUGGESTIONS) -> list:
     return [_tile(r) for r in rows]
 
 
+def suggest_projects(conn, chosen, styles, k: int = 3) -> list:
+    """project-catalog: catalog projects with published photos of `styles`, most such photos first, then the one whose
+    closest photo is nearest the mean of the chosen photos. Each: slug, ten, co_trang, phong_cach (its most common
+    matching style) and that closest photo."""
+    rows = _rows(conn, """
+        WITH c AS (SELECT avg(embedding) v FROM space WHERE id = ANY(%(c)s) AND embedding IS NOT NULL),
+             m AS (SELECT s.du_an_slug, s.id, s.relative_path, s.anh_trang, s.design_style, s.embedding <=> c.v AS d
+                     FROM space s, c WHERE s.review_status = 'published' AND s.design_style = ANY(%(st)s)
+                      AND s.du_an_slug IS NOT NULL AND s.embedding IS NOT NULL)
+        SELECT p.slug, p.ten, p.co_trang, mode() WITHIN GROUP (ORDER BY m.design_style),
+               (array_agg(json_build_object('id', m.id, 'relative_path', m.relative_path, 'anh_trang', m.anh_trang)
+                          ORDER BY m.d NULLS LAST, m.id))[1]
+          FROM m JOIN du_an p ON p.slug = m.du_an_slug
+         GROUP BY p.slug ORDER BY count(*) DESC, min(m.d) NULLS LAST, p.slug LIMIT %(k)s""",
+                 {"c": list(chosen), "st": list(styles), "k": k})
+    return [dict(zip(("slug", "ten", "co_trang", "phong_cach", "anh"), r)) for r in rows]
+
+
 def tiles(conn, ids) -> list:
     """Published spaces among ids, in the given order (a saved result re-read: unpublished ones are dropped)."""
     rows = {r[0]: r for r in _rows(conn, f"SELECT {TILE} FROM space WHERE review_status = 'published' AND id = ANY(%s)",
@@ -142,4 +160,4 @@ def result(conn, pairs, chosen) -> dict:
     names = style_names(conn)
     styles = [{"ma": b["ma"], "ten": names.get(b["ma"], b["ma"]), "ti_le": b["ti_le"]} for b in best]
     goi_y = suggest(conn, chosen, [i for p in pairs for i in p], [b["ma"] for b in best])
-    return {"phong_cach": styles, "goi_y": goi_y}
+    return {"phong_cach": styles, "goi_y": goi_y, "du_an": suggest_projects(conn, chosen, [b["ma"] for b in best])}

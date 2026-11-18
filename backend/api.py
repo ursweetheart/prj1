@@ -11,10 +11,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 import psycopg
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -23,17 +23,16 @@ from psycopg.types.json import Jsonb
 from starlette.middleware.sessions import SessionMiddleware
 from psycopg.rows import dict_row
 from psycopg.errors import UniqueViolation
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (bo_suu_tap, discovery, estimate, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
-                      trends, vertex, weekly_report)
+from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+                      topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
-from pipeline.schemas import SpaceClassificationResult
 from pipeline.search import by_image, by_text, similar_to
 from pipeline.store import DSN, save_records
-from ratelimit import limit
+from ratelimit import check as rate_check, limit
 
 IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
@@ -44,17 +43,37 @@ FIELDS = "id, relative_path, space_type, design_style, style_confidence, materia
 TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
         "FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id JOIN chieu_phan_loai d ON d.id = v.chieu_id "
         "WHERE sg.space_id = space.id GROUP BY d.ma_dinh_danh) t) AS tags")
+# review-tag-autocomplete: the new values a space waits on, {dimension: word}, while an approver hasn't decided
+PENDING_VALUE = ("(SELECT COALESCE(jsonb_object_agg(u.bang_chung->>'chieu', u.ten_de_xuat), '{}') FROM ung_vien_phan_loai u "
+                 "WHERE u.loai = 'gia_tri' AND u.trang_thai = 'cho_duyet' AND u.bang_chung->'space_ids' @> to_jsonb(space.id)) "
+                 "AS cho_duyet_gia_tri")
 # QT-01 order; an architect confirms AI tags before anything is published
 NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
-SPACE_TYPES = SpaceClassificationResult.model_fields["space_type"].annotation.__args__
-STYLES = SpaceClassificationResult.model_fields["design_style"].annotation.__args__
+
+
+def _check_value(dim: str, field: str, code: Optional[str]):
+    """Room type / style must be a value stored for that dimension now (staff add them at /quan-tri/phan-loai)."""
+    if code and code not in (allowed := taxonomy.values(dim)):
+        raise HTTPException(422, f"{field} must be one of {allowed}")
+
 
 # ── Weekly report scheduler (UC23; seq-18 b1): checks 30 s after start, then every 10 minutes ─────────────
 WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
 
 
+_last_purge = None
+
+
 def _weekly_once():
+    """The maintenance check: the weekly report when due, and once a day the 90-day conversation purge."""
+    global _last_purge
     now = datetime.now(timezone.utc)
+    if _last_purge is None or (now - _last_purge).total_seconds() >= 86400:
+        with _db() as c:
+            n = conversations.purge(c)
+        _last_purge = now
+        if n:
+            weekly_report.log.info("purged %d conversations older than %d days", n, conversations.KEEP_DAYS)
     if weekly_report.due(now):
         with _db() as c:
             weekly_report.send_week(c, now)
@@ -131,9 +150,9 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
     with _db() as c:
         return c.execute(
             f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
-            + (", ly_do_duyet" if staff else "") + " "  # the review reason is staff-only
+            + (", ly_do_duyet, " + PENDING_VALUE if staff else "") + " "  # review reason and suggestions: staff-only
             "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
-            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai')) "
+            "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
             {"t": space_type, "s": design_style, "r": review_status, "i": id_list, "rv": tra_ve and staff,
@@ -162,18 +181,90 @@ def similar(space_id: int, k: int = 6, user=Depends(optional_user)):
 
 @app.get("/projects/{folder}/spaces")
 def project_spaces(folder: str = PathParam(pattern=r"^[a-z0-9_]{1,60}$"), user=Depends(optional_user)):
-    """Spaces of one project folder (the site's slug with '-' -> '_'), by file name; visitors get published ones only."""
+    """Spaces of one project folder (the site's slug with '-' -> '_'), by file name; visitors get published ones only.
+    project-catalog: also the spaces matched to that site project from other folders; anh_trang names the site file."""
     with _db() as c:
         return c.execute(
-            f"SELECT {FIELDS} FROM space WHERE split_part(relative_path, '/', 1) = %(f)s "
-            "AND (%(all)s OR review_status = 'published') ORDER BY relative_path",
-            {"f": folder, "all": _is_staff(user)}).fetchall()
+            f"SELECT {FIELDS}, du_an_slug, anh_trang FROM space WHERE (split_part(relative_path, '/', 1) = %(f)s "
+            "OR du_an_slug = replace(%(f)s, '_', '-')) AND (%(all)s OR review_status = 'published') "
+            "ORDER BY relative_path COLLATE \"C\"", {"f": folder, "all": _is_staff(user)}).fetchall()
+
+
+# ── Project catalog (change: project-catalog; roadmap 0.1, UC02) ─────────────────────────────────────────────
+SLUG = r"^[a-z0-9-]{1,60}$"
+PROJECT_STAFF_FIELDS = ("dien_tich_m2", "so_phong_ngu", "thoi_gian_thi_cong", "muc_dau_tu", "thuyet_minh")
+PROJECT_FIELDS = "slug, ten, loai, nam, mo_ta_ngan, co_trang, " + ", ".join(PROJECT_STAFF_FIELDS) + ", cap_nhat_luc"
+PHOTO_ORDER = 'anh_trang COLLATE "C" NULLS LAST, relative_path COLLATE "C"'  # the site's photo order, then file name
+
+
+@app.get("/projects", dependencies=[Depends(limit("projects", 120, 60))])
+def list_projects(user=Depends(optional_user)):
+    """Visitors: projects with a published photo. Staff: every site project and every folder project with photos."""
+    staff = _is_staff(user)
+    with _db() as c:
+        rows = c.execute(f"""
+            SELECT d.slug, d.ten, d.loai, d.nam, d.mo_ta_ngan, d.co_trang,
+                   count(s.id) FILTER (WHERE s.review_status = 'published') AS so_anh_da_dang,
+                   count(s.id) FILTER (WHERE s.review_status <> 'published') AS so_anh_chua_dang,
+                   (SELECT json_build_object('id', p.id, 'relative_path', p.relative_path, 'anh_trang', p.anh_trang,
+                                             'alt_text', p.alt_text)
+                      FROM space p WHERE p.du_an_slug = d.slug AND p.review_status = 'published'
+                     ORDER BY {PHOTO_ORDER} LIMIT 1) AS anh_dai_dien
+              FROM du_an d LEFT JOIN space s ON s.du_an_slug = d.slug
+             GROUP BY d.slug
+            HAVING count(s.id) FILTER (WHERE s.review_status = 'published') > 0
+                OR (%(staff)s AND (d.thu_tu IS NOT NULL OR count(s.id) > 0))
+             ORDER BY d.thu_tu NULLS LAST, d.ten""", {"staff": staff}).fetchall()
+    if not staff:
+        for r in rows:
+            del r["so_anh_chua_dang"]
+    return rows
+
+
+@app.get("/projects/{slug}", dependencies=[Depends(limit("projects", 120, 60))])
+def get_project(slug: str = PathParam(pattern=SLUG), user=Depends(optional_user)):
+    staff = _is_staff(user)
+    with _db() as c:
+        project = c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
+        spaces = c.execute(f"SELECT {FIELDS}, anh_trang FROM space WHERE du_an_slug = %(s)s "
+                           f"AND (%(all)s OR review_status = 'published') ORDER BY {PHOTO_ORDER}",
+                           {"s": slug, "all": staff}).fetchall() if project else []
+    if not project or not (staff or spaces):
+        raise HTTPException(404, "no such project")
+    return {**project, "spaces": spaces}
+
+
+class ProjectDetailsIn(BaseModel):
+    model_config = {"extra": "forbid"}  # the site fields come from projects.js only
+    dien_tich_m2: Optional[float] = Field(default=None, gt=0, le=100000)
+    so_phong_ngu: Optional[int] = Field(default=None, gt=0, le=100)
+    thoi_gian_thi_cong: Optional[str] = Field(default=None, max_length=80)
+    muc_dau_tu: Optional[str] = None
+    thuyet_minh: Optional[str] = Field(default=None, max_length=4000)
+
+
+@app.put("/projects/{slug}")
+def save_project(body: ProjectDetailsIn, slug: str = PathParam(pattern=SLUG), user=Depends(require(*APPROVERS))):
+    """UC02 project details, by the lead architect or admin; every change is logged with the old and new values."""
+    _check_value("muc_dau_tu", "muc_dau_tu", body.muc_dau_tu)
+    new = body.model_dump()
+    with _db() as c:
+        old = c.execute(f"SELECT {', '.join(PROJECT_STAFF_FIELDS)} FROM du_an WHERE slug = %s FOR UPDATE", (slug,)).fetchone()
+        if not old:
+            raise HTTPException(404, "no such project")
+        old = {k: float(v) if k == "dien_tich_m2" and v is not None else v for k, v in old.items()}
+        changed = {k: new[k] for k in PROJECT_STAFF_FIELDS if new[k] != old[k]}
+        if changed:
+            c.execute(f"UPDATE du_an SET {', '.join(f'{k} = %({k})s' for k in changed)}, cap_nhat_luc = now() "
+                      "WHERE slug = %(slug)s", {**changed, "slug": slug})
+            c.execute("INSERT INTO nhat_ky_du_an (du_an_slug, user_id, hanh_dong, chi_tiet) VALUES (%s, %s, 'sua', %s)",
+                      (slug, user["id"], Jsonb({"truoc": {k: old[k] for k in changed}, "sau": changed})))
+        return c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
 
 
 @app.get("/search")
 def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(optional_user)):
-    if space_type and space_type not in SPACE_TYPES:
-        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
+    _check_value("khong_gian", "space_type", space_type)
     return [_hit(r) for r in by_text(q, space_type, min(k, 24), published_only=not _is_staff(user))]
 
 
@@ -183,8 +274,7 @@ def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(
     """Spaces that look like the uploaded photo; the photo is embedded in memory and never stored."""
     if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
         raise HTTPException(415, "Chỉ nhận ảnh JPG, PNG hoặc WEBP.")
-    if space_type and space_type not in SPACE_TYPES:
-        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
+    _check_value("khong_gian", "space_type", space_type)
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Ảnh quá lớn, tối đa 8 MB.")
@@ -253,10 +343,8 @@ def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str
 
 @app.patch("/spaces/{space_id}")
 def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))):
-    if body.space_type and body.space_type not in SPACE_TYPES:
-        raise HTTPException(422, f"space_type must be one of {SPACE_TYPES}")
-    if body.design_style and body.design_style not in STYLES:
-        raise HTTPException(422, f"design_style must be one of {STYLES}")
+    _check_value("khong_gian", "space_type", body.space_type)
+    _check_value("phong_cach", "design_style", body.design_style)
     sent = {k: v for k, v in body.model_dump(include=set(EDITABLE)).items() if v is not None}
     if "materials" in sent:
         sent["materials"] = [m.strip() for m in sent["materials"] if m.strip()]
@@ -283,6 +371,63 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
         return c.execute(f"SELECT {FIELDS} FROM space WHERE id=%s", (space_id,)).fetchone()
 
 
+class SuggestValue(BaseModel):
+    chieu: Literal["khong_gian", "phong_cach"]
+    text: str = Field(min_length=1, max_length=60)
+    force: bool = False  # the reviewer saw "Did you mean …?" and still wants the new word
+
+
+SUGGEST_FIELDS = "id, relative_path, caption, materials, palette, hotspots, space_type, design_style"
+
+
+def _wait_on_suggestion(c, space, dim, text, user, draft) -> int:
+    """Save / join the suggestion and set the photo to "Other" through the same log as a manual edit."""
+    cid = value_suggest.upsert(c, dim, text, space["id"], user["id"], draft, space)
+    col, other = value_suggest.DIMS[dim], taxonomy.OTHER[dim]
+    if space[col] != other:
+        c.execute(f"UPDATE space SET {col} = %s WHERE id = %s", (other, space["id"]))
+        _log(c, space["id"], user, "edit", {"from": {col: space[col]}, "to": {col: other}, "goi_y": cid})
+    return cid
+
+
+@app.post("/spaces/{space_id}/suggest-value")
+def suggest_value(space_id: int, body: SuggestValue, user=Depends(require(*STAFF))):
+    """A reviewer typed a room type / style the list doesn't have (review-tag-autocomplete). In order: an exact match,
+    an undecided suggestion of the same word, a near spelling, Gemini's opinion; only then a new suggestion. The photo
+    waits on "Other" until an approver decides."""
+    text, dim = " ".join(body.text.split()), body.chieu
+    if not text:
+        raise HTTPException(422, "text is empty")
+    if ma := value_suggest.exact(dim, text):
+        return {"kind": "existing", "ma": ma, "source": "exact"}
+
+    def space_row(c):
+        row = c.execute(f"SELECT {SUGGEST_FIELDS} FROM space WHERE id = %s FOR UPDATE", (space_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "space not found")
+        return row
+
+    with _db() as c:
+        space = space_row(c)
+        if value_suggest.pending(c, dim, text):  # someone already suggested it: join, no second AI call
+            return {"kind": "suggested", "id": _wait_on_suggestion(c, space, dim, text, user, None)}
+    if not body.force and (ma := value_suggest.spelling(dim, text)):
+        return {"kind": "existing", "ma": ma, "source": "spelling"}
+    rate_check("suggest_value", user["id"], 10, 60)  # only the calls that reach Gemini count
+    draft = value_suggest.ai_check(space, dim, text)  # slow (seconds): outside the transaction
+    if draft and draft["trung_voi"] and not body.force:
+        return {"kind": "existing", "ma": draft["trung_voi"], "source": "ai", "ly_do": draft["ly_do"]}
+    with _db() as c:
+        space = space_row(c)  # re-read: it may have been edited while Gemini answered
+        out = {"kind": "suggested", "id": _wait_on_suggestion(c, space, dim, text, user, draft)}
+    if draft and draft["anh_khop"] is False:  # the photo doesn't show the word's features: tell the reviewer now
+        out["canh_bao"] = draft["nhan_xet_anh"] or f"Ảnh này có vẻ không thể hiện «{text}»."
+        out["gan_nhat"] = draft["gan_nhat"]
+    elif draft and draft["caption"]:  # same Gemini call: a caption / alt text for the new value, unsaved until Lưu
+        out["caption"], out["alt_text"] = draft["caption"], draft["alt_text"]
+    return out
+
+
 class AdvanceMany(BaseModel):
     space_ids: list[int] = Field(min_length=1, max_length=500)
     rights_confirmed: bool = False
@@ -306,6 +451,9 @@ BACK = {  # action: (allowed source statuses, target status, reason kind, log ac
     "return": (RETURNABLE, "draft", "tra_ve", "return"),
     "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
     "reopen": ({"noi_bo"}, "draft", "mo_lai", "reopen"),
+    # unpublish-photos: a published photo taken down, to fix it (draft) or because the client withdrew consent (noi_bo)
+    "unpublish": ({"published"}, "draft", "go_xuong", "unpublish"),
+    "unpublish_internal": ({"published"}, "noi_bo", "go_noi_bo", "unpublish"),
 }
 STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
              "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
@@ -360,6 +508,16 @@ def reopen_spaces(body: MoveBack, tasks: BackgroundTasks, user=Depends(require(*
     return _move_back("reopen", body, user, tasks)
 
 
+class Unpublish(MoveBack):
+    giu_noi_bo: bool = False  # True: the client withdrew consent -> "Lưu nội bộ"; False: back to draft to fix
+
+
+@app.post("/spaces/unpublish")
+def unpublish_spaces(body: Unpublish, tasks: BackgroundTasks, user=Depends(require(*APPROVERS))):
+    """"Gỡ khỏi website": published -> draft or noi_bo, with a reason; separate from "Trả về nháp" on purpose."""
+    return _move_back("unpublish_internal" if body.giu_noi_bo else "unpublish", body, user, tasks)
+
+
 AI_DIMS = {"khong_gian", "phong_cach", "tong_mau", "vat_lieu"}  # mirrored from space columns by sync_ai_tags
 
 
@@ -400,11 +558,22 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
     return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
 
 
+PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem")  # about one published photo
+
+
 class Event(BaseModel):
-    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem"]  # view, heart save, photo chosen in the style quiz
+    # photo events (view, heart save, quiz pick) and the behaviour events of UC21 (change behaviour-events)
+    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
+                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc"]
     dong_y: bool                                     # the visitor's answer on the consent banner
     phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
     space_id: Optional[int] = None
+    trang: Optional[str] = Field(default=None, pattern=r"^/[a-z0-9/:_-]{0,99}$")  # route pattern, never a real path
+    doi_tuong: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_/-]{1,100}$")  # slug, photo id, CTA target, form
+    gia_tri: Optional[list[Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]+:[A-Za-z0-9_]+$")]]] = Field(
+        default=None, max_length=20)                 # filter values of ap_dung_bo_loc
+    thoi_gian_dung_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
+    do_sau_cuon: Optional[float] = Field(default=None, ge=0, le=1)
 
     @field_validator("phien_id")
     @classmethod
@@ -425,6 +594,11 @@ def track(body: Event):
             return
         c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true) ON CONFLICT DO NOTHING",
                   (body.phien_id,))
+        if body.loai not in PHOTO_EVENTS:  # behaviour-events: no photo, so stored as sent (all fields validated)
+            c.execute("INSERT INTO su_kien (phien_id, loai, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, do_sau_cuon) "
+                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", (body.phien_id, body.loai, body.trang, body.doi_tuong,
+                                                        body.gia_tri or [], body.thoi_gian_dung_ms, body.do_sau_cuon))
+            return
         c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri) "
                   "SELECT %(p)s, %(l)s, s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
                   "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
@@ -442,16 +616,72 @@ class Chat(BaseModel):
     contact: Optional[str] = Field(default=None, max_length=200)
     phien_id: Optional[str] = Field(default=None, pattern=PHIEN)
     gui_ho_so: bool = False                          # "gửi kèm những không gian tôi đã xem", ticked in the chat
+    hoi_thoai_id: Optional[str] = Field(default=None, max_length=64)  # the stored conversation (chat-history)
 
 
 @app.post("/chat", dependencies=[Depends(limit("chat", 20, 60))])
 def chat(body: Chat, tasks: BackgroundTasks):
-    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect."""
-    out = respond(body.message, body.history, body.contact, body.phien_id, body.gui_ho_so)
+    """Public. Answers only from the knowledge base; otherwise says so and hands off to an architect.
+    Every turn is stored (masked, anonymous unless the session is a consented one) and the constraints the visitor
+    gave earlier in the conversation carry over (chat-history)."""
+    with _db() as c:
+        hid, rang_buoc, stored = conversations.start_or_get(c, body.hoi_thoai_id, body.phien_id)
+        # the server's own turns once there are any; the lead keeps what the visitor saw, unmasked
+        out = respond(body.message, stored or body.history, body.contact, body.phien_id, body.gui_ho_so,
+                      rang_buoc=rang_buoc, lead_history=body.history or stored)
+        blocked = out.pop("chu_de_cam", None)  # staff only: never in the public reply
+        conversations.add_turn(c, hid, body.message, out["answer"], out["sources"], out.get("diem_cao_nhat"),
+                               out["answered"], out["rang_buoc"], blocked)
+        if out.get("lead_id"):
+            conversations.link_lead(c, hid, out["lead_id"], handoff=not out["answered"])
     if out.get("lead_id"):
         tasks.add_task(notify.notify_new_lead, out["lead_id"])
+    return {**out, "hoi_thoai_id": hid}
+
+
+@app.get("/chat/{hid}", dependencies=[Depends(limit("chat", 20, 60))])
+def chat_read(hid: str):
+    """A visitor's own conversation; the random id is the only key. Masked text, no photos."""
+    with _db() as c:
+        out = conversations.read(c, hid)
+    if out is None:
+        raise HTTPException(404, "no such conversation")
     return out
 
+
+@app.delete("/chat/{hid}", status_code=204, dependencies=[Depends(limit("chat", 20, 60))])
+def chat_delete(hid: str):
+    """"Bắt đầu cuộc mới": the old conversation is removed from the server."""
+    with _db() as c:
+        conversations.delete(c, hid)
+    return Response(status_code=204)
+
+
+
+# ── Conversations for staff (chat-history): how the assistant answers ─────────
+CONVERSATION_ROLES = ("content", "sales", *APPROVERS)
+
+
+@app.get("/conversations")
+def conversations_list(loc: str = "tat_ca", days: int = 30, offset: int = Query(0, ge=0),
+                       user=Depends(require(*CONVERSATION_ROLES))):
+    """Newest first, 50 a page. loc: tat_ca | chua_tra_loi | lead. Masked text, no session id, no contact."""
+    if loc not in conversations.FILTERS:
+        raise HTTPException(422, [{"loc": ["query", "loc"], "msg": "loc must be tat_ca, chua_tra_loi or lead", "type": "value_error"}])
+    if days not in (7, 30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return conversations.list_for_staff(c, loc, days, offset)
+
+
+@app.get("/conversations/{hid}")
+def conversation_detail(hid: str, user=Depends(require(*CONVERSATION_ROLES))):
+    """Messages with each answer's sources and score, the collected constraints, the handoff flag and the lead id."""
+    with _db() as c:
+        out = conversations.detail_for_staff(c, hid)
+    if out is None:
+        raise HTTPException(404, "no such conversation")
+    return out
 
 # ── Lead intake (UC11, seq-5, dfd-2-4) ─────────────────────────────────────────
 PHONE_SEPARATORS = re.compile(r"[\s.\-()]")
@@ -764,6 +994,114 @@ def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
     return row
 
 
+
+# ── Hotspots by hand and the item library (seq-14; class-1 Hotspot / MonDo; roadmap 1.9) ──────────────
+class HotspotIn(BaseModel):
+    index: Optional[int] = None          # position of the detected object it comes from; None = made by hand
+    x: float
+    y: float
+    label_vi: str = Field(max_length=120)
+    mon_do_id: Optional[int] = None
+
+
+class HotspotsIn(BaseModel):
+    hotspots: list[HotspotIn] = Field(max_length=items.MAX_POINTS + 1)  # the exact limit is checked with a row-free message
+
+
+def _item_error(e):
+    if isinstance(e, items.Invalid):
+        loc = ["body", "hotspots", e.row] if e.row is not None else ["body", e.field] if e.field else ["body"]
+        return HTTPException(422, [{"loc": loc, "msg": e.msg, "type": "value_error"}])
+    if isinstance(e, items.Conflict):
+        return HTTPException(409, {"msg": str(e), "existing": e.existing})
+    if isinstance(e, items.InUse):
+        return HTTPException(409, {"msg": str(e), "so_anh": e.n})
+    return HTTPException(404, "no such item")
+
+
+@app.put("/spaces/{space_id}/hotspots")
+def save_hotspots(space_id: int, body: HotspotsIn, user=Depends(require(*STAFF))):
+    """Replace a photo's hotspots with the editor's list: add, move, delete, rename, link to an item (seq-14 b13-14)."""
+    with _db() as c:
+        row = c.execute("SELECT hotspots FROM space WHERE id = %s FOR UPDATE", (space_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such space")
+        try:
+            doc = items.validate_hotspots(c, row["hotspots"], [h.model_dump() for h in body.hotspots])
+        except items.Invalid as e:
+            raise _item_error(e)
+        c.execute("UPDATE space SET hotspots = %s WHERE id = %s", (Jsonb(doc), space_id))
+        objs = doc["objects"]
+        _log(c, space_id, user, "hotspots", {"truoc": len((row["hotspots"] or {}).get("objects", [])), "sau": len(objs),
+                                             "thu_cong": sum(o.get("nguon_tao") == "thu_cong" for o in objs),
+                                             "lien_ket": sum(o.get("mon_do_id") is not None for o in objs)})
+        out = with_services(doc, c)
+    return {"hotspots": out}
+
+
+class ItemIn(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=120)
+    phan_loai: Optional[str] = Field(default=None, max_length=60)
+    kieu_dang: Optional[str] = Field(default=None, max_length=60)
+    vat_lieu: Optional[str] = Field(default=None, max_length=60)
+    mau_sac: Optional[str] = Field(default=None, max_length=40)
+    nha_cung_cap: Optional[str] = Field(default=None, max_length=120)
+    ghi_chu: Optional[str] = Field(default=None, max_length=500)
+    dich_vu_id: Optional[int] = None  # a knowledge entry of kind 'service'; null unlinks
+
+
+@app.get("/items/services")
+def items_services(user=Depends(require(*STAFF))):
+    """Service packages an item may point to (architects cannot open the knowledge screens)."""
+    with _db() as c:
+        return items.services(c)
+
+
+@app.get("/items")
+def items_list(q: str = "", limit: int = Query(200, ge=1, le=500), user=Depends(require(*STAFF))):
+    """The library with how many photos use each item; q searches name, type and material."""
+    with _db() as c:
+        return items.search(c, q, limit)
+
+
+@app.post("/items", status_code=201)
+def items_create(body: ItemIn, user=Depends(require(*STAFF))):
+    try:
+        with _db() as c:
+            return items.create(c, body.model_dump(exclude_unset=True), user["id"])
+    except (items.Invalid, items.Conflict) as e:
+        raise _item_error(e)
+
+
+@app.patch("/items/{item_id}")
+def items_update(item_id: int, body: ItemIn, user=Depends(require(*STAFF))):
+    try:
+        with _db() as c:
+            return items.update(c, item_id, body.model_dump(exclude_unset=True), user["id"])
+    except (items.Invalid, items.Conflict, items.NotFound) as e:
+        raise _item_error(e)
+
+
+@app.delete("/items/{item_id}", status_code=204)
+def items_delete(item_id: int, user=Depends(require(*STAFF))):
+    """Refused while any photo links to the item (409 with the photo count)."""
+    try:
+        with _db() as c:
+            items.delete(c, item_id)
+    except (items.InUse, items.NotFound) as e:
+        raise _item_error(e)
+    return Response(status_code=204)
+
+
+@app.get("/items/{item_id}/spaces")
+def items_spaces(item_id: int, user=Depends(optional_user)):
+    """Photos whose hotspots link to the item. Visitors: published photos, the item's name and type only."""
+    with _db() as c:
+        out = items.spaces_for(c, item_id, staff=bool(user) and user["role"] in STAFF)
+    if out is None:
+        raise HTTPException(404, "no such item")
+    return out
+
 # ── Trend dashboard (UC22; act-3, seq-18) ──────────────────────────────────────
 @app.get("/analytics/overview")
 def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS))):
@@ -775,6 +1113,15 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
         return trends.overview(c, days)
 
 
+
+
+@app.get("/analytics/behaviour")
+def analytics_behaviour(days: int = 30, user=Depends(require("sales", *APPROVERS))):
+    """Pages (time, scroll), projects, CTAs, forms, chat, shares, filters (behaviour-events). Counts and averages only."""
+    if days not in (7, 30, 90):
+        raise HTTPException(422, [{"loc": ["query", "days"], "msg": "days must be 7, 30 or 90", "type": "value_error"}])
+    with _db() as c:
+        return behaviour.overview(c, days)
 
 # ── Project results (BFD 5.4; act-1 30-day check; roadmap 3.5) ────────────────
 PROJECT_STATS_ROLES = ("sales", *STAFF)
@@ -855,13 +1202,15 @@ def weekly_test(user=Depends(require(*APPROVERS))):
 
 # ── Taxonomy admin (UC15) — data-driven dimensions/values; seq-15 flow ────────
 @app.get("/taxonomy")
-def taxonomy_list():
-    """Dimensions with their values. Public: the portfolio filters read this too."""
+def taxonomy_list(user=Depends(optional_user)):
+    """Dimensions with their values. Public: the portfolio filters read this too. Staff also get so_anh (spaces carrying
+    each value, drafts included) to rank the review page's suggestions; visitors never see draft counts."""
+    count = ", (SELECT count(*) FROM space_gia_tri sg WHERE sg.gia_tri_id = v.id) AS so_anh" if _is_staff(user) else ""
     with _db() as c:
         dims = c.execute("SELECT id, ma_dinh_danh, ten, bat_buoc, cho_phep_nhieu_gia_tri, hien_thi_cho_khach, thu_tu "
                          "FROM chieu_phan_loai ORDER BY thu_tu, id").fetchall()
-        vals = c.execute("SELECT id, chieu_id, ma_dinh_danh, ten, tu_dong_nghia "
-                         "FROM gia_tri_phan_loai ORDER BY id").fetchall()
+        vals = c.execute(f"SELECT v.id, v.chieu_id, v.ma_dinh_danh, v.ten, v.tu_dong_nghia{count} "
+                         "FROM gia_tri_phan_loai v ORDER BY v.id").fetchall()
     by_dim: dict = {}
     for v in vals:
         by_dim.setdefault(v["chieu_id"], []).append(v)
@@ -1041,6 +1390,90 @@ def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
     _kn(lambda c: knowledge.delete(c, user, entry_id))
 
 
+# ── Sitemap (seq-6 b18, roadmap 4.5; change topic-guard-sitemap-item-services) ─
+SITEMAP_PAGES = ("", "du-an", "khong-gian", "uoc-tinh", "trac-nghiem", "lien-he", "ve-chung-toi")
+SITEMAP_FOLDER = re.compile(r"^[a-z0-9_]{1,60}$")
+
+
+@app.get("/sitemap.xml")
+def sitemap(request: Request):
+    """Public. Built from the database on every read, so a publish or a take-down shows at once: the public pages,
+    each project with at least one published photo (its folder, '_' -> '-'), and each published photo. lastmod: the
+    photo's latest review_log entry (space has no timestamp of its own; a photo with no log entry gets today)."""
+    from xml.sax.saxutils import escape
+    base = os.getenv("D3_FRONTEND_URL") or f"{request.url.scheme}://{request.headers.get('host', 'localhost')}/prj1/"
+    base = base.rstrip("/") + "/"
+    with _db() as c:
+        rows = c.execute("SELECT s.id, s.relative_path, coalesce(max(r.at), now()) AS lastmod FROM space s "
+                         "LEFT JOIN review_log r ON r.space_id = s.id WHERE s.review_status = 'published' "
+                         "GROUP BY s.id ORDER BY s.id").fetchall()
+    projects = {}
+    for r in rows:
+        folder = r["relative_path"].split("/")[0] if "/" in r["relative_path"] else None
+        if folder and SITEMAP_FOLDER.match(folder):
+            projects[folder] = max(projects.get(folder, r["lastmod"]), r["lastmod"])
+
+    def url(path, lastmod=None):
+        mod = f"<lastmod>{lastmod.date().isoformat()}</lastmod>" if lastmod else ""
+        return f"<url><loc>{escape(base + path)}</loc>{mod}</url>"
+    body = ([url(p) for p in SITEMAP_PAGES] + [url("du-an/" + f.replace("_", "-"), m) for f, m in sorted(projects.items())]
+            + [url(f"khong-gian/{r['id']}", r["lastmod"]) for r in rows])
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+           + "\n".join(body) + "\n</urlset>\n")
+    return Response(xml, media_type="application/xml", headers={"Cache-Control": "public, max-age=300"})
+
+
+# ── Forbidden topics (seq-3 b15; change topic-guard-sitemap-item-services) ─────
+class TopicIn(BaseModel):
+    ten: Optional[str] = Field(default=None, max_length=200)
+    tu_khoa: Optional[list[str]] = Field(default=None, max_length=100)
+    ghi_chu: Optional[str] = Field(default=None, max_length=1000)
+    bat: Optional[bool] = None
+
+
+class TopicTry(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+def _tg(call):
+    try:
+        with _db() as c:
+            return call(c)
+    except topic_guard.Invalid as e:
+        raise HTTPException(422, [{"loc": ["body", e.field], "msg": e.msg, "type": "value_error"}])
+    except topic_guard.Conflict as e:
+        raise HTTPException(409, {"msg": str(e), "existing": e.existing})
+    except topic_guard.NotFound:
+        raise HTTPException(404, "no such topic")
+
+
+@app.get("/forbidden-topics")
+def topics_list(user=Depends(require(*KNOWLEDGE))):
+    return _tg(topic_guard.list_all)
+
+
+@app.post("/forbidden-topics/try")
+def topics_try(body: TopicTry, user=Depends(require(*KNOWLEDGE))):
+    """Which switched-on topic a sample sentence hits, and through which keyword; the assistant is not asked."""
+    return {"trung": _tg(lambda c: topic_guard.check(c, body.text))}
+
+
+@app.post("/forbidden-topics", status_code=201)
+def topics_create(body: TopicIn, user=Depends(require(*KNOWLEDGE))):
+    return _tg(lambda c: topic_guard.create(c, body.model_dump(exclude_unset=True), user["id"]))
+
+
+@app.patch("/forbidden-topics/{topic_id}")
+def topics_update(topic_id: int, body: TopicIn, user=Depends(require(*KNOWLEDGE))):
+    return _tg(lambda c: topic_guard.update(c, topic_id, body.model_dump(exclude_unset=True), user["id"]))
+
+
+@app.delete("/forbidden-topics/{topic_id}", status_code=204)
+def topics_delete(topic_id: int, user=Depends(require(*APPROVERS))):
+    """Content staff switch a topic off instead."""
+    _tg(lambda c: topic_guard.delete(c, topic_id))
+
+
 # ── Taxonomy discovery review (seq-15, change discover-taxonomy-dimensions 3.2-3.3) ────────────
 @app.get("/taxonomy/candidates")
 def list_candidates(user=Depends(require(*APPROVERS))):
@@ -1053,7 +1486,13 @@ def list_candidates(user=Depends(require(*APPROVERS))):
             r["vi_du"] = c.execute("SELECT id, relative_path, space_type, design_style FROM space WHERE id = ANY(%s) ORDER BY id",
                                    (ids,)).fetchall()
         waiting = c.execute("SELECT count(*) AS n FROM ung_vien_phan_loai WHERE trang_thai = 'cho_bang_chung'").fetchone()["n"]
-    return {"candidates": rows, "cho_bang_chung": waiting}
+        # review-tag-autocomplete: words reviewers typed that no value covers, with the photos waiting on "Other"
+        values = c.execute("SELECT id, ten_de_xuat, bang_chung, created_at, updated_at FROM ung_vien_phan_loai "
+                           "WHERE loai = 'gia_tri' AND trang_thai = 'cho_duyet' ORDER BY created_at").fetchall()
+        for v in values:
+            v["cho"] = c.execute("SELECT id, relative_path, space_type, design_style, caption FROM space WHERE id = ANY(%s) ORDER BY id",
+                                 (v["bang_chung"].get("space_ids", []),)).fetchall()
+    return {"candidates": rows, "cho_bang_chung": waiting, "gia_tri": values}
 
 
 class AcceptCandidate(BaseModel):
@@ -1103,6 +1542,34 @@ def accept_candidate(cid: int, body: AcceptCandidate, user=Depends(require(*APPR
                                             "gan_nhan": len(tags), "can_xem_lai": review}), cid))
     taxonomy.reload()
     return {"chieu": ma, "gia_tri": list(values), "gan_nhan": len(tags), "can_xem_lai": review}
+
+
+class AcceptValue(BaseModel):
+    ten: str = Field(min_length=1, max_length=80)
+    mo_ta: Optional[str] = Field(default=None, max_length=1000)
+    tu_dong_nghia: list[str] = Field(default_factory=list, max_length=30)
+
+
+class MapValue(BaseModel):
+    gia_tri_id: int
+
+
+@app.post("/taxonomy/value-candidates/{cid}/accept", status_code=201)
+def accept_value_candidate(cid: int, body: AcceptValue, user=Depends(require(*APPROVERS))):
+    """A reviewer's word becomes a value; the photos waiting on "Other" for it move to it (review-tag-autocomplete)."""
+    return _tax_write(lambda c: value_suggest.accept(c, user, cid, body.ten, body.mo_ta, body.tu_dong_nghia))
+
+
+@app.post("/taxonomy/value-candidates/{cid}/map")
+def map_value_candidate(cid: int, body: MapValue, user=Depends(require(*APPROVERS))):
+    """The word means an existing value: it is added as that value's synonym and the waiting photos get the value."""
+    return _tax_write(lambda c: value_suggest.map_to(c, user, cid, body.gia_tri_id))
+
+
+@app.post("/taxonomy/value-candidates/{cid}/reject")
+def reject_value_candidate(cid: int, user=Depends(require(*APPROVERS))):
+    """No value; the waiting photos stay on "Other"."""
+    return _tax_write(lambda c: value_suggest.reject(c, user, cid))
 
 
 @app.post("/taxonomy/candidates/{cid}/reject")

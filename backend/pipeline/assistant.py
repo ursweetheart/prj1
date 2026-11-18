@@ -11,9 +11,10 @@ import sys
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
+from psycopg.rows import tuple_row
 
-from pipeline import leads, taxonomy, vertex
-from pipeline.search import _embedder, by_text
+from pipeline import conversations, leads, project_results, taxonomy, topic_guard, vertex
+from pipeline.search import _embedder
 from pipeline.store import DSN
 
 # Below this cosine the knowledge base is treated as not knowing; calibrated by eval_assistant.py.
@@ -34,12 +35,44 @@ PRICE_WORDS = ("gia", "bao gia", "chi phi", "phi", "bao nhieu", "tien")
 APPOINTMENT_WORDS = ("hen", "dat lich", "tu van truc tiep", "gap kien truc su", "khao sat", "lien he")
 
 
+# Small talk: a message made only of a greeting / thanks / goodbye (plus polite filler) is answered here, never handed
+# to an architect, logged as a knowledge gap or turned into a lead. Anything with more words goes the normal way.
+SMALL_TALK = {
+    "chao": {"chao", "xin", "hello", "hi", "hey", "alo", "helo", "hellu", "morning", "afternoon", "evening"},
+    "cam_on": {"cam", "on", "thanks", "thank", "you", "tks", "thx", "ty"},
+    "tam_biet": {"tam", "biet", "bye", "goodbye", "hen", "gap", "lai"},
+}
+SMALL_TALK_FILLER = {"ban", "shop", "ad", "admin", "d3", "studio", "a", "em", "anh", "chi", "minh", "toi", "nhe", "nha",
+                     "nhieu", "rat", "oi", "moi", "nguoi", "nhe", "ok", "oke", "okay", "vang", "da", "buoi", "sang", "chieu",
+                     "trua", "good", "team", "tro", "ly", "bot"}
+SMALL_TALK_REPLY = {
+    "chao": ("Xin chào! Mình là trợ lý của D3 Studio. Bạn có thể hỏi về phong cách, quy trình, chi phí thiết kế, "
+             "hoặc mô tả không gian bạn muốn (vd: phòng khách chung cư 70 m² phong cách Japandi) để mình gợi ý dự án phù hợp."),
+    "cam_on": "Rất vui được giúp bạn! Nếu cần thêm gì về thiết kế hay chi phí, bạn cứ nhắn mình nhé.",
+    "tam_biet": "Cảm ơn bạn đã ghé D3 Studio. Hẹn gặp lại bạn!",
+}
+
+
+def small_talk(message: str) -> str | None:
+    """'chao' | 'cam_on' | 'tam_biet' when the message is only that (any case, accents, punctuation), else None."""
+    words = re.findall(r"[a-z0-9]+", _fold(message))
+    if not words or len(words) > 8:
+        return None
+    keys = set().union(*SMALL_TALK.values())
+    if any(w not in keys and w not in SMALL_TALK_FILLER for w in words):
+        return None  # a real question rides along: answer it the normal way
+    for kind in ("cam_on", "tam_biet", "chao"):  # "chào, cảm ơn nhé" is thanks rather than a greeting
+        if any(w in SMALL_TALK[kind] - {"xin", "on", "you"} for w in words):  # these alone say nothing
+            return kind
+    return None
+
+
 def _has(text: str, words) -> bool:
     return any(re.search(rf"\b{re.escape(w)}\b", text) for w in words)
 
 
 def parse_request(message: str) -> dict:
-    t = _fold(message)
+    t = _fold(message).replace("-", " ")  # "wabi-sabi" is how visitors write "Wabi sabi"
     area = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:m2|m²|met vuong)", t)
     styles = taxonomy.synonym_map("phong_cach")
     style = next((v for k, v in styles.items() if k in t), None) or next(
@@ -184,16 +217,32 @@ def _log_gap(question: str, best: float | None):
                      (question, unmapped_terms(question), best))
 
 
+def _forbidden(text: str, where: str):
+    """{id, ten, o} when text hits a switched-on forbidden topic (seq-3 b15), else None."""
+    with psycopg.connect(DSN) as conn:
+        hit = topic_guard.check(conn, text)
+    return {"id": hit["id"], "ten": hit["ten"], "o": where} if hit else None
+
+
 def respond(message: str, history: list | None = None, contact: str | None = None,
-            phien_id: str | None = None, gui_ho_so: bool = False) -> dict:
+            phien_id: str | None = None, gui_ho_so: bool = False, rang_buoc: dict | None = None,
+            lead_history: list | None = None) -> dict:
+    """history: earlier turns for the model. rang_buoc: constraints collected earlier in the conversation (chat-history);
+    lead_history: the turns a lead stores, when they differ from `history` (the visitor's own, unmasked)."""
     req = parse_request(message)
-    hits = retrieve(message)
+    merged = conversations.merge(rang_buoc, req)  # what the visitor said earlier still applies
+    req = {**req, **merged}
+    if kind := small_talk(message):  # "xin chào", "cảm ơn", "bye": no lookup, no gap, no lead
+        return {"request": req, "answered": True, "sources": [], "images": [], "projects": [], "lead_id": None,
+                "rang_buoc": merged, "diem_cao_nhat": None, "answer": SMALL_TALK_REPLY[kind], "chao_hoi": kind}
+    blocked = _forbidden(message, "cau_hoi")  # a forbidden question is not looked up at all
+    hits = [] if blocked else retrieve(message)
     known = bool(hits) and hits[0][4] >= MIN_SCORE
-    conversation = (history or []) + [{"role": "user", "content": message}]
+    conversation = (lead_history if lead_history is not None else history or []) + [{"role": "user", "content": message}]
 
     photos = None  # the knowledge base has no answer: try the descriptions of the published photos
     best = float(hits[0][4]) if hits else None  # best cosine seen, for the knowledge-gap log
-    if not known and vertex.available():
+    if not known and not blocked and vertex.available():
         try:
             photo_hits = retrieve_photos(message)
             if photo_hits:
@@ -203,7 +252,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
             logging.getLogger(__name__).exception("photo RAG failed; answering from the knowledge base only")
     answered = known or photos is not None
 
-    out = {"request": req, "answered": answered, "sources": [], "images": [], "lead_id": None}
+    out = {"request": req, "answered": answered, "sources": [], "images": [], "projects": [], "lead_id": None, "rang_buoc": merged,
+           "diem_cao_nhat": round(best, 3) if best is not None else None}
     if known:
         top = hits[0]
         out["answer"] = top[3]
@@ -211,21 +261,29 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
     elif photos:
         out["answer"] = photos["answer"]
         out["sources"] = [{"id": h[0], "kind": "photo", "title": h[1], "score": round(float(h[5]), 3)} for h in photos["hits"]]
-        out["images"] = [{"id": h[0], "relative_path": h[1], "space_type": h[2], "design_style": h[3]} for h in photos["hits"]]
+        used = [{"id": h[0], "relative_path": h[1], "space_type": h[2], "design_style": h[3], "sim": float(h[5])}
+                for h in photos["hits"]]
+        out["projects"] = project_results.public(
+            project_results.rank(project_results.with_project_types(used), req, keep_order=True))
     else:
         out["answer"] = FALLBACK
+    if answered:  # the draft is checked whichever source wrote it
+        blocked = _forbidden(out["answer"], "tra_loi")
+    if blocked:  # handed to a person; the visitor is not told which topic
+        answered = False
+        out.update(answer=FALLBACK, answered=False, sources=[], images=[], projects=[], chu_de_cam=blocked)
     if answered and (req["price_intent"] or req["appointment_intent"]):
         out["answer"] += "\n\nĐể kiến trúc sư báo giá/xác nhận lịch chính xác, bạn vui lòng để lại số điện thoại hoặc email."
     if req["price_intent"]:  # cost-estimate: a quick range from the price table, without waiting for a call
         out["answer"] += "\n\nƯớc tính nhanh theo diện tích và gói vật liệu: /uoc-tinh"
 
-    # Three published projects matching the request (never drafts: this endpoint is public)
-    if known and (req["space_type"] or req["design_style"] or req["project_type"]):
+    # Up to three published projects, ranked by how much of the collected request they match (never drafts: public)
+    if known and answered and (req["space_type"] or req["design_style"] or req["project_type"]):
         q = " ".join(filter(None, [req["space_type"] and message, req["design_style"] and req["design_style"].replace("_", " ")])) or message
-        out["images"] = [{"id": r[4], "relative_path": r[0], "space_type": r[1], "design_style": r[2]}
-                         for r in by_text(q, req["space_type"], 3, published_only=True)]
+        out["projects"] = project_results.public(project_results.rank(project_results.candidates(q), req))
+    out["images"] = [a for pr in out["projects"] for a in pr["anh"]]  # older clients: the cards' photos, flattened
 
-    if not answered:
+    if not answered and not blocked:
         _log_gap(message, best)  # a discovery signal, kept besides the handoff lead
     intent = "handoff" if not answered else "appointment" if req["appointment_intent"] else "price" if req["price_intent"] else None
     if intent:
@@ -244,12 +302,26 @@ SERVICE_BY_LABEL = {
 }
 
 
-def with_services(hotspots):
-    """Add `service` (a kb_chunk title) to each detected object; non-furniture detections get None."""
+ITEM_SERVICE = ("SELECT m.id, k.title FROM mon_do m JOIN kb_chunk k ON k.id = m.dich_vu_id "
+                "WHERE m.id = ANY(%s) AND k.kind = 'service' AND k.trang_thai = 'dang_dung'")
+
+
+def with_services(hotspots, conn=None):
+    """Add `service` (a kb_chunk title) to each object: the linked item's service when it has one in use, else the
+    detected label's mapping (couch -> living room), else None."""
     if not hotspots:
         return hotspots
-    for o in hotspots.get("objects", []):
-        o["service"] = SERVICE_BY_LABEL.get(o.get("label"))
+    objs = hotspots.get("objects", [])
+    ids = list({o["mon_do_id"] for o in objs if isinstance(o.get("mon_do_id"), int)})
+    by_item = {}
+    if ids:
+        if conn is None:
+            with psycopg.connect(DSN) as own:
+                by_item = dict(own.execute(ITEM_SERVICE, (ids,)).fetchall())
+        else:
+            by_item = {r[0]: r[1] for r in conn.cursor(row_factory=tuple_row).execute(ITEM_SERVICE, (ids,)).fetchall()}
+    for o in objs:
+        o["service"] = by_item.get(o.get("mon_do_id")) or SERVICE_BY_LABEL.get(o.get("label"))
     return hotspots
 
 

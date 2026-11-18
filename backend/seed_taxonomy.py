@@ -54,12 +54,15 @@ def seed(path=SEED) -> tuple[int, int]:
                 "ON CONFLICT (ma_dinh_danh) DO UPDATE SET ten=EXCLUDED.ten, bat_buoc=EXCLUDED.bat_buoc, "
                 "cho_phep_nhieu_gia_tri=EXCLUDED.cho_phep_nhieu_gia_tri, hien_thi_cho_khach=EXCLUDED.hien_thi_cho_khach, thu_tu=EXCLUDED.thu_tu",
                 d)
-        for v in data["gia_tri"]:
+        for v in data["gia_tri"]:  # fill-only: keep staff renames, fill an empty description, add synonyms
             c.execute(
-                "INSERT INTO gia_tri_phan_loai (chieu_id, ma_dinh_danh, ten, tu_dong_nghia) "
-                "SELECT id, %(ma)s, %(ten)s, %(syn)s FROM chieu_phan_loai WHERE ma_dinh_danh=%(chieu)s "
-                "ON CONFLICT (chieu_id, ma_dinh_danh) DO UPDATE SET ten=EXCLUDED.ten, tu_dong_nghia=EXCLUDED.tu_dong_nghia",
-                {"chieu": v["chieu"], "ma": v["ma_dinh_danh"], "ten": v["ten"], "syn": Jsonb(v.get("tu_dong_nghia", []))})
+                "INSERT INTO gia_tri_phan_loai AS g (chieu_id, ma_dinh_danh, ten, tu_dong_nghia, mo_ta) "
+                "SELECT id, %(ma)s, %(ten)s, %(syn)s, %(mo_ta)s FROM chieu_phan_loai WHERE ma_dinh_danh=%(chieu)s "
+                "ON CONFLICT (chieu_id, ma_dinh_danh) DO UPDATE SET mo_ta = COALESCE(NULLIF(g.mo_ta, ''), EXCLUDED.mo_ta), "
+                "tu_dong_nghia = g.tu_dong_nghia || (SELECT COALESCE(jsonb_agg(s), '[]') FROM jsonb_array_elements(EXCLUDED.tu_dong_nghia) s "
+                "WHERE NOT g.tu_dong_nghia @> jsonb_build_array(s))",
+                {"chieu": v["chieu"], "ma": v["ma_dinh_danh"], "ten": v["ten"], "syn": Jsonb(v.get("tu_dong_nghia", [])),
+                 "mo_ta": v.get("mo_ta")})
         c.execute("UPDATE space SET materials = materials")  # fires sync_ai_tags: re-tag every space with the new values
     return len(data["chieu"]), len(data["gia_tri"])
 

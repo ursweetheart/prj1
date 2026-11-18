@@ -132,7 +132,7 @@ def test_photo_search_is_rate_limited():
 
 
 def test_project_spaces_visitor_sees_published_staff_sees_all(drafts, as_role):
-    [sid] = drafts(1)
+    [sid] = drafts(1, "split_part(relative_path, '/', 1) ~ '^[a-z0-9_]{1,60}$'")  # folders like 'Indochine' aren't site slugs
     with psycopg.connect(DSN) as c:
         folder = c.execute("SELECT split_part(relative_path, '/', 1) FROM space WHERE id=%s", (sid,)).fetchone()[0]
     staff = client.get(f"/projects/{folder}/spaces", headers=as_role("architect")).json()

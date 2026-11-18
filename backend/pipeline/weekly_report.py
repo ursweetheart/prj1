@@ -120,7 +120,7 @@ def build(conn, now: datetime) -> dict:
     lines += ["", "DỰ ÁN CẦN XEM LẠI (lượt xem 30 ngày dưới một nửa trung vị)"]
     low = [p for p in ps["projects"] if p["trang_thai"] == "can_xem_lai"]
     if low:
-        lines += [f"- {p['folder'].replace('_', ' ')}: {_fmt(p['luot_xem_cua_so'])} lượt xem" for p in low]
+        lines += [f"- {p['ten']}: {_fmt(p['luot_xem_cua_so'])} lượt xem" for p in low]
     else:
         lines.append("- Không có dự án nào cần xem lại.")
 
