@@ -90,7 +90,6 @@ const SOURCE_VI = { form: 'Form liên hệ', chat: 'Trợ lý chat', brief: 'B�
 const INTENT_VI = { price: 'Hỏi giá', appointment: 'Xin hẹn', handoff: 'Chuyển kiến trúc sư' }
 const PROJECT_VI = { can_ho: 'Căn hộ', biet_thu: 'Biệt thự', nha_pho: 'Nhà phố', van_phong: 'Văn phòng', thuong_mai: 'Thương mại' }
 const FILTERS = [{ value: null, label: 'Tất cả' }, { value: 'form', label: 'Form liên hệ' }, { value: 'brief', label: 'Bộ sưu tập' },
-                 { value: 'estimate', label: 'Ước tính' },
                  { value: 'chat', label: 'Trợ lý chat' }]
 const leads = ref([])
 const loading = ref(true)
