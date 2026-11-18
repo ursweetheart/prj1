@@ -299,3 +299,23 @@ def test_demo_flag_follows_demo_sessions(world, as_role):
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM phien_truy_cap WHERE id = %s", (pid,))
         assert client.get("/analytics/projects", headers=as_role("sales")).json()["co_du_lieu_mo_phong"] is False
+
+
+# ── project-catalog 4.1: a catalog project groups its photos whatever their folder ──────────────────────────────────
+def test_catalog_project_named_and_counts_its_page_leads(world):
+    f1, (a,) = world.folder(1, published_days_ago=5)
+    f2, (b,) = world.folder(1, published_days_ago=5)
+    slug = "test-ps-cat-" + uuid.uuid4().hex[:6]
+    with psycopg.connect(DSN) as c:
+        c.execute("INSERT INTO du_an (slug, ten, thu_tu, co_trang) VALUES (%s, 'Căn hộ thử', 998, true)", (slug,))
+        c.execute("UPDATE space SET du_an_slug = %s WHERE id = ANY(%s)", (slug, [a, b]))
+    try:
+        world.lead(ngu_canh={"trang": f"/du-an/{slug}", "du_an": slug})
+        row = _row(_ov(), slug)
+        assert (row["ten"], row["so_anh"], row["khach_tiem_nang"]) == ("Căn hộ thử", 2, 1)
+        assert row["thu_muc"] in (f1, f2) and _row(_ov(), f1) is None and _row(_ov(), f2) is None
+        assert {g["link"] for g in _detail(slug)["goi_y"]} <= {f"/quan-tri#p-{row['thu_muc']}"}
+    finally:
+        with psycopg.connect(DSN) as c:
+            c.execute("UPDATE space SET du_an_slug = NULL WHERE id = ANY(%s)", ([a, b],))
+            c.execute("DELETE FROM du_an WHERE slug = %s", (slug,))

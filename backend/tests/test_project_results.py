@@ -64,3 +64,12 @@ def test_keep_order_follows_first_use():
     photos = [ph(1, "z", "phong_tam", "Khac", .5), ph(2, "a", "phong_khach", "Japandi", .9), ph(3, "z", "phong_tam", "Khac", .4)]
     out = pr.rank(photos, REQ, keep_order=True)
     assert [p["folder"] for p in out] == ["z", "a"] and [p["id"] for p in out[0]["anh"]] == [1, 3]
+
+
+def test_two_folders_of_one_catalog_project_make_one_card():
+    """project-catalog 4.2: the catalog project, not the folder, is the card."""
+    photos = [{**ph(1, "hanjadin", "phong_khach", "Japandi", .9), "du_an_slug": "hanjadin-apartment"},
+              {**ph(2, "hanjadin_apartment", "phong_khach", "Japandi", .8), "du_an_slug": "hanjadin-apartment"},
+              ph(3, "other", "phong_khach", "Japandi", .7)]
+    out = pr.rank(photos, REQ)
+    assert [(p["slug"], p["folder"], p["so_anh_khop"]) for p in out] == [("hanjadin-apartment", "hanjadin", 2), ("other", "other", 1)]

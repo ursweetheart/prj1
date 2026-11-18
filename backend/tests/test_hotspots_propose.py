@@ -118,6 +118,10 @@ def test_processed_photo_saves_proposed_hotspots(tmp_path):
         assert len(objs) <= 6 and [(o["label_vi"], o["nguon_ai"]) for o in objs] == [("Sofa chữ L", "ca_hai"), ("Đèn chùm", "gemini")]
         assert all(o.get("nguon_tao", "ai") == "ai" for o in objs)
         assert with_services(hs)["objects"][0]["service"]  # the sofa still maps to a service through its label
+        with psycopg.connect(DSN) as c:  # project-catalog 2.4: a photo in a new folder joins that folder's project
+            assert c.execute("SELECT s.du_an_slug, d.ten, d.co_trang FROM space s JOIN du_an d ON d.slug = s.du_an_slug "
+                             "WHERE relative_path = 'test_hsa_p/anh.jpg'").fetchone() == ("test-hsa-p", "test_hsa_p", False)
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM space WHERE relative_path = 'test_hsa_p/anh.jpg'")
+            c.execute("DELETE FROM du_an WHERE slug = 'test-hsa-p'")

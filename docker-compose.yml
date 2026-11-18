@@ -30,6 +30,8 @@ services:
       - ./backend/models:/models
       - ./backend/image_d3:/app/image_d3
       - ./backend/sa-key.json:/app/sa-key.json:ro
+      - ./src/data:/src/data:ro                         # project-catalog: the site's project list
+      - ./src/assets/projects:/src/assets/projects:ro   # ... and its photos (sync_projects.py)
     ports: ["8001:8001"]  # the Google/Facebook sign-in callback is registered on localhost:8001
     depends_on:
       db: { condition: service_healthy }

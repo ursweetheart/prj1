@@ -181,12 +181,85 @@ def similar(space_id: int, k: int = 6, user=Depends(optional_user)):
 
 @app.get("/projects/{folder}/spaces")
 def project_spaces(folder: str = PathParam(pattern=r"^[a-z0-9_]{1,60}$"), user=Depends(optional_user)):
-    """Spaces of one project folder (the site's slug with '-' -> '_'), by file name; visitors get published ones only."""
+    """Spaces of one project folder (the site's slug with '-' -> '_'), by file name; visitors get published ones only.
+    project-catalog: also the spaces matched to that site project from other folders; anh_trang names the site file."""
     with _db() as c:
         return c.execute(
-            f"SELECT {FIELDS} FROM space WHERE split_part(relative_path, '/', 1) = %(f)s "
-            "AND (%(all)s OR review_status = 'published') ORDER BY relative_path COLLATE \"C\"",
-            {"f": folder, "all": _is_staff(user)}).fetchall()
+            f"SELECT {FIELDS}, du_an_slug, anh_trang FROM space WHERE (split_part(relative_path, '/', 1) = %(f)s "
+            "OR du_an_slug = replace(%(f)s, '_', '-')) AND (%(all)s OR review_status = 'published') "
+            "ORDER BY relative_path COLLATE \"C\"", {"f": folder, "all": _is_staff(user)}).fetchall()
+
+
+# ── Project catalog (change: project-catalog; roadmap 0.1, UC02) ─────────────────────────────────────────────
+SLUG = r"^[a-z0-9-]{1,60}$"
+PROJECT_STAFF_FIELDS = ("dien_tich_m2", "so_phong_ngu", "thoi_gian_thi_cong", "muc_dau_tu", "thuyet_minh")
+PROJECT_FIELDS = "slug, ten, loai, nam, mo_ta_ngan, co_trang, " + ", ".join(PROJECT_STAFF_FIELDS) + ", cap_nhat_luc"
+PHOTO_ORDER = 'anh_trang COLLATE "C" NULLS LAST, relative_path COLLATE "C"'  # the site's photo order, then file name
+
+
+@app.get("/projects", dependencies=[Depends(limit("projects", 120, 60))])
+def list_projects(user=Depends(optional_user)):
+    """Visitors: projects with a published photo. Staff: every site project and every folder project with photos."""
+    staff = _is_staff(user)
+    with _db() as c:
+        rows = c.execute(f"""
+            SELECT d.slug, d.ten, d.loai, d.nam, d.mo_ta_ngan, d.co_trang,
+                   count(s.id) FILTER (WHERE s.review_status = 'published') AS so_anh_da_dang,
+                   count(s.id) FILTER (WHERE s.review_status <> 'published') AS so_anh_chua_dang,
+                   (SELECT json_build_object('id', p.id, 'relative_path', p.relative_path, 'anh_trang', p.anh_trang,
+                                             'alt_text', p.alt_text)
+                      FROM space p WHERE p.du_an_slug = d.slug AND p.review_status = 'published'
+                     ORDER BY {PHOTO_ORDER} LIMIT 1) AS anh_dai_dien
+              FROM du_an d LEFT JOIN space s ON s.du_an_slug = d.slug
+             GROUP BY d.slug
+            HAVING count(s.id) FILTER (WHERE s.review_status = 'published') > 0
+                OR (%(staff)s AND (d.thu_tu IS NOT NULL OR count(s.id) > 0))
+             ORDER BY d.thu_tu NULLS LAST, d.ten""", {"staff": staff}).fetchall()
+    if not staff:
+        for r in rows:
+            del r["so_anh_chua_dang"]
+    return rows
+
+
+@app.get("/projects/{slug}", dependencies=[Depends(limit("projects", 120, 60))])
+def get_project(slug: str = PathParam(pattern=SLUG), user=Depends(optional_user)):
+    staff = _is_staff(user)
+    with _db() as c:
+        project = c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
+        spaces = c.execute(f"SELECT {FIELDS}, anh_trang FROM space WHERE du_an_slug = %(s)s "
+                           f"AND (%(all)s OR review_status = 'published') ORDER BY {PHOTO_ORDER}",
+                           {"s": slug, "all": staff}).fetchall() if project else []
+    if not project or not (staff or spaces):
+        raise HTTPException(404, "no such project")
+    return {**project, "spaces": spaces}
+
+
+class ProjectDetailsIn(BaseModel):
+    model_config = {"extra": "forbid"}  # the site fields come from projects.js only
+    dien_tich_m2: Optional[float] = Field(default=None, gt=0, le=100000)
+    so_phong_ngu: Optional[int] = Field(default=None, gt=0, le=100)
+    thoi_gian_thi_cong: Optional[str] = Field(default=None, max_length=80)
+    muc_dau_tu: Optional[str] = None
+    thuyet_minh: Optional[str] = Field(default=None, max_length=4000)
+
+
+@app.put("/projects/{slug}")
+def save_project(body: ProjectDetailsIn, slug: str = PathParam(pattern=SLUG), user=Depends(require(*APPROVERS))):
+    """UC02 project details, by the lead architect or admin; every change is logged with the old and new values."""
+    _check_value("muc_dau_tu", "muc_dau_tu", body.muc_dau_tu)
+    new = body.model_dump()
+    with _db() as c:
+        old = c.execute(f"SELECT {', '.join(PROJECT_STAFF_FIELDS)} FROM du_an WHERE slug = %s FOR UPDATE", (slug,)).fetchone()
+        if not old:
+            raise HTTPException(404, "no such project")
+        old = {k: float(v) if k == "dien_tich_m2" and v is not None else v for k, v in old.items()}
+        changed = {k: new[k] for k in PROJECT_STAFF_FIELDS if new[k] != old[k]}
+        if changed:
+            c.execute(f"UPDATE du_an SET {', '.join(f'{k} = %({k})s' for k in changed)}, cap_nhat_luc = now() "
+                      "WHERE slug = %(slug)s", {**changed, "slug": slug})
+            c.execute("INSERT INTO nhat_ky_du_an (du_an_slug, user_id, hanh_dong, chi_tiet) VALUES (%s, %s, 'sua', %s)",
+                      (slug, user["id"], Jsonb({"truoc": {k: old[k] for k in changed}, "sau": changed})))
+        return c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
 
 
 @app.get("/search")

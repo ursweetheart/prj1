@@ -174,12 +174,11 @@ def test_kb_answer_returns_ranked_projects_of_published_photos(drafts):
         published = {r[0] for r in c.execute("SELECT id FROM space WHERE review_status='published'")}
     try:
         r = client.post("/chat", json=q).json()
-        folders = [p["folder"] for p in r["projects"]]
-        assert 1 <= len(folders) <= 3 and len(set(folders)) == len(folders)
+        slugs = [p["slug"] for p in r["projects"]]  # project-catalog: one card per catalog project
+        assert 1 <= len(slugs) <= 3 and len(set(slugs)) == len(slugs) and all(p["ten"] for p in r["projects"])
         photos = [a for p in r["projects"] for a in p["anh"]]
         assert all(1 <= len(p["anh"]) <= 2 for p in r["projects"]) and {a["id"] for a in photos} <= published
         assert r["images"] == photos  # older clients see the cards' photos
-        assert all(a["relative_path"].split("/")[0] == p["folder"] for p in r["projects"] for a in p["anh"])
         assert any(k["chieu"] == "khong_gian" for k in r["projects"][0]["khop"])  # the room asked for is matched
     finally:
         with psycopg.connect(DSN) as c:

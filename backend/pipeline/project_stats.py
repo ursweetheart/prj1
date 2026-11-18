@@ -1,10 +1,12 @@
 """Per-project results (BFD 5.4; act-1 "theo dõi hiệu quả sau 30 ngày"; roadmap 3.5). Computed on request, like
 trends.overview — a handful of grouped queries over tens of rows.
 
-A project is a photo folder: the first segment of space.relative_path (as on the review screen).
+A project is a catalog project (space.du_an_slug, change project-catalog); a photo in none counts under its folder.
+Rows keep the key in "folder" (the page's id for the row), with the project's name ("ten") and the folder most of
+its photos are in ("thu_muc", for the review-screen link).
 
-    views / saves  consented su_kien 'xem_khong_gian' / 'luu_anh' on the folder's published photos, in the period
-    leads          distinct leads in the period whose ngu_canh names the folder's page (du_an, '-' -> '_'), whose
+    views / saves  consented su_kien 'xem_khong_gian' / 'luu_anh' on the project's published photos, in the period
+    leads          distinct leads in the period whose ngu_canh names the project's page (du_an = its slug), whose
                    ngu_canh names one of its photos (space_id), or whose brief sent one of its photos
     published      earliest review_log 'advance' to 'published' of the folder; else its earliest 'ingest' (approximate)
     status         age >= REVIEW_DAYS ("eligible"): 'can_xem_lai' when views in the last VIEW_WINDOW days
@@ -24,7 +26,7 @@ FEW_PHOTOS = 0.5     # 'it_anh': published photos < FEW_PHOTOS x the median phot
 SHORT_CAPTION = 0.5  # 'mo_ta_ngan': caption length < SHORT_CAPTION x the folder's median caption length
 LOW_CONFIDENCE = 0.5
 TAG_DIMS = {"loai_cong_trinh": "thieu_loai_cong_trinh", "muc_dau_tu": "thieu_muc_dau_tu"}
-FOLDER = "split_part(s.relative_path, '/', 1)"
+FOLDER = "COALESCE(s.du_an_slug, split_part(s.relative_path, '/', 1))"  # the project key (name kept: used throughout)
 
 
 def review_days() -> int:
@@ -75,7 +77,8 @@ def _leads(conn, period: str) -> dict:
     """{folder: distinct leads in the period} from the three sources."""
     return dict(_rows(conn, f"""
         SELECT folder, count(DISTINCT id) FROM (
-            SELECT l.id, replace(l.ngu_canh->>'du_an', '-', '_') AS folder FROM lead l
+            SELECT l.id, COALESCE((SELECT d.slug FROM du_an d WHERE d.slug = l.ngu_canh->>'du_an'),
+                                  replace(l.ngu_canh->>'du_an', '-', '_')) AS folder FROM lead l  -- else: a folder named after it
              WHERE l.ngu_canh->>'du_an' IS NOT NULL AND l.created_at > now() - %(p)s::interval
             UNION
             SELECT l.id, {FOLDER} FROM lead l JOIN space s
@@ -109,6 +112,13 @@ def overview(conn, days: int, user_id=None) -> dict:
                   "ti_le_luu": round(100 * luu / xem) if xem else None, "khach_tiem_nang": leads.get(f, 0),
                   "luot_xem_cua_so": window.get(f, [0, 0])[0]})
 
+    names = dict(_rows(conn, "SELECT slug, ten FROM du_an WHERE slug = ANY(%s)", (list(projects),)))
+    main = dict(_rows(conn, f"SELECT DISTINCT ON (k) k, f FROM (SELECT {FOLDER} AS k, split_part(s.relative_path, '/', 1) AS f, "
+                            "count(*) AS n FROM space s GROUP BY 1, 2) x WHERE k = ANY(%s) ORDER BY k, n DESC, f",
+                      (list(projects),)))
+    for f, p in projects.items():
+        p["ten"], p["thu_muc"] = names.get(f, f.replace("_", " ")), main.get(f, f)
+
     status, so_sanh = statuses(list(projects.values()), review_days())
     for f, p in projects.items():
         p["trang_thai"], p["con_ngay"] = status[f]
@@ -124,21 +134,22 @@ def overview(conn, days: int, user_id=None) -> dict:
 
 
 def _goi_y(ma, text, ids, folder):
-    return {"ma": ma, "text": text, "anh": ids, "so_anh": len(ids), "link": f"/quan-tri#p-{folder}"}
+    return {"ma": ma, "text": text, "anh": ids, "so_anh": len(ids), "link": f"/quan-tri#p-{folder}"}  # a review-screen folder
 
 
 def detail(conn, folder: str, days: int):
-    """{project, photos, goi_y} of one folder, or None when it has no published photo."""
+    """{project, photos, goi_y} of one project (its key), or None when it has no published photo."""
     ov = overview(conn, days)
     project = next((p for p in ov["projects"] if p["folder"] == folder), None)
     if project is None:
         return None
-    counts = _counts(conn, f"{int(days)} days", by_space=True, folder=folder)
+    key, folder = folder, project["thu_muc"]  # the review screen is by folder
+    counts = _counts(conn, f"{int(days)} days", by_space=True, folder=key)
     photos = [{"id": i, "relative_path": rp, "caption": cap, "design_style": st, "style_confidence": conf,
                "luot_xem": counts.get(i, [0, 0])[0], "luot_luu": counts.get(i, [0, 0])[1]}
               for i, rp, cap, st, conf in _rows(conn, f"SELECT s.id, s.relative_path, s.caption, s.design_style, "
                                                       f"s.style_confidence FROM space s WHERE {FOLDER} = %s "
-                                                      "AND s.review_status = 'published' ORDER BY s.id", (folder,))]
+                                                      "AND s.review_status = 'published' ORDER BY s.id", (key,))]
     for p in photos:
         p["chua_ai_xem"] = p["luot_xem"] == 0
     photos.sort(key=lambda p: (-p["luot_xem"], -p["luot_luu"], p["id"]))
