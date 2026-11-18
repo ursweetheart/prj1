@@ -35,7 +35,7 @@ export function loadProjectSpaces(slug) {
   if (!cache.has(slug)) {
     cache.set(slug, aiAvailable()
       .then(ok => ok ? withTimeout(getProjectSpaces(folderOf(slug))) : null)
-      .then(rows => rows && new Map(rows.map(r => [fileOf(r.relative_path), r])))
+      .then(rows => rows && new Map(rows.map(r => [r.anh_trang || fileOf(r.relative_path), r]))) // anh_trang: ảnh trang khớp ảnh lưu ở thư mục khác (project-catalog)
       .catch(() => null))
   }
   return cache.get(slug)

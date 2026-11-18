@@ -12,7 +12,7 @@
           <p>{{ t.content }}</p>
           <!-- assistant-project-results: example projects, best match first -->
           <ul v-if="t.projects?.length" class="chat-projects">
-            <li v-for="pr in t.projects" :key="pr.folder">
+            <li v-for="pr in t.projects" :key="pr.slug">
               <router-link :to="projectLink(pr)" class="chat-project" @click="open = false"
                            :aria-label="'Dự án ' + projectName(pr) + (pr.khop.length ? ', khớp ' + pr.khop.map(k => k.ten).join(', ') : '')">
                 <span class="chat-project-imgs">
@@ -67,12 +67,16 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue'
 import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
-import { projectBySlug } from '@/data/projects'
-import { projectPhotoHref, slugOf } from '@/lib/projectSpaces'
+import { fileOf, folderOf } from '@/lib/projectSpaces'
 
-/* a card opens the project page on its best photo when the folder has one, else that photo's space page */
-const projectName = pr => projectBySlug(slugOf(pr.folder))?.name || pr.folder.replaceAll('_', ' ')
-const projectLink = pr => (projectBySlug(slugOf(pr.folder)) ? projectPhotoHref(pr.anh[0].relative_path) : '/khong-gian/' + pr.anh[0].id)
+/* a card opens the project page on its best photo when the project has a page and the photo is one of the page's
+   (anh_trang; or the slug's own folder), else that photo's space page. Names come from the catalog (project-catalog). */
+const projectName = pr => pr.ten || pr.folder.replaceAll('_', ' ')
+function projectLink(pr) {
+  const a = pr.anh[0]
+  const file = a.anh_trang || (pr.slug && folderOf(pr.slug) === pr.folder ? fileOf(a.relative_path) : null)
+  return pr.co_trang && file ? '/du-an/' + pr.slug + '?anh=' + encodeURIComponent(file) : '/khong-gian/' + a.id
+}
 
 const open = ref(false)
 const turns = ref([])
