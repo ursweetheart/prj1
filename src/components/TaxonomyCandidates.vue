@@ -185,9 +185,6 @@ onMounted(() => { load(); loadValues() })
 
 <style scoped>
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 10px 12px; min-height: 42px; max-width: 100%; color-scheme: dark }
-.txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
 .panel { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px }
 .score { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 }
 .score dt { color: var(--dim) }

@@ -4,9 +4,7 @@
             :aria-label="saved ? 'Bỏ khỏi bộ sưu tập' : 'Lưu vào bộ sưu tập'"
             :title="saved ? 'Bỏ khỏi bộ sưu tập' : 'Lưu vào bộ sưu tập'"
             @click.prevent.stop="onClick">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/>
-      </svg>
+      <Icon name="heart" :filled="saved" />
       <span v-if="labelled">{{ saved ? 'Đã lưu' : 'Lưu' }}</span>
     </button>
     <span v-if="message" class="heart-msg" role="alert">{{ message }}</span>
@@ -14,6 +12,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Trái tim lưu một không gian vào "Bộ sưu tập" (UC07). Không cần tài khoản: lib/collection.js giữ trong trình duyệt
  * cho đến khi khách đăng nhập. overlay: đặt ở góc ảnh của thẻ; labelled: kèm chữ, dùng ở trang không gian. */
 import { computed, ref } from 'vue'
@@ -39,13 +38,16 @@ async function onClick() {
 .heart { display: inline-flex; align-items: center; gap: 8px; min-width: 40px; min-height: 40px; padding: 0 10px;
          justify-content: center; border: 1px solid var(--line); border-radius: var(--radius-pill);
          background: color-mix(in oklab, var(--fg, #111) 62%, transparent); color: var(--ink); cursor: pointer;
-         font: inherit; font-size: 14px; backdrop-filter: blur(6px);
-         transition: border-color var(--motion-fast, .15s) ease, transform var(--motion-fast, .15s) ease }
-.heart:hover { border-color: var(--ink-2) }
-.heart:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px }
+         font: 500 11.5px/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase;
+         backdrop-filter: blur(6px);
+         transition: border-color .45s cubic-bezier(0.22, 1, 0.36, 1), color .4s cubic-bezier(0.22, 1, 0.36, 1),
+                     transform .3s cubic-bezier(0.22, 1, 0.36, 1) }
+.is-labelled .heart { padding: 0 16px }
+.heart:hover { border-color: color-mix(in oklab, var(--accent) 80%, white) }
+.heart:focus-visible { outline: none; box-shadow: var(--focus-ring) }
 .heart:active { transform: scale(.94) }
-.heart svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7 }
-.heart[aria-pressed="true"] svg { fill: var(--accent); stroke: var(--accent) }
+.heart .ic { width: 18px; height: 18px }
+.heart[aria-pressed="true"] .ic { color: var(--accent) }
 .heart-msg { max-width: 220px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12px;
              background: var(--panel); color: var(--accent); border: 1px solid var(--line) }
 @media (prefers-reduced-motion: reduce) { .heart { transition: none } .heart:active { transform: none } }

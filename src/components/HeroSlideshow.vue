@@ -17,10 +17,10 @@
     <template v-if="many">
       <!-- Hai nửa màn hình: bấm trái về ảnh trước, bấm phải sang ảnh sau -->
       <button type="button" class="hero-side is-prev" aria-label="Ảnh trước" @click="go(active - 1)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        <Icon name="chevron-left" />
       </button>
       <button type="button" class="hero-side is-next" aria-label="Ảnh sau" @click="go(active + 1)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        <Icon name="chevron-right" />
       </button>
 
       <div class="hero-dots">
@@ -39,6 +39,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Màn hình đầu trang chủ: trình chiếu mọi ảnh trong src/assets/hero (theo tên file),
  * mờ dần sang ảnh kế sau 13 giây; bấm nửa trái / phải để lùi / tới;
  * chấm vị trí có thanh tiến trình. */

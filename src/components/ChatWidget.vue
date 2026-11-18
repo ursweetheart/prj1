@@ -3,11 +3,11 @@
     <section v-if="open" class="chat-panel" aria-label="Trợ lý D3 Studio">
       <header class="row" style="justify-content:space-between;padding:12px 16px">
         <strong>Trợ lý D3 Studio</strong>
-        <button class="btn btn-ghost" type="button" aria-label="Đóng" @click="open = false">✕</button>
+        <button class="btn btn-ghost" type="button" aria-label="Đóng" @click="open = false"><Icon name="close" /></button>
       </header>
 
       <div ref="log" class="chat-log" aria-live="polite">
-        <p v-if="!turns.length" class="small">Hỏi về giá, quy trình, thời gian thi công hoặc đặt lịch tư vấn.</p>
+        <p v-if="!turns.length" class="small">Hỏi về phong cách, quy trình, thời gian thi công hoặc đặt lịch tư vấn.</p>
         <div v-for="(t, i) in turns" :key="i" class="chat-turn" :class="t.role">
           <p>{{ t.content }}</p>
           <!-- assistant-project-results: example projects, best match first -->
@@ -64,6 +64,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 import { nextTick, ref, watch } from 'vue'
 import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
 import { fileOf, folderOf } from '@/lib/projectSpaces'
@@ -161,9 +162,9 @@ async function send() {
 .chat-project-text { display: grid; gap: 2px; min-width: 0 }
 .chat-project-text strong { overflow-wrap: anywhere }
 .chat-form { display: grid; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line) }
-.chat-form input { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; min-height: 42px; min-width: 0 }
+.chat-form input { background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 100% / 0% 1px; color: var(--ink); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 0; min-height: 42px; min-width: 0; transition: background-size .6s cubic-bezier(0.22, 1, 0.36, 1) }
 .chat-form input::placeholder { color: var(--faint) }
-.chat-form input:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
+.chat-form input:focus, .chat-form input:focus-visible { outline: none; box-shadow: none; background-size: 100% 1px }
 .chat-new { justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--dim); cursor: pointer;
   text-decoration: underline; text-underline-offset: 3px; font: inherit; font-size: 13px }
 .chat-new:hover, .chat-new:focus-visible { color: var(--ink) }

@@ -187,7 +187,7 @@ async function copy() {
 .bf-count { margin: 0; color: var(--dim) }
 @media (min-width: 760px) { .bf-three { grid-template-columns: 1.3fr 1fr 1.2fr } }
 .cf-check { display: flex; gap: 10px; align-items: flex-start; font-size: var(--text-sm); color: var(--dim); cursor: pointer }
-.cf-check input { margin-top: 3px; width: 18px; height: 18px; flex: none; accent-color: var(--accent) }
+.cf-check input { margin-top: 3px; flex: none; accent-color: var(--accent) }
 .cf-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden }
 .cf-note { margin: 0 }
 .cf-send { justify-self: start }

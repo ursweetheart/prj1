@@ -134,11 +134,9 @@ load()
 </script>
 
 <style scoped>
+.txt { width: 100% }  /* skin: global .txt (app.css) */
 .it-page { padding-bottom: clamp(28px, 4vw, 56px) }
 .it-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 20px }
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 8px 10px; min-height: 40px; color-scheme: dark; font: inherit }
-.txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring); outline: none }
 .it-search { flex: 1 1 260px; max-width: 420px; min-width: 0 }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 .it-list { margin-top: 16px; display: grid; gap: 8px }
@@ -161,6 +159,5 @@ load()
   padding: 20px; width: min(520px, calc(100vw - 32px)) }
 .it-dialog::backdrop { background: rgba(0, 0, 0, 0.55) }
 .it-field { display: grid; gap: 4px; font-size: 13px; color: var(--dim) }
-.it-field .txt { width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 8px 10px; font: inherit }
+.it-field .txt { width: 100% }
 </style>

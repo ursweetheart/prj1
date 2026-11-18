@@ -166,6 +166,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.txt { width: 100% }  /* skin: global .txt (app.css) */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 .ft { display: grid; gap: 14px }
 .ft-try { display: grid; gap: 6px; max-width: 760px }
@@ -177,7 +178,7 @@ onMounted(load)
 .ft-item { display: grid; gap: 8px; padding: 12px 0 }
 .ft-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between }
 .ft-switch { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: var(--dim); cursor: pointer }
-.ft-switch input { width: 18px; height: 18px; accent-color: var(--accent) }
+.ft-switch input { accent-color: var(--accent) }
 .ft-kws, .ft-note { margin: 0; overflow-wrap: anywhere }
 .kn-list { list-style: none; margin: 0; padding: 0 }
 .kn-item { border-top: 1px solid var(--line-soft) }
@@ -187,8 +188,6 @@ onMounted(load)
 .kn-editor { display: grid; gap: 12px; max-width: 760px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md) }
 .kn-note { margin: 0; font-size: 14px; color: var(--ink) }
 .kn-danger { color: var(--danger) }
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 9px 12px; min-height: 40px; width: 100%; max-width: 100%; color-scheme: dark; font: inherit }
 :deep(.kn-fields) { display: grid; gap: 12px }
 :deep(.kn-fields .field) { display: grid; gap: 4px }
 :deep(.kn-fields label) { font-size: 14px; color: var(--ink) }
