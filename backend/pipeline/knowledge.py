@@ -11,7 +11,7 @@ import re
 from psycopg.rows import dict_row, tuple_row  # the API passes dict-row connections: positional reads use _tup
 from psycopg.types.json import Jsonb
 
-from pipeline.assistant import AI_MARK, KB_KINDS, SAMPLE_MARK, SERVICE_BY_LABEL
+from pipeline.assistant import AI_MARK, KB_KINDS, MONEY, SAMPLE_MARK, SERVICE_BY_LABEL
 from pipeline.taxonomy import fold
 
 APPROVER_ROLES = {"lead_architect", "admin"}
@@ -20,7 +20,7 @@ MOVES = {"cho_duyet": {"nhap"}, "dang_dung": {"nhap", "cho_duyet", "tat"}, "tat"
          "nhap": {"cho_duyet", "dang_dung", "tat"}}
 LINKED = set(SERVICE_BY_LABEL.values())  # hotspots link to these titles (assistant.with_services)
 # a number followed by a money unit that ends there ("3 đến 4 tuần" is not money: "đ" runs on into "ến")
-MONEY = re.compile(r"\d[\d.,]*\s*(?:(?:triệu|tr|tỷ|ty|nghìn|ngàn|k|đồng|đ|vnđ|vnd|usd)\b|\$)|/\s*m(?:2|²)", re.IGNORECASE)
+# MONEY lives in pipeline.assistant: the chatbot also uses it to keep amounts out of its answers
 FIELDS = ("id, kind, title, cum_tu_khop, content, trang_thai, nguon, tu_cau_hoi, updated_at, "
           "(SELECT email FROM app_user u WHERE u.id = k.updated_by) AS updated_by")
 

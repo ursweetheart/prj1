@@ -22,6 +22,8 @@ MIN_SCORE = 0.88
 # Below this cosine between the question and the best photo description the photos are treated as not knowing.
 MIN_TEXT_SCORE = 0.72  # on-topic questions scored 0.78-0.96, off-topic at most 0.66 (eval_photo_rag.py)
 # A photo says nothing about money, guarantees or promises: such claims never go out as an answer or a draft.
+# an amount of money: the site shows no prices (the owner's decision, Tùng 9399c77), so the chatbot never says one
+MONEY = re.compile(r"\d[\d.,]*\s*(?:(?:triệu|tr|tỷ|ty|nghìn|ngàn|k|đồng|đ|vnđ|vnd|usd)\b|\$)|/\s*m(?:2|²)", re.IGNORECASE)
 FORBIDDEN = re.compile(r"\d\s*(đ|đồng|vnd|vnđ|k|tr|triệu|tỷ|usd|\$)\b|bảo hành|cam kết|giảm giá|khuyến mãi|miễn phí", re.I)
 FALLBACK =("Mình chưa có thông tin chính xác về câu hỏi này. Mình đã chuyển cho kiến trúc sư của D3 Studio, "
             "họ sẽ phản hồi bạn sớm.")
@@ -136,10 +138,17 @@ def retrieve(question: str, k: int = 3):
     vec = np.asarray(_embedder().embed_text(question), dtype=np.float32)
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
-        return conn.execute(
+        rows = conn.execute(
             "SELECT id, kind, title, content, 1 - (embedding <=> %s) AS score FROM kb_chunk WHERE trang_thai = 'dang_dung' "
-            "ORDER BY embedding <=> %s LIMIT %s",  # drafts, entries waiting for approval and switched-off ones are never said
-            (vec, vec, k)).fetchall()
+            "AND kind <> 'price' ORDER BY embedding <=> %s LIMIT %s",  # drafts, waiting and switched-off entries are never said
+            (vec, vec, 3 * k)).fetchall()
+    return [r for r in rows if not MONEY.search(r[3] or "")][:k]  # no prices on the site: an entry stating one is skipped
+
+
+def without_prices(text: str) -> str:
+    """Drop every sentence or line that states an amount of money (the site shows no prices)."""
+    parts = re.split(r"(?<=[.!?])\s+|\n+", text or "")
+    return " ".join(p for p in parts if p.strip() and not MONEY.search(p)).strip()
 
 
 ANSWER_PROMPT = """Bạn là trợ lý của D3 Studio (thiết kế và thi công nội thất). Trả lời khách bằng tiếng Việt, chỉ dựa vào các mô tả ảnh dự án dưới đây.
@@ -272,6 +281,8 @@ def respond(message: str, history: list | None = None, contact: str | None = Non
     if blocked:  # handed to a person; the visitor is not told which topic
         answered = False
         out.update(answer=FALLBACK, answered=False, sources=[], images=[], projects=[], chu_de_cam=blocked)
+    if answered and MONEY.search(out["answer"]):  # a drafted answer that slipped an amount in loses that sentence
+        out["answer"] = without_prices(out["answer"]) or FALLBACK
     if answered and (req["price_intent"] or req["appointment_intent"]):
         out["answer"] += "\n\nĐể kiến trúc sư báo giá/xác nhận lịch chính xác, bạn vui lòng để lại số điện thoại hoặc email."
 

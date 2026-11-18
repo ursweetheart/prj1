@@ -25,16 +25,17 @@ PRICE = {"kind": "price", "title": "TEST bảng giá thiết kế nội thất b
          "match": "báo giá thiết kế nội thất biệt thự nhà phố giá bao nhiêu tính phí thế nào", "content": "Nội dung kiểm thử."}
 
 
-def test_answer_has_sources_and_creates_price_lead(tmp_path):
-    # the knowledge base holds no price list until D3 Studio provides one: load a throw-away chunk for this test
+def test_price_question_is_never_answered_with_a_price_but_still_creates_a_lead(tmp_path):
+    # the site shows no prices (the owner's decision, Tùng 9399c77): even a live price entry is never said
+    from pipeline.assistant import MONEY
     kb = tmp_path / "price.json"
     kb.write_text(json.dumps([PRICE], ensure_ascii=False), encoding="utf-8")
     load_kb(str(kb))
     before = _leads()
     try:
         r = client.post("/chat", json={"message": "Làm nội thất biệt thự tính phí thế nào?", "contact": "0900000000"}).json()
-        assert r["answered"] and r["sources"][0]["title"] == PRICE["title"]
-        assert r["lead_id"] and _leads() == before + 1
+        assert all(s["title"] != PRICE["title"] for s in r["sources"]) and not MONEY.search(r["answer"])
+        assert r["lead_id"] and _leads() == before + 1  # the architect calls back about the cost
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE id > 0 AND contact = '0900000000'")
