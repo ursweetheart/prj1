@@ -191,9 +191,9 @@ const message = e => (e.status === 409 ? 'Đã có trong chiều này (trùng m�
 async function run(key, call, done) {
   busy.value = key; formErr.value = ''; note.value = ''
   try {
-    await call()
+    const out = await call()
     await load()
-    done?.()
+    done?.(out)
     return true
   } catch (e) { formErr.value = message(e); return false }
   finally { busy.value = '' }
@@ -253,9 +253,10 @@ function openMerge(d, v) {
 async function doMerge() {
   const { v } = merging.value
   const into = targetName.value
-  await run('merge', () => mergeValue(v.id, mergeTo.value), () => {
+  await run('merge', () => mergeValue(v.id, mergeTo.value), out => {
     mergeEl.value.close()
-    note.value = `Đã gộp «${v.ten}» vào «${into}».`
+    const n = out?.so_anh_cap_nhat || 0 // seq-15 b20 (admin-tools): the search index catches up in the background
+    note.value = `Đã gộp «${v.ten}» vào «${into}»` + (n ? `; chỉ mục đang được cập nhật cho ${n} ảnh.` : '.')
   })
 }
 

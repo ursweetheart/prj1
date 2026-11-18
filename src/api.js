@@ -1,5 +1,6 @@
 /* Client for the D3 Studio API (FastAPI, see backend/api.py). */
 import { reactive } from 'vue'
+import { createCollector, deviceType, trafficSource } from '@/lib/collector'
 
 const SPACE_VI = {
   phong_khach: 'Phòng khách', phong_ngu_master: 'Phòng ngủ master', phong_ngu_phu: 'Phòng ngủ phụ',
@@ -46,7 +47,9 @@ async function request(method, path, { params, body, form } = {}) {
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail
     const err = new Error(res.status === 404 ? 'Không tìm thấy dữ liệu này.'
-      : typeof detail === 'string' ? detail : 'Máy chủ không phản hồi (' + res.status + ').')
+      : typeof detail === 'string' ? detail
+        : typeof detail?.msg === 'string' ? detail.msg // e.g. {thieu: [...], msg: 'Thiếu: Phong cách'} (publishing-workflow)
+          : 'Máy chủ không phản hồi (' + res.status + ').')
     err.status = res.status
     err.detail = detail // 422: [{loc, msg}], so a form can put each error under its field
     throw err
@@ -92,7 +95,10 @@ export function adoptTokenFromHash() {
   history.replaceState(null, '', location.pathname + location.search)
 }
 /* account-invites-reset: invitations (admin) and password links (public). The link code travels in the body, never the URL */
-export const inviteUser = (email, role) => request('POST', '/users/invite', { body: { email, role } })
+export const inviteUser = (email, role, ho_ten = '') => request('POST', '/users/invite', { body: { email, role, ...(ho_ten.trim() ? { ho_ten } : {}) } })
+// class-6 NguoiDung.ho_ten (admin-tools): the admin sets anyone's, a signed-in user their own
+export const setUserName = (id, ho_ten) => request('PATCH', '/users/' + id, { body: { ho_ten } })
+export async function setMyName(ho_ten) { await request('PATCH', '/auth/me', { body: { ho_ten } }); return loadUser() }
 export const resendInvite = id => request('POST', '/users/' + id + '/invite/resend')
 export const cancelInvite = id => request('POST', '/users/' + id + '/invite/cancel')
 export const forgotPassword = email => request('POST', '/auth/forgot', { body: { email } })
@@ -112,8 +118,8 @@ export async function login(email, password) {
   setToken((await res.json()).access_token)
   return loadUser()
 }
-export async function register(email, password) {
-  await request('POST', '/auth/register', { body: { email, password } })
+export async function register(email, password, ho_ten = '') {
+  await request('POST', '/auth/register', { body: { email, password, ...(ho_ten.trim() ? { ho_ten } : {}) } })
   return login(email, password)
 }
 export const logout = () => setToken(null)
@@ -123,6 +129,16 @@ export const imageUrl = path => ORIGIN + '/images/' + encodeURI(path)
 export const spaceLabel = type => SPACE_VI[type] || 'Không gian'
 
 /* API row -> shape SpaceCard expects */
+/* publishing-workflow (act-1): the optimised WebP copies as a srcset; the original closes the list at its own width.
+   No copies (an old photo or a search hit without them) -> '' and the <img> keeps its src. */
+export function imageSrcset(r) {
+  const sizes = Object.entries(r?.kich_thuoc || {}).sort((a, b) => a[0] - b[0])
+  if (!sizes.length) return ''
+  const list = sizes.map(([w, rel]) => `${ORIGIN}/images/${encodeURI(rel)} ${w}w`)
+  if (r.chieu_rong) list.push(`${imageUrl(r.relative_path)} ${r.chieu_rong}w`)
+  return list.join(', ')
+}
+
 export const toCard = r => ({
   id: 'ai-' + r.id,
   apiId: r.id,
@@ -130,6 +146,9 @@ export const toCard = r => ({
   projectName: r.relative_path.split('/')[0].replace(/_/g, ' '),
   space: spaceLabel(r.space_type),
   img: imageUrl(r.relative_path),
+  srcset: imageSrcset(r),
+  why: r.ly_do || [], // search-explanations: why this result fits (shared or named labels)
+  published: r.ngay_xuat_ban || null, viewRank: r.hang_xem ?? null, styleName: PC[r.design_style] || String(r.design_style || '').toLowerCase(), // BFD 1.2 sorts
   ratio: 'sq',
   khonggian: KG[r.space_type],
   phongcach: PC[r.design_style],
@@ -142,6 +161,20 @@ export const toFacet = d => ({
   id: d.ma_dinh_danh, label: d.ten,
   options: d.values.map(v => ({ id: v.ma_dinh_danh, label: v.ten }))
 })
+/* seq-10 / BFD 1.1-1.2 (search-explanations): project filter. sel {dimension: [codes]}, area [from, to] (m2, either empty) */
+export function projectFilterParams(sel = {}, area = [], sort = 'moi_nhat') {
+  const pairs = []
+  for (const dim of ['phong_cach', 'loai_cong_trinh', 'muc_dau_tu']) for (const v of sel[dim] || []) pairs.push([dim, v])
+  if (area[0] !== undefined && area[0] !== null && area[0] !== '') pairs.push(['dien_tich_tu', String(area[0])])
+  if (area[1] !== undefined && area[1] !== null && area[1] !== '') pairs.push(['dien_tich_den', String(area[1])])
+  if (sort && sort !== 'moi_nhat') pairs.push(['sap_xep', sort])
+  return pairs
+}
+export const filterProjects = (sel, area, sort) => get('/projects/filter', projectFilterParams(sel, area, sort))
+// BFD 2.3 (visitor-touchpoints): a read-only snapshot of the current collection -> {ma, so_anh}
+export const shareCollection = items => request('POST', '/collections/share', { body: { items } })
+// seq-14 b6-b9 (admin-tools): the local detector's suggestions for one photo, nothing stored
+export const detectObjects = id => request('POST', `/spaces/${id}/detect`)
 export const getTaxonomy = () => get('/taxonomy')
 // taxonomy admin (seq-15): the tree with usage counts and the change log; every write returns the changed row
 export const getTaxonomyAdmin = () => get('/taxonomy/admin')
@@ -180,56 +213,146 @@ export const acceptValueCandidate = (id, body) => request('POST', `/taxonomy/val
 export const mapValueCandidate = (id, gia_tri_id) => request('POST', `/taxonomy/value-candidates/${id}/map`, { body: { gia_tri_id } })
 export const rejectValueCandidate = id => request('POST', `/taxonomy/value-candidates/${id}/reject`)
 
-export const searchSpaces = (q, k = 12) => get('/search', { q, k })
-export function searchByImage(file, k = 12) {
+/* search-explanations: the API answers {ket_qua, ...}; callers keep getting the list, and the rest (constraints taken
+   from a description, a rewording hint, an uploaded photo's traits or refusal) goes to lastSearch for SearchNote.vue.
+   dfd-2-1 1.3: a search is recorded by kind and number of results, never its words or photo. */
+export const lastSearch = reactive({ kind: null, rang_buoc: [], goi_y: null, noi_that: null, thong_bao: null, dac_diem: {} })
+export const clearSearch = () => Object.assign(lastSearch, { kind: null, rang_buoc: [], goi_y: null, noi_that: null, thong_bao: null, dac_diem: {} })
+export async function searchSpaces(q, k = 12) {
+  const r = await get('/search', { q, k })
+  const rows = Array.isArray(r) ? r : r.ket_qua
+  Object.assign(lastSearch, { kind: 'mo_ta', rang_buoc: r.rang_buoc || [], goi_y: r.goi_y || null, noi_that: null, thong_bao: null, dac_diem: {} })
+  if (String(q || '').trim()) trackEvent('tim_kiem', { doi_tuong: 'mo_ta', so_ket_qua: rows.length })
+  return rows
+}
+export async function searchByImage(file, k = 12) {
   const form = new FormData()
   form.append('file', file)
-  return request('POST', '/search/image', { params: { k }, form })
+  const r = await request('POST', '/search/image', { params: { k }, form })
+  const rows = Array.isArray(r) ? r : r.ket_qua
+  Object.assign(lastSearch, { kind: 'anh', rang_buoc: [], goi_y: null, noi_that: r.noi_that ?? true,
+    thong_bao: r.thong_bao || null, dac_diem: r.dac_diem || {} })
+  trackEvent('tim_kiem', { doi_tuong: 'anh', so_ket_qua: rows.length })
+  return rows
 }
 export const getSpace = id => get('/spaces/' + id)
 
-/* Behaviour signal for taxonomy discovery (UC21). The visitor's answer on the consent banner lives in localStorage;
- * without a 'yes' the server only counts the view for the day. Fire-and-forget: tracking never breaks a page. */
+/* Behaviour signals (UC21). The visitor's answer on the consent notice lives in localStorage (act-7):
+ *   'yes'        analytics and personalisation
+ *   'phan_tich'  analytics only (Tùy chỉnh)
+ *   'no'         neither: the server only counts each event type for the day
+ * Events leave in batches (lib/collector.js, seq-4 b2-b3). Fire-and-forget: tracking never breaks a page. */
 const CONSENT_KEY = 'd3_dong_y_thu_thap'
+const DEVICE_KEY = 'd3_thiet_bi'
+const webStore = (kind, fn) => { try { return fn(kind === 'local' ? localStorage : sessionStorage) } catch { return null } }
 export const consent = {
-  get() { try { return localStorage.getItem(CONSENT_KEY) } catch { return null } },
-  set(v) { try { localStorage.setItem(CONSENT_KEY, v) } catch { /* private mode: ask again next visit */ } }
+  get() { return webStore('local', s => s.getItem(CONSENT_KEY)) },
+  set(v) {
+    webStore('local', s => s.setItem(CONSENT_KEY, v))
+    if (!consent.analyticsFor(v)) webStore('local', s => s.removeItem(DEVICE_KEY)) // the device id exists only under consent
+    try { window.dispatchEvent(new CustomEvent('d3-consent-changed', { detail: v })) } catch { /* no window in tests */ }
+  },
+  analyticsFor: v => v === 'yes' || v === 'phan_tich',
+  analytics() { return consent.analyticsFor(consent.get()) },
+  personal() { return consent.get() === 'yes' },
 }
 export function visitId() { // random per browser tab session, never tied to an account
-  try {
-    let id = sessionStorage.getItem('d3_phien')
-    if (!id) sessionStorage.setItem('d3_phien', id = crypto.randomUUID().replaceAll('-', ''))
+  return webStore('session', s => {
+    let id = s.getItem('d3_phien')
+    if (!id) s.setItem('d3_phien', id = crypto.randomUUID().replaceAll('-', ''))
     return id
-  } catch { return null }
+  })
 }
-function track(loai, spaceId) {
-  const yes = consent.get() === 'yes' && visitId()
-  request('POST', '/events', { body: { loai, dong_y: !!yes, phien_id: yes || null, space_id: yes ? spaceId : null } })
-    .catch(() => {}) // errors are not the visitor's problem
+function deviceId() { // class-4 ma_thiet_bi_an_danh: random, kept by this browser only while analytics consent is on
+  if (!consent.analytics()) return null
+  return webStore('local', s => {
+    let id = s.getItem(DEVICE_KEY)
+    if (!id) s.setItem(DEVICE_KEY, id = crypto.randomUUID().replaceAll('-', ''))
+    return id
+  })
 }
-/* behaviour-events (UC21): page views with time and scroll, CTA clicks, forms, chat, share, filters. Same consent rule as
-   track(): details only with consent, otherwise just the day's count. Never for staff (a signed-in account still loading
-   could be staff, so it waits). keepalive lets a page-leave event survive the tab closing. */
+function source() { // fixed for the tab session: where the visit came from
+  return webStore('session', s => {
+    let v = s.getItem('d3_nguon')
+    if (!v) s.setItem('d3_nguon', v = trafficSource(document.referrer, location.search, location.hostname))
+    return v
+  }) || 'truc_tiep'
+}
+const collector = createCollector({
+  send: body => {
+    try {
+      fetch(API + '/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true })
+        .catch(() => {}) // errors are not the visitor's problem
+    } catch { /* never the visitor's problem */ }
+  },
+  context: () => {
+    const consented = consent.analytics() && !!visitId()
+    return consented
+      ? { consented, phien_id: visitId(), ma_thiet_bi: deviceId(), nguon: source(), ca_nhan_hoa: consent.personal(),
+          thiet_bi: deviceType(window.innerWidth, !!window.matchMedia?.('(pointer: coarse)').matches) }
+      : { consented: false }
+  },
+})
+if (typeof document !== 'undefined') source() // where the visit came from, read before any reload replaces the referrer
+/* Leaving or hiding the page sends what is waiting (seq-4: "hoặc khi rời trang"). lib/pageTracking.js calls it after
+   it has recorded the page view being left, so that view leaves with the batch. */
+export const flushEvents = () => collector.flush()
+
+/* act-7 "Xóa dữ liệu của tôi": this browser's sessions (the tab's and every one with its device id) and their events.
+   Waiting events are dropped first, so nothing is stored after the deletion; then the browser starts afresh. */
+export async function forgetMe() {
+  collector.clear()
+  const phien_id = webStore('session', s => s.getItem('d3_phien'))
+  const ma_thiet_bi = webStore('local', s => s.getItem(DEVICE_KEY))
+  const r = phien_id || ma_thiet_bi
+    ? await request('POST', '/privacy/xoa-du-lieu', { body: { phien_id, ma_thiet_bi } })
+    : { so_phien: 0, so_su_kien: 0 }
+  webStore('session', s => s.removeItem('d3_phien'))
+  webStore('local', s => s.removeItem(DEVICE_KEY))
+  return r
+}
+export const openConsent = () => window.dispatchEvent(new Event('d3-consent-open'))
+
+/* act-3 homepage "Đang được quan tâm": the session is sent only when the visitor allowed personalisation (act-7) */
+export const getHomeSuggestions = () => get('/home/suggestions', consent.personal() && visitId() ? { phien_id: visitId() } : {})
+export const getHomeSettings = () => get('/analytics/home-suggestions')
+export const setHomeSetting = (gia_tri, che_do) => request('PUT', '/analytics/home-suggestions', { body: { gia_tri, che_do } })
+
+function track(loai, spaceId) { // photo events: callers already skip staff
+  collector.push(loai, { space_id: spaceId })
+}
+/* behaviour-events (UC21): page views with time and scroll, CTA clicks, forms, chat, share, filters, searches.
+   Never for staff (a signed-in account still loading could be staff, so it waits). */
 export function trackEvent(loai, fields = {}) {
   if (session.token && (!session.user || session.user.role !== 'visitor')) return
-  const id = consent.get() === 'yes' && visitId()
-  const body = id ? { loai, dong_y: true, phien_id: id, ...fields } : { loai, dong_y: false }
-  try {
-    fetch(API + '/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true })
-      .catch(() => {})
-  } catch { /* never the visitor's problem */ }
+  collector.push(loai, fields)
 }
 export const trackView = spaceId => track('xem_khong_gian', spaceId)
 export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard: a save is a stronger signal
 export const trackQuizPick = spaceId => track('chon_trac_nghiem', spaceId) // style-quiz: not in the interest score
-export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
+
+/* seq-2 b12/b14: similar spaces shown, and one of them opened (pageTracking asks takeSimilarPick on each space page) */
+let lastSimilar = null
+export async function getSimilar(id, k = 8) {
+  const rows = await get('/spaces/' + id + '/similar', { k })
+  if (rows.length) {
+    trackEvent('xem_goi_y_tuong_tu', { space_id: Number(id) })
+    lastSimilar = { src: Number(id), ids: new Set(rows.map(r => r.id)) }
+  }
+  return rows
+}
+export function takeSimilarPick(id) { // -> the source space when `id` was one of the similar spaces shown last
+  const src = lastSimilar && lastSimilar.ids.has(Number(id)) ? lastSimilar.src : null
+  if (src !== null) lastSimilar = null
+  return src
+}
 
 // QT-01; 'cleared' = the client allowed publishing the photos
-export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
-export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
+export const NEXT_STATUS = { draft: 'editing', editing: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
+export const STATUS_VI = { draft: 'Nháp', editing: 'Chờ biên tập', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
   noi_bo: 'Lưu nội bộ' } // noi_bo: the client refused publishing; final, never public (review-return-reject)
 // backward paths, lead architect / admin, always with a reason (5-500 characters); all or nothing
-export const RETURNABLE = ['in_review', 'approved', 'cleared']
+export const RETURNABLE = ['editing', 'in_review', 'approved', 'cleared']
 export const returnSpaces = (ids, lyDo) => request('POST', '/spaces/return', { body: { space_ids: ids, ly_do: lyDo } })
 export const keepInternal = (ids, lyDo) => request('POST', '/spaces/keep-internal', { body: { space_ids: ids, ly_do: lyDo } })
 export const reopenSpaces = (ids, lyDo) => request('POST', '/spaces/reopen', { body: { space_ids: ids, ly_do: lyDo } })
@@ -255,22 +378,38 @@ export const advanceSpaces = (ids, rightsConfirmed = false) =>
 export const setTags = body => request('PUT', '/spaces/tags', { body }) // {space_ids | project, dimension, values}
 export const projectOf = relativePath => relativePath.split('/')[0]
 
-export function ingestSpace(file, project) {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('project', project)
-  return request('POST', '/spaces/ingest', { form })
+export const ingestTasks = ids => get('/spaces/ingest/tasks', { ids: ids.join(',') })
+
+/* labelling-queue-feedback (seq-1 b5-b6, b16): follow queued tasks until each is done or failed.
+   fetchStatus(ids) -> [{id, trang_thai, loi}]; a failed poll (network blip) is simply retried on the next turn. */
+export async function pollTasks(tasks, fetchStatus, onProgress = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)), every = 2000) {
+  const name = Object.fromEntries(tasks.map(t => [t.id, t.relative_path.split('/').pop()]))
+  const failed = []
+  let open = tasks.map(t => t.id), ok = 0
+  onProgress(0, tasks.length)
+  while (open.length) {
+    await wait(every)
+    let st
+    try { st = await fetchStatus(open) } catch { continue }
+    for (const s of st) {
+      if (s.trang_thai === 'xong') ok++
+      else if (s.trang_thai === 'loi') failed.push({ name: name[s.id], error: s.loi })
+    }
+    open = st.filter(s => s.trang_thai === 'dang_xu_ly').map(s => s.id)
+    onProgress(tasks.length - open.length, tasks.length)
+  }
+  return { ok, failed }
 }
 
-/* One request per file, in order: the server runs the pipeline on a single GPU.
- * A failed file is reported and the rest still go up. */
-export async function uploadAll(files, project, onDone = () => {}) {
-  const failed = []
-  for (const [i, f] of [...files].entries()) {
-    try { await ingestSpace(f, project) } catch (e) { failed.push({ name: f.name, error: e.message }) }
-    onDone(i + 1)
-  }
-  return failed
+/* One request queues every photo and comes back at once; then the queue is followed (seq-1 b2-b6).
+   -> { total, ok, failed: [{name, error}] } with refused files (wrong type or size) among the failures. */
+export async function uploadAll(files, project, onProgress = () => {}) {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
+  form.append('project', project)
+  const { tasks, refused } = await request('POST', '/spaces/ingest', { form })
+  const done = await pollTasks(tasks, ingestTasks, onProgress)
+  return { total: tasks.length, ok: done.ok, failed: [...refused.map(r => ({ name: r.name, error: r.ly_do })), ...done.failed] }
 }
 
 // detector objects (anchor in 0..1) -> the {x, y, label} HotspotImage draws, in percent
@@ -286,7 +425,7 @@ export const listLeads = (params = {}) => get('/leads', params)
 /* chat-history: the conversation id goes with every message; the session id goes whenever the banner was accepted
    (as /events does) so the conversation is linked, while a lead still attaches views only when the box is ticked */
 export const sendChat = (message, history, contact, sendViews = false, hoiThoaiId = null) => {
-  const phien = consent.get() === 'yes' && visitId()
+  const phien = consent.analytics() && visitId()
   return request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}),
     ...(hoiThoaiId ? { hoi_thoai_id: hoiThoaiId } : {}), ...(phien ? { phien_id: phien } : {}), gui_ho_so: !!(phien && sendViews) } })
 }
@@ -321,7 +460,7 @@ export const previewWeeklyReport = () => get('/reports/weekly/preview')
 export const testWeeklyReport = () => request('POST', '/reports/weekly/test')
 export const createLead = body => request('POST', '/leads', { body: { ...body, ...viewsConsent(body.gui_ho_so) } })
 function viewsConsent(ticked) { // the session id goes out only with both consents; the server checks again
-  const id = ticked && consent.get() === 'yes' && visitId()
+  const id = ticked && consent.analytics() && visitId()
   return id ? { phien_id: id, gui_ho_so: true } : { gui_ho_so: false }
 }
 /* Every published space, for the portfolio grid; the API caps one page at 200, so read pages until a short one */

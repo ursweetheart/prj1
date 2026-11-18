@@ -11,7 +11,7 @@ from pathlib import Path
 
 from psycopg.types.json import Jsonb
 
-from pipeline import taxonomy, vertex
+from pipeline import label_feedback, taxonomy, vertex
 
 DIMS = {"khong_gian": "space_type", "phong_cach": "design_style"}  # dimension -> the space column it mirrors
 SPELLING_CUTOFF = 0.8
@@ -184,6 +184,7 @@ def _move_waiting(conn, user, cand, code) -> list[int]:
     for sid in moved:
         conn.execute("INSERT INTO review_log (space_id, user_id, action, detail) VALUES (%s, %s, 'edit', %s)",
                      (sid, user["id"], Jsonb({"from": {col: other}, "to": {col: code}, "goi_y": cand["id"]})))
+        label_feedback.record(conn, sid, user["id"])  # seq-1 b21: the correction now names the decided value
     return moved
 
 

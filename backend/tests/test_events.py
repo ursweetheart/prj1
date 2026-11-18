@@ -19,14 +19,14 @@ def _count(sql, *args):
 
 def test_without_consent_nothing_per_visitor_is_stored():
     sid, pid = _published(), uuid.uuid4().hex
-    before = _count("SELECT COALESCE(sum(so_luong), 0) FROM su_kien_an_danh WHERE ngay = current_date")
+    before = _count("SELECT COALESCE(sum(so_luong), 0) FROM su_kien_an_danh WHERE ngay = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date")
     r = client.post("/events", json={"loai": "xem_khong_gian", "dong_y": False, "phien_id": pid, "space_id": sid})
     assert r.status_code == 204
     assert _count("SELECT count(*) FROM phien_truy_cap WHERE id=%s", pid) == 0
     assert _count("SELECT count(*) FROM su_kien WHERE phien_id=%s", pid) == 0
-    assert _count("SELECT COALESCE(sum(so_luong), 0) FROM su_kien_an_danh WHERE ngay = current_date") == before + 1
+    assert _count("SELECT COALESCE(sum(so_luong), 0) FROM su_kien_an_danh WHERE ngay = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date") == before + 1
     with psycopg.connect(DSN) as c:  # take the test's own visit back out of the real count
-        c.execute("UPDATE su_kien_an_danh SET so_luong = so_luong - 1 WHERE ngay = current_date AND loai = 'xem_khong_gian'")
+        c.execute("UPDATE su_kien_an_danh SET so_luong = so_luong - 1 WHERE ngay = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai = 'xem_khong_gian'")
 
 
 def test_consented_view_is_stored_with_facet_values():

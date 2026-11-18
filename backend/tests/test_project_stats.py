@@ -1,13 +1,14 @@
 """Project results (change project-performance). Throw-away folders `test_ps_*` with published spaces, consented
 sessions, review_log rows and leads, all removed afterwards; numbers are read for those folders only."""
 import uuid
+from datetime import timedelta
 
 import psycopg
 import pytest
 from psycopg.types.json import Jsonb
 
 from conftest import client
-from pipeline import project_stats
+from pipeline import project_stats, rollup
 from pipeline.store import DSN
 
 
@@ -41,12 +42,16 @@ def world():
         made["sessions"].append(pid)
         return pid
 
-    def events(space_id, loai="xem_khong_gian", n=1, days_ago=0):
+    def events(space_id, loai="xem_khong_gian", n=1, days_ago=1):
+        """tracking-pipeline: views and saves are read from the analytics store, so they happen on a past day,
+        which is then processed as the nightly run would."""
         pid = session()
         with psycopg.connect(DSN) as c:
             for _ in range(n):
                 c.execute("INSERT INTO su_kien (phien_id, loai, space_id, created_at) "
                           "VALUES (%s, %s, %s, now() - make_interval(days => %s))", (pid, loai, space_id, days_ago))
+        made.setdefault("days", set()).add(rollup.local_today() - timedelta(days=days_ago))
+        rollup.run(days=sorted(made["days"]))
 
     def lead(ngu_canh=None, brief=None, days_ago=0):
         with psycopg.connect(DSN) as c:
@@ -76,6 +81,8 @@ def world():
         c.execute("DELETE FROM bo_suu_tap WHERE id = ANY(%s)", (made["briefs"],))
         c.execute("DELETE FROM phien_truy_cap WHERE id = ANY(%s)", (made["sessions"],))
         c.execute("DELETE FROM space WHERE id = ANY(%s)", (made["spaces"],))
+    if made.get("days"):
+        rollup.run(days=sorted(made["days"]))  # the store forgets the test data too
 
 
 def _ov(days=30, user_id=None):

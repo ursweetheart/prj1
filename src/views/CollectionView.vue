@@ -41,7 +41,9 @@
           <button class="btn btn-primary" type="button" :aria-expanded="String(showBrief)" @click="openBrief">
             Gửi cho kiến trúc sư
           </button>
+          <button class="btn btn-secondary" type="button" :disabled="sharing" @click="share">Chia sẻ bộ sưu tập</button>
         </div>
+        <p v-if="shareMsg" class="col-note" role="status">{{ shareMsg }} <a v-if="shareUrl" :href="shareUrl">{{ shareUrl }}</a></p>
         <p v-if="!session.user" class="col-invite">
           Bộ sưu tập đang được giữ trong trình duyệt này.
           <router-link :to="{ path: '/dang-nhap', query: { next: '/bo-suu-tap' } }">Đăng ký để giữ bộ sưu tập</router-link>
@@ -79,7 +81,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import BriefForm from '@/components/BriefForm.vue'
-import { getSharedCollection, getSpacesByIds, session, toCard } from '@/api'
+import { getSharedCollection, getSpacesByIds, session, shareCollection, toCard, trackEvent } from '@/api'
 import { collection, remove, setNote } from '@/lib/collection'
 import { projectBySlug } from '@/data/projects'
 import { slugOf } from '@/lib/projectSpaces'
@@ -103,6 +105,21 @@ const cards = computed(() => rows.value.map(named))
 const noteOf = id => collection.items.find(i => i.space_id === id)?.ghi_chu || ''
 // what the brief sends: the shown (still published) photos, in collection order, with their notes
 const sendable = computed(() => cards.value.map(c => ({ space_id: c.apiId, ghi_chu: noteOf(c.apiId) || null })))
+
+/* BFD 2.3 (visitor-touchpoints): share a read-only snapshot of the collection as it is now */
+const sharing = ref(false), shareMsg = ref(''), shareUrl = ref('')
+async function share() {
+  sharing.value = true; shareMsg.value = ''; shareUrl.value = ''
+  try {
+    const r = await shareCollection(sendable.value)
+    shareUrl.value = location.origin + (import.meta.env.BASE_URL || '/') + 'bo-suu-tap/xem/' + r.ma
+    let copied = false
+    try { await navigator.clipboard.writeText(shareUrl.value); copied = true } catch { /* the link is shown anyway */ }
+    shareMsg.value = (copied ? 'Đã sao chép liên kết chỉ xem' : 'Liên kết chỉ xem') + ` (${r.so_anh} ảnh):`
+    trackEvent('chia_se', { doi_tuong: 'bo_suu_tap' })
+  } catch (e) { shareMsg.value = 'Chưa chia sẻ được: ' + e.message }
+  finally { sharing.value = false }
+}
 
 async function loadShared(code) {
   loading.value = true; error.value = ''

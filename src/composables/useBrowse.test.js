@@ -37,3 +37,14 @@ describe('useBrowse', () => {
     location.hash = ''
   })
 })
+
+// search-explanations 3.3: explorer sorts (BFD 1.2)
+import { sortSpaces } from './useBrowse'
+describe('sortSpaces', () => {
+  const list = [{ id: 'a', published: '2026-11-01', viewRank: 3, styleName: 'wabi-sabi' },
+    { id: 'b', published: null, viewRank: 1, styleName: 'indochine' },
+    { id: 'c', published: '2026-11-10', viewRank: null, styleName: 'japandi' }]
+  it('newest first, unpublished dates last', () => expect(sortSpaces(list, 'moi_nhat').map(s => s.id)).toEqual(['c', 'a', 'b']))
+  it('most viewed first, unseen last', () => expect(sortSpaces(list, 'xem_nhieu').map(s => s.id)).toEqual(['b', 'a', 'c']))
+  it('by style name', () => expect(sortSpaces(list, 'phong_cach').map(s => s.id)).toEqual(['b', 'c', 'a']))
+})

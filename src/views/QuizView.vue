@@ -86,6 +86,20 @@
       <p v-else-if="!session.user" class="qz-hint">Đăng nhập để lưu kết quả vào tài khoản và xem lại trên máy khác.</p>
       <p v-if="quiz.error" class="field-err" role="alert">{{ quiz.error }}</p>
 
+      <!-- seq-12 b12-b15 (visitor-touchpoints): projects with published photos of that style -->
+      <template v-if="current.du_an?.length">
+        <h2 class="qz-h2">Dự án gợi ý</h2>
+        <ul class="qz-projects">
+          <li v-for="p in current.du_an" :key="p.slug">
+            <router-link class="qz-project" :to="p.co_trang ? '/du-an/' + p.slug + (p.anh?.anh_trang ? '?anh=' + encodeURIComponent(p.anh.anh_trang) : '')
+              : '/khong-gian/' + p.anh.id">
+              <img v-if="p.anh" :src="imageUrl(p.anh.relative_path)" alt="" loading="lazy">
+              <span><strong>{{ p.ten }}</strong><span v-if="p.phong_cach" class="qz-hint"> · {{ String(p.phong_cach).replaceAll('_', ' ') }}</span></span>
+            </router-link>
+          </li>
+        </ul>
+      </template>
+
       <template v-if="cards.length">
         <div class="qz-sugg-head">
           <h2 class="qz-h2">Không gian gợi ý cho bạn</h2>
@@ -265,4 +279,9 @@ watch(current, v => { if (v && state.value === 'start') state.value = 'result' }
 .qz-grid { display: grid; grid-template-columns: 1fr; gap: 0 20px }
 @media (min-width: 600px) { .qz-grid { grid-template-columns: repeat(2, 1fr) } }
 @media (min-width: 1024px) { .qz-grid { grid-template-columns: repeat(4, 1fr) } }
+.qz-projects { list-style: none; margin: 0 0 24px; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) }
+.qz-project { display: flex; gap: 12px; align-items: center; color: var(--ink); text-decoration: none; padding: 8px;
+              border: 1px solid var(--line); border-radius: var(--radius-md) }
+.qz-project:focus-visible { box-shadow: var(--focus-ring); outline: none }
+.qz-project img { width: 72px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm); flex: none }
 </style>

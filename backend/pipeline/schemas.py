@@ -44,6 +44,7 @@ class SpaceSEOMetadata(BaseModel):
 class SpaceClassificationResult(BaseModel):
     space_type: str = Field(description="khong_gian value code from the taxonomy tables")
     space_type_label: Optional[str] = Field(default="Không gian nội thất")
+    space_type_confidence: Optional[float] = None  # seq-1 b11; None when the AI gave none
     design_style: str = Field(description="phong_cach value code from the taxonomy tables")
     design_style_confidence: float
     style_rationale: str = Field(description="Grounded explanation citing detected objects and color palette")
@@ -79,3 +80,4 @@ class SpaceRecord(BaseModel):
     llm_usage: Optional[LLMUsage] = None
     embedding_dimension: int = 768
     embedding: Optional[List[float]] = Field(default=None, description="SigLIP2 vector stored in Postgres/pgvector")
+    embedding_model: Optional[str] = None  # class-6 VectorAnh.ten_mo_hinh (admin-tools)

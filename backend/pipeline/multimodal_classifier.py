@@ -85,6 +85,7 @@ Hãy dựa vào ảnh và dữ liệu bằng chứng trên để phân loại kh
 {{
   "space_type": "...",
   "space_type_label": "...",
+  "space_type_confidence": 0.9,
   "design_style": "...",
   "design_style_confidence": 0.95,
   "style_rationale": "Giải thích cụ thể vì sao chọn phong cách này...",
@@ -349,7 +350,13 @@ class MultimodalClassifier:
     def _normalize_parsed_data(parsed: dict) -> dict:
         # Room and style must be stored taxonomy values; an answer that fits none is "Other" with style confidence 0,
         # so it lands in the review hints instead of silently becoming Hien_dai / phong_khach.
-        st = taxonomy.resolve("khong_gian", parsed.get("space_type")) or taxonomy.OTHER["khong_gian"]
+        st = taxonomy.resolve("khong_gian", parsed.get("space_type"))
+        try:  # labelling-queue-feedback (seq-1 b11): the room type carries its own confidence, like the style
+            parsed["space_type_confidence"] = min(1.0, max(0.0, float(parsed["space_type_confidence"])))
+        except (KeyError, TypeError, ValueError):
+            parsed["space_type_confidence"] = None
+        if st is None:
+            st, parsed["space_type_confidence"] = taxonomy.OTHER["khong_gian"], 0.0
         parsed["space_type"] = st
         parsed["space_type_label"] = MultimodalClassifier._label("khong_gian", st)
 
@@ -452,7 +459,9 @@ class MultimodalClassifier:
             materials = ["Gỗ công nghiệp cao cấp", "Kim loại sơn tĩnh điện"]
 
         # The rules above name fixed codes; a code staff merged away must not be saved, so check it like an AI answer.
-        space_type = taxonomy.resolve("khong_gian", space_type) or taxonomy.OTHER["khong_gian"]
+        type_confidence = 0.5  # a rule of thumb from the detected objects, never sure
+        if taxonomy.resolve("khong_gian", space_type) is None:
+            space_type, type_confidence = taxonomy.OTHER["khong_gian"], 0.0
         if taxonomy.resolve("phong_cach", style) is None:
             style, confidence = taxonomy.OTHER["phong_cach"], 0.0
 
@@ -464,6 +473,7 @@ class MultimodalClassifier:
         return SpaceClassificationResult(
             space_type=space_type,
             space_type_label=space_label,
+            space_type_confidence=type_confidence,
             design_style=style,
             design_style_confidence=confidence,
             style_rationale=rationale,

@@ -11,11 +11,14 @@ DSN = os.getenv("D3_DSN", "postgresql://d3:d3@localhost:5432/d3")
 
 UPSERT = """
 INSERT INTO space (relative_path, image_name, subfolder, space_type, design_style,
-  style_confidence, materials, caption, alt_text, palette, hotspots, embedding)
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
+  style_confidence, materials, caption, alt_text, palette, hotspots, embedding,
+  space_type_ai, design_style_ai, space_type_confidence, mo_hinh_nhung)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s)
 ON CONFLICT (relative_path) DO UPDATE SET
   space_type=EXCLUDED.space_type, design_style=EXCLUDED.design_style,
   style_confidence=EXCLUDED.style_confidence, materials=EXCLUDED.materials,
+  space_type_ai=EXCLUDED.space_type_ai, design_style_ai=EXCLUDED.design_style_ai,
+  space_type_confidence=EXCLUDED.space_type_confidence, mo_hinh_nhung=EXCLUDED.mo_hinh_nhung,
   caption=EXCLUDED.caption, alt_text=EXCLUDED.alt_text, palette=EXCLUDED.palette,
   hotspots=EXCLUDED.hotspots, embedding=EXCLUDED.embedding
 """  # review_status deliberately not updated: keep architect's decision on re-ingest
@@ -33,6 +36,9 @@ def save_records(records: list[SpaceRecord]) -> int:
                 c.seo_metadata.caption if c else None, c.seo_metadata.alt_text if c else None,
                 r.color_analysis.model_dump_json(), r.furniture_detection.model_dump_json(),
                 r.embedding,
+                c.space_type if c else None, c.design_style if c else None,  # the AI's proposal (labelling-queue-feedback)
+                c.space_type_confidence if c else None,
+                r.embedding_model if r.embedding is not None else None,  # class-6 VectorAnh.ten_mo_hinh (admin-tools)
             ))
             folder = r.relative_path.split("/", 1)[0]  # project-catalog: a new photo joins its folder's project
             conn.execute("UPDATE space SET du_an_slug = %s WHERE relative_path = %s AND du_an_slug IS NULL",

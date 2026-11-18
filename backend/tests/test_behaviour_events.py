@@ -1,11 +1,12 @@
 """Behaviour events (change behaviour-events). Throw-away consented sessions; anonymous counts checked as differences."""
 import uuid
+from datetime import timedelta
 
 import psycopg
 import pytest
 
 from conftest import client
-from pipeline import behaviour, leads
+from pipeline import behaviour, leads, rollup
 from pipeline.store import DSN
 
 TAG = uuid.uuid4().hex[:6]
@@ -22,6 +23,14 @@ def pid():
     yield p
     with psycopg.connect(DSN) as c:
         c.execute("DELETE FROM phien_truy_cap WHERE id = %s", (p,))
+    rollup.run(days=[rollup.local_today() - timedelta(days=1)])  # the store forgets the test events too
+
+
+def to_yesterday(pid):
+    """tracking-pipeline: figures come from processed days, so move the session's events to yesterday and process it."""
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE su_kien SET created_at = created_at - interval '1 day' WHERE phien_id = %s", (pid,))
+    rollup.run(days=[rollup.local_today() - timedelta(days=1)])
 
 
 def send(pid, loai, **kw):
@@ -29,7 +38,7 @@ def send(pid, loai, **kw):
 
 
 def _anon(loai):
-    r = _q("SELECT so_luong FROM su_kien_an_danh WHERE ngay = current_date AND loai = %s", loai)
+    r = _q("SELECT so_luong FROM su_kien_an_danh WHERE ngay = (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND loai = %s", loai)
     return r[0][0] if r else 0
 
 
@@ -97,7 +106,18 @@ def test_overview_aggregates(pid):
     send(pid, "nhan_chatbot")
     send(pid, "ap_dung_bo_loc", trang="/khong-gian", gia_tri=[f"test_{TAG}:A", f"test_{TAG}:B"])
     send(pid, "ap_dung_bo_loc", trang="/khong-gian", gia_tri=[f"test_{TAG}:A"])
+    with psycopg.connect(DSN) as c:
+        sid = c.execute("SELECT id FROM space WHERE review_status='published' LIMIT 1").fetchone()[0]
+    before = _ov()
+    client.post("/events", json={"dong_y": True, "phien_id": pid, "su_kien": [
+        {"loai": "tim_kiem", "doi_tuong": "mo_ta", "so_ket_qua": 3}, {"loai": "tim_kiem", "doi_tuong": "anh", "so_ket_qua": 5},
+        {"loai": "xem_goi_y_tuong_tu", "space_id": sid}, {"loai": "xem_goi_y_tuong_tu", "space_id": sid},
+        {"loai": "chon_goi_y", "space_id": sid, "doi_tuong": str(sid)}]})
+    to_yesterday(pid)
     ov = _ov()
+    assert ov["tim_kiem"].get("mo_ta", 0) - before["tim_kiem"].get("mo_ta", 0) == 1
+    assert ov["goi_y"]["hien"] - before["goi_y"]["hien"] == 2 and ov["goi_y"]["chon"] - before["goi_y"]["chon"] == 1
+    assert ov["den_ngay"] == str(rollup.local_today() - timedelta(days=1))
     p = next(x for x in ov["trang"] if x["trang"] == page)
     assert (p["luot_xem"], p["giay_tb"], p["cuon_tb"]) == (2, 30, 75)
     assert next(x for x in ov["du_an"] if x["du_an"] == f"test-{TAG}")["luot_xem"] == 1
@@ -128,6 +148,7 @@ def test_photo_interactions_stored_and_listed(pid):
         send(pid, "bam_hotspot", trang="/khong-gian/:id", doi_tuong=f"999999/test_{TAG}")
     assert _q("SELECT loai, doi_tuong FROM su_kien WHERE phien_id = %s ORDER BY id", pid)[:2] == \
         [("phong_to_anh", f"test-{TAG}/3"), ("chuyen_anh", f"test-{TAG}/4")]
+    to_yesterday(pid)  # tracking-pipeline: the dashboard reads processed days only
     ov = _ov()
     assert ov["dong_y"]["phong_to_anh"] >= 1 and ov["dong_y"]["bam_hotspot"] >= 2
     assert {"doi_tuong": f"999999/test_{TAG}", "so_lan": 2} in ov["hotspot"] or len(ov["hotspot"]) == behaviour.TOP

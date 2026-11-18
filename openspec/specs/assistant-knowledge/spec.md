@@ -27,6 +27,17 @@ Each entry SHALL have one status: "Nháp", "Chờ duyệt", "Đang dùng" or "T�
 - **WHEN** a content editor adds "đổi trả hàng" to the match phrases of a live entry and saves
 - **THEN** that entry's embedding is rebuilt from the new title and match phrases before the save returns, so the next knowledge search for "đổi trả hàng" ranks it first
 
+### Requirement: No prices are said
+The site shows no prices (the owner's decision, 2026-11-18). The chatbot SHALL NOT use an entry of kind `price` or an entry whose answer states an amount of money, even when it is in use, and SHALL drop any sentence of a drafted answer that states an amount. A price question SHALL still offer to have an architect call back and SHALL still create a lead. The approval rule below keeps applying to such entries, which stay internal.
+
+#### Scenario: Live price entry
+- **WHEN** an approved price entry is in use and a visitor asks how much a villa interior costs
+- **THEN** the answer names no amount and does not cite that entry, and the visitor is asked to leave a phone number or email
+
+#### Scenario: Amount slipped into an answer
+- **WHEN** a drafted answer says "Phòng khách 70m2 dùng gỗ sồi. Chi phí khoảng 500 triệu."
+- **THEN** the visitor sees "Phòng khách 70m2 dùng gỗ sồi."
+
 ### Requirement: Prices are said only after approval
 An entry SHALL need price approval when its kind is `price` or its answer states an amount of money (a number followed by a money unit such as "triệu", "tỷ", "nghìn", "đ", "VND" or "/m²"). Only the lead architect or admin SHALL switch such an entry on. Content staff SHALL send it to "Chờ duyệt" instead. When content staff change the answer of a live entry that needs price approval, it SHALL go back to "Chờ duyệt" and stop being used until approved.
 

@@ -27,6 +27,7 @@
       <div class="foot-base">
         <span>© {{ new Date().getFullYear() }} D3 Studio</span>
         <span>Kiến trúc · Nội thất · Diễn họa 3D</span>
+        <button class="foot-link" type="button" @click="openConsent">Cài đặt dữ liệu</button>
       </div>
     </div>
   </footer>
@@ -34,4 +35,12 @@
 
 <script setup>
 import BrandMark from './BrandMark.vue'
+import { openConsent } from '@/api' // act-7: change the data choice from the footer
 </script>
+
+<style scoped>
+.foot-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline;
+             text-underline-offset: 3px }
+.foot-link:hover { color: var(--ink) }
+.foot-link:focus-visible { box-shadow: var(--focus-ring); outline: none; border-radius: 2px }
+</style>

@@ -17,6 +17,13 @@ def _fresh_rate_limits():
     ratelimit.reset()  # tests share one client IP
 
 
+@pytest.fixture(autouse=True)
+def _always_working_hours(monkeypatch):
+    """act-4 (visitor-touchpoints): a chat lead outside working hours is deferred; tests must not depend on the clock.
+    test_hours.py sets its own times."""
+    monkeypatch.setenv("D3_GIO_LAM_VIEC", "T2-CN 00:00-23:59")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _drop_test_conversations():
     """Every POST /chat now stores a conversation (chat-history). Tests that chat without cleaning up would leave them
@@ -60,11 +67,22 @@ def drafts():
         with psycopg.connect(DSN) as c:
             rows = c.execute(f"SELECT id, {COLS} FROM space WHERE review_status='draft' AND {where} ORDER BY id LIMIT %s",
                              (n,)).fetchall()
+            ids = [r[0] for r in rows]
+            fixes.extend(c.execute("SELECT * FROM nhan_bi_sua WHERE space_id = ANY(%s)", (ids,)).fetchall())
         taken.extend(rows)
         return [r[0] for r in rows]
 
+    fixes = []  # labelling-queue-feedback: corrections of the taken photos, put back as they were
     yield take
     with psycopg.connect(DSN) as c:
+        ids = [r[0] for r in taken]
+        c.execute("DELETE FROM nhan_bi_sua WHERE space_id = ANY(%s)", (ids,))
+        # publishing-workflow: a test that published a draft leaves a publish date, knowledge row and queued task
+        c.execute("UPDATE space SET ngay_xuat_ban = NULL WHERE id = ANY(%s)", (ids,))  # every taken photo was a draft
+        c.execute("DELETE FROM space_text WHERE space_id = ANY(%s)", (ids,))
+        c.execute("DELETE FROM hang_doi_tac_vu WHERE loai = 'nap_tri_thuc' AND (du_lieu->>'space_id')::int = ANY(%s)", (ids,))
+        for f in fixes:
+            c.execute("INSERT INTO nhan_bi_sua VALUES (%s,%s,%s,%s,%s,%s,%s)", f)
         for sid, *vals in taken:
             vals[-1] = Jsonb(vals[-1])  # hotspots
             c.execute(f"UPDATE space SET ({COLS}) = (%s,%s,%s,%s,%s,%s,%s) WHERE id=%s", (*vals, sid))

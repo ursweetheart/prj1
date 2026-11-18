@@ -198,3 +198,20 @@ def test_relabel_skips_hand_points(monkeypatch):
                                                                "hotspot_anchor": [0.1, 0.2], "mon_do_id": None}]}
     relabel.classify(Fake(), (1, "x.jpg", {}, hotspots))
     assert seen["labels"] == ["couch", "chair"]
+
+
+# ── admin-tools 3.1: class-6 MonDo.khoang_gia, staff only ──────────────────────────────────────────────────────────
+def test_item_price_range_is_staff_only(as_role):
+    import uuid
+    h = as_role("architect")
+    name = "Ghế sofa thử " + uuid.uuid4().hex[:6]
+    r = client.post("/items", json={"ten": name, "khoang_gia": "12 – 18 triệu"}, headers=h)
+    assert r.status_code == 201, r.text
+    iid = r.json()["id"]
+    try:
+        assert r.json()["khoang_gia"] == "12 – 18 triệu"
+        assert client.patch(f"/items/{iid}", json={"khoang_gia": "x" * 61}, headers=h).status_code == 422
+        public = client.get(f"/items/{iid}/spaces").json()["mon_do"]
+        assert "khoang_gia" not in public and "nha_cung_cap" not in public
+    finally:
+        client.delete(f"/items/{iid}", headers=h)

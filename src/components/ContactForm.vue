@@ -82,7 +82,7 @@ const props = defineProps({
 
 const uid = 'cf' + useId()
 const route = useRoute()
-const consented = consent.get() === 'yes'
+const consented = consent.analytics()
 const shownAt = Date.now()
 const f = reactive({ ho_ten: '', so_dien_thoai: '', email: '', loi_nhan: '', gui_ho_so: false, website: '' })
 const errors = reactive({})

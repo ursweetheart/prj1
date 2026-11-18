@@ -62,11 +62,11 @@ def _guard(conn, admin, target, removes_admin: bool):
 # ── read ──────────────────────────────────────────────────────────────────────
 def list_accounts(conn, me, q=None, role=None, khoa=None) -> list:
     rows = _cur(conn).execute(
-        "SELECT id, email, role, created_at, bi_khoa, ly_do_khoa, password_hash IS NOT NULL AS mk, "
+        "SELECT id, email, ho_ten, role, created_at, bi_khoa, ly_do_khoa, password_hash IS NOT NULL AS mk, "
         "google_sub IS NOT NULL AS gg, facebook_id IS NOT NULL AS fb, "
         "(SELECT max(created_at) FROM ma_dat_mat_khau m WHERE m.tai_khoan_id = app_user.id AND m.loai = 'moi') AS moi_luc "
         "FROM app_user "
-        "WHERE (%(q)s::text IS NULL OR email ILIKE '%%' || %(q)s || '%%') AND (%(r)s::text IS NULL OR role = %(r)s) "
+        "WHERE (%(q)s::text IS NULL OR email ILIKE '%%' || %(q)s || '%%' OR ho_ten ILIKE '%%' || %(q)s || '%%') AND (%(r)s::text IS NULL OR role = %(r)s) "
         "AND (%(k)s::boolean IS NULL OR bi_khoa = %(k)s) ORDER BY created_at DESC, id DESC LIMIT %(n)s",
         {"q": (q or "").strip() or None, "r": role, "k": khoa, "n": LIMIT}).fetchall()
     sole = _active_admins(conn)
@@ -74,7 +74,7 @@ def list_accounts(conn, me, q=None, role=None, khoa=None) -> list:
     out = []
     for r in rows:
         reason = SELF if me and r["id"] == me["id"] else LAST_ADMIN if r["id"] == sole else None
-        out.append({"id": r["id"], "email": r["email"], "role": r["role"], "created_at": r["created_at"],
+        out.append({"id": r["id"], "email": r["email"], "ho_ten": r["ho_ten"], "role": r["role"], "created_at": r["created_at"],
                     "dang_nhap": [m for m, on in (("mat_khau", r["mk"]), ("google", r["gg"]), ("facebook", r["fb"])) if on],
                     "bi_khoa": r["bi_khoa"], "ly_do_khoa": r["ly_do_khoa"], "la_toi": bool(me and r["id"] == me["id"]),
                     "doi_vai_tro_duoc": reason is None, "khoa_duoc": reason is None and not r["bi_khoa"],
@@ -145,15 +145,15 @@ def _pending(conn, user_id) -> dict:
     return t
 
 
-def invite(conn, admin, email: str, role: str) -> tuple[dict, str]:
+def invite(conn, admin, email: str, role: str, ho_ten: str | None = None) -> tuple[dict, str]:
     """Create the account with its role and no password, and an invitation link code (seq-19 b5-7)."""
     email = (email or "").strip().lower()
     if role not in ROLES:
         raise Invalid(f"role must be one of {ROLES}")
     if _cur(conn).execute("SELECT 1 FROM app_user WHERE email = %s", (email,)).fetchone():
         raise Conflict("Email này đã có tài khoản; đổi vai trò ở danh sách bên dưới.")
-    user = _cur(conn).execute("INSERT INTO app_user (email, role) VALUES (%s, %s) RETURNING id, email, role",
-                              (email, role)).fetchone()
+    user = _cur(conn).execute("INSERT INTO app_user (email, role, ho_ten) VALUES (%s, %s, %s) RETURNING id, email, role, ho_ten",
+                              (email, role, ho_ten)).fetchone()
     code = password_links.issue(conn, user["id"], "moi", admin["id"] if admin else None)
     _log(conn, admin, user["id"], "moi", None, {"role": role})
     return user, code

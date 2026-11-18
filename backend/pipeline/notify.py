@@ -6,6 +6,8 @@ Env: D3_SMTP_HOST, D3_SMTP_PORT (587, STARTTLS), D3_SMTP_USER, D3_SMTP_PASSWORD,
 import logging
 import os
 import smtplib
+import json
+import urllib.request
 from email.message import EmailMessage
 
 import psycopg
@@ -73,8 +75,17 @@ def _context_line(ngu_canh: dict | None) -> str:
     return f"trang {c.get('trang') or '(không rõ)'}"
 
 
+def due_leads(now) -> list[int]:
+    """act-4: deferred leads whose working period has started, marked as notified in the same statement (never twice)."""
+    with psycopg.connect(DSN) as c:
+        return [r[0] for r in c.execute("UPDATE lead SET da_thong_bao = true WHERE NOT da_thong_bao AND thong_bao_luc <= %s "
+                                        "RETURNING id", (now,)).fetchall()]
+
+
 def notify_new_lead(lead_id: int):
     """Tell the consultants: source, contact, context, profile summary. Log only id/source/summary (no phone, email)."""
+    with psycopg.connect(DSN) as c:  # whoever sends it, it counts as done (a deferred one is never sent twice)
+        c.execute("UPDATE lead SET da_thong_bao = true WHERE id = %s", (lead_id,))
     try:
         lead = get_lead(lead_id)
         if not lead:
@@ -121,6 +132,9 @@ def confirm_to_visitor(lead_id: int):
     """Receipt to the visitor's own email (only when given and SMTP is set). No behaviour profile in it."""
     try:
         lead = get_lead(lead_id)
+        if lead and lead["so_dien_thoai"]:  # seq-5 b11 / seq-7 b9: the receipt by SMS too (visitor-touchpoints)
+            link = f" Xem lại bộ sưu tập: {share_url(lead)}" if lead["nguon"] == "brief" and share_url(lead) else ""
+            send_sms(lead["so_dien_thoai"], "D3 Studio đã nhận yêu cầu của anh/chị, tư vấn viên sẽ liên hệ sớm." + link, lead_id)
         if not (lead and lead["email"] and _smtp_ready()):
             return
         body = (f"Chào {lead['ho_ten'] or 'anh/chị'},\n\n"
@@ -222,3 +236,44 @@ def send_reset(user_id: int, email: str, link: str):
               "Nếu không phải bạn yêu cầu, hãy bỏ qua thư này; mật khẩu hiện tại vẫn giữ nguyên.\n\nD3 Studio")
     except Exception:
         auth_log.exception("password reset for account #%s: could not send", user_id)
+
+
+def notify_handover(kind: str, items, by: str):
+    """seq-6 b4 / b7 (publishing-workflow): kind 'bien_tap' -> content staff, 'duyet' -> lead architects; one email each."""
+    role, what = ("content", "Chờ biên tập") if kind == "bien_tap" else ("lead_architect", "Chờ duyệt")
+    with psycopg.connect(DSN) as c:
+        to = [r[0] for r in c.execute("SELECT email FROM app_user WHERE role = %s AND NOT bi_khoa", (role,)).fetchall()]
+    body = "\n".join([f"{by} vừa chuyển {len(items)} ảnh sang «{what}»:", *[f"- #{sid} {path}" for sid, path in items]])
+    for email in to:
+        if not _smtp_ready():
+            log.info("handover email skipped (email not configured): %s, %d photo(s)", email, len(items))
+            continue
+        _send(email, f"[D3] {len(items)} ảnh {what}", body)
+
+
+# ── SMS (visitor-touchpoints; seq-5 b11, seq-7 b9, act-8) ────────────────────────────────────────────────────────────
+def mask_phone(phone: str) -> str:
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    return "*" * max(len(digits) - 3, 0) + digits[-3:]
+
+
+def send_sms(phone: str, text: str, lead_id: int | None = None) -> str:
+    """Send through the configured gateway (D3_SMS_URL + D3_SMS_TOKEN: a JSON POST {to, content} with Bearer auth).
+    Without one nothing is sent. Every attempt is logged with the number masked. -> da_gui | chua_cau_hinh | loi"""
+    url, token = os.getenv("D3_SMS_URL", "").strip(), os.getenv("D3_SMS_TOKEN", "").strip()
+    status, error = "chua_cau_hinh", None
+    if url and token:
+        try:
+            req = urllib.request.Request(url, data=json.dumps({"to": phone, "content": text}).encode(), method="POST",
+                                         headers={"Content-Type": "application/json", "Authorization": "Bearer " + token})
+            with urllib.request.urlopen(req, timeout=10) as res:
+                status = "da_gui" if 200 <= res.status < 300 else "loi"
+                error = None if status == "da_gui" else f"HTTP {res.status}"
+        except Exception as e:  # the visitor's request has already succeeded; only the receipt failed
+            status, error = "loi", f"{type(e).__name__}: {e}"[:300]
+    with psycopg.connect(DSN) as c:
+        c.execute("INSERT INTO tin_nhan_sms (lead_id, so_che, noi_dung, trang_thai, loi) VALUES (%s, %s, %s, %s, %s)",
+                  (lead_id, mask_phone(phone), text, status, error))
+    if status == "loi":
+        log.warning("lead %s: SMS not sent (%s)", lead_id, error)
+    return status

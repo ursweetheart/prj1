@@ -81,26 +81,92 @@ describe('sliding session', () => {
 })
 
 describe('uploadAll', () => {
-  it('sends one file at a time in order, keeps going after a failure and reports it', async () => {
+  it('sends every file in one request and reports refused files (labelling-queue-feedback)', async () => {
     const { uploadAll } = await load()
-    let inFlight = 0
     const sent = []
     vi.stubGlobal('fetch', vi.fn(async (url, { body }) => {
       expect(url).toContain('/spaces/ingest')
-      expect(++inFlight).toBe(1) // never two at once: single GPU
-      const name = body.get('file').name
-      sent.push([name, body.get('project')])
-      await Promise.resolve()
-      inFlight--
-      return name === 'b.jpg'
-        ? { ok: false, status: 415, json: async () => ({ detail: 'image only (jpg/png/webp)' }) }
-        : { ok: true, status: 201, json: async () => ({}) }
+      sent.push([body.getAll('files').map(f => f.name), body.get('project')])
+      return { ok: true, status: 202, json: async () => ({ tasks: [], refused: [{ name: 'b.pdf', ly_do: 'Chỉ nhận ảnh JPG, PNG hoặc WEBP.' }] }) }
     }))
-    const files = ['a.jpg', 'b.jpg', 'c.jpg'].map(n => new File(['x'], n))
-    const progress = []
-    const failed = await uploadAll(files, 'Biệt thự', n => progress.push(n))
-    expect(sent).toEqual([['a.jpg', 'Biệt thự'], ['b.jpg', 'Biệt thự'], ['c.jpg', 'Biệt thự']])
-    expect(progress).toEqual([1, 2, 3])
-    expect(failed).toEqual([{ name: 'b.jpg', error: 'image only (jpg/png/webp)' }])
+    const files = ['a.jpg', 'b.pdf'].map(n => new File(['x'], n))
+    const r = await uploadAll(files, 'Biệt thự')
+    expect(sent).toEqual([[['a.jpg', 'b.pdf'], 'Biệt thự']])
+    expect(r).toEqual({ total: 0, ok: 0, failed: [{ name: 'b.pdf', error: 'Chỉ nhận ảnh JPG, PNG hoặc WEBP.' }] })
+  })
+})
+
+// labelling-queue-feedback: following the upload queue
+import { pollTasks } from './api'
+
+describe('pollTasks', () => {
+  const tasks = [{ id: 1, relative_path: 'p/a.jpg' }, { id: 2, relative_path: 'p/b.jpg' }]
+  it('polls until every task is done or failed and names the failures', async () => {
+    const answers = [
+      [{ id: 1, trang_thai: 'xong' }, { id: 2, trang_thai: 'dang_xu_ly' }],
+      [{ id: 2, trang_thai: 'loi', loi: 'OSError: hỏng' }],
+    ]
+    const asked = [], seen = []
+    const r = await pollTasks(tasks, async ids => { asked.push(ids); return answers.shift() }, (n, t) => seen.push([n, t]), async () => {})
+    expect(asked).toEqual([[1, 2], [2]])
+    expect(seen).toEqual([[0, 2], [1, 2], [2, 2]])
+    expect(r).toEqual({ ok: 1, failed: [{ name: 'b.jpg', error: 'OSError: hỏng' }] })
+  })
+  it('retries a failed poll instead of giving up', async () => {
+    let n = 0
+    const r = await pollTasks(tasks.slice(0, 1), async () => { if (n++ === 0) throw new Error('net'); return [{ id: 1, trang_thai: 'xong' }] },
+      () => {}, async () => {})
+    expect(r.ok).toBe(1)
+  })
+})
+
+// tracking-pipeline 6.2: a similar space opened from the list shown last (seq-2 b14)
+describe('takeSimilarPick', () => {
+  it('names the source space once, only for spaces in the list shown', async () => {
+    const { getSimilar, takeSimilarPick } = await load()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => [{ id: 30 }, { id: 31 }] })))
+    await getSimilar(12)
+    expect(takeSimilarPick(99)).toBe(null)
+    expect(takeSimilarPick('30')).toBe(12)
+    expect(takeSimilarPick(31)).toBe(null) // used once: the list is forgotten after a pick
+  })
+})
+
+// publishing-workflow 5.2: optimised copies as a srcset
+describe('imageSrcset', () => {
+  it('lists the copies by width and ends with the original at its width', async () => {
+    const { imageSrcset } = await load()
+    const s = imageSrcset({ relative_path: 'p/a b.jpg', chieu_rong: 4000, kich_thuoc: { 960: '_kt/960/p/a b.jpg.webp', 480: '_kt/480/p/a b.jpg.webp' } })
+    expect(s.split(', ').map(x => x.split(' ').pop())).toEqual(['480w', '960w', '4000w'])
+    expect(s).toContain('/images/_kt/480/p/a%20b.jpg.webp 480w')
+  })
+  it('is empty without copies', async () => {
+    const { imageSrcset } = await load()
+    expect(imageSrcset({ relative_path: 'p/a.jpg' })).toBe('')
+  })
+})
+
+// search-explanations 3.1: the API's object answer -> the list for callers, the rest in lastSearch
+describe('search answers', () => {
+  it('keeps returning the list and keeps the constraints and hint aside', async () => {
+    const { searchSpaces, lastSearch, toCard } = await load()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({
+      ket_qua: [{ id: 1, relative_path: 'p/a.jpg', space_type: 'phong_khach', design_style: 'Japandi', ly_do: ['Gỗ tự nhiên'] }],
+      rang_buoc: [{ chieu: 'khong_gian', ma: 'phong_khach', ten: 'Phòng khách' }], goi_y: null }) })))
+    const rows = await searchSpaces('phòng khách gỗ')
+    expect(rows.map(r => r.id)).toEqual([1])
+    expect(lastSearch.rang_buoc[0].ten).toBe('Phòng khách')
+    expect(toCard(rows[0]).why).toEqual(['Gỗ tự nhiên'])
+  })
+})
+
+// search-explanations 2.2: project filter query
+describe('projectFilterParams', () => {
+  it('repeats a dimension for several values and leaves defaults out', async () => {
+    const { projectFilterParams } = await load()
+    const pairs = projectFilterParams({ phong_cach: ['Japandi', 'Indochine'], loai_cong_trinh: ['can_ho'] }, [60, ''], 'xem_nhieu')
+    expect(new URLSearchParams(pairs).toString())
+      .toBe('phong_cach=Japandi&phong_cach=Indochine&loai_cong_trinh=can_ho&dien_tich_tu=60&sap_xep=xem_nhieu')
+    expect(projectFilterParams({}, [], 'moi_nhat')).toEqual([])
   })
 })

@@ -114,7 +114,7 @@ def test_reason_cleared_on_advance_kept_in_log_and_filter(photos, as_role):
     public = client.get("/spaces", params={"limit": 5, "tra_ve": 1}).json()
     assert all("ly_do_duyet" not in s for s in public)                         # staff-only field
     assert client.patch(f"/spaces/{returned}", json={"advance": True}, headers=arch).status_code == 200
-    assert _status(returned) == ("in_review", None)
+    assert _status(returned) == ("editing", None)  # publishing-workflow: drafts go to "Chờ biên tập"
     assert _q("SELECT count(*) FROM review_log WHERE space_id=%s AND action='return' AND detail->>'reason'=%s",
               returned, REASON)[0][0] == 1
 

@@ -12,6 +12,10 @@
       Đang hiển thị cả dữ liệu mô phỏng. Xóa bằng <code>python -m pipeline.demo_activity --remove</code> trước khi dùng thật.
     </p>
 
+    <p v-if="data" class="small tr-fresh" role="status">{{ data.den_ngay
+      ? `Số liệu đến hết ngày ${dateVi(data.den_ngay)} (tổng hợp hằng đêm, từ 1:00).`
+      : 'Chưa có số liệu tổng hợp: tiến trình hằng đêm chưa chạy.' }}</p>
+
     <div class="tr-bar">
       <div class="row g6" role="group" aria-label="Khoảng thời gian">
         <button v-for="d in [7, 30, 90]" :key="d" type="button" class="chip" :aria-pressed="String(days === d)"
@@ -45,10 +49,46 @@
           <li v-for="a in data.canh_bao" :key="a.chieu + a.ma" :class="'is-' + a.xu_huong">
             <span class="tr-arrow" aria-hidden="true">{{ ARROW[a.xu_huong] }}</span>
             <span>{{ a.chieu }} · <strong>{{ a.ten }}</strong></span>
-            <span class="num tr-change">{{ trendText(a) }}</span>
+            <span class="num tr-change">{{ a.xu_huong === 'nhom_moi' ? `nhóm thị hiếu mới · ${a.ty_le}% phiên` : trendText(a) }}</span>
+            <HomeSettingSelect v-if="home && a.chieu_ma" :value="a.chieu_ma + ':' + a.ma" :name="a.ten" :mode="homeMode(a.chieu_ma, a.ma)"
+                               @change="setHome" />
           </li>
         </ul>
         <p v-else class="small">Chưa có giá trị nào tăng hay giảm rõ rệt (cần ít nhất 5 tín hiệu trong tuần).</p>
+      </section>
+
+      <!-- act-3: taste groups from the nightly clustering -->
+      <section class="tr-card" aria-labelledby="tr-groups">
+        <h2 id="tr-groups" class="tr-h">Nhóm thị hiếu <span class="tr-note">phiên 30 ngày, gom theo thuộc tính đã xem</span></h2>
+        <p v-if="!data.nhom_thi_hieu" class="small">Chưa có lần phân nhóm nào.</p>
+        <p v-else-if="!data.nhom_thi_hieu.du_du_lieu" class="small">
+          Chưa đủ dữ liệu để phân nhóm ({{ data.nhom_thi_hieu.so_phien }} phiên đủ điều kiện, cần ít nhất 10).</p>
+        <ul v-else class="tr-groups">
+          <li v-for="(g, i) in data.nhom_thi_hieu.nhom" :key="i">
+            <span class="num tr-gshare">{{ g.ty_le }}%</span>
+            <span>{{ g.gia_tri.map(v => v.ten).join(' · ') }} <span class="small">({{ g.so_phien }} phiên)</span></span>
+            <span v-if="g.moi" class="tr-new">mới</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- act-3: what the homepage shows now (leadership adjusts it with the selects beside each value) -->
+      <section v-if="home" class="tr-card" aria-labelledby="tr-home">
+        <h2 id="tr-home" class="tr-h">Gợi ý trên trang chủ <span class="tr-note">mục «Đang được quan tâm»</span></h2>
+        <p class="small" style="margin:0 0 10px">Chọn «Ưu tiên» hoặc «Ẩn» bên cạnh một giá trị trong cảnh báo hoặc bảng xếp hạng;
+          «Tự động» để theo xu hướng.</p>
+        <ul v-if="home.cai_dat.length" class="bh-list">
+          <li v-for="s in home.cai_dat" :key="s.gia_tri">{{ s.chieu }} · <strong>{{ s.ten }}</strong>:
+            {{ s.che_do === 'uu_tien' ? 'ưu tiên' : 'ẩn' }} <span class="small">({{ s.boi }})</span></li>
+        </ul>
+        <ol v-if="home.xem_truoc.length" class="tr-preview">
+          <li v-for="s in home.xem_truoc" :key="s.id">
+            <router-link :to="'/khong-gian/' + s.id"><img :src="imageUrl(s.relative_path)" :alt="s.alt_text || s.nhan" loading="lazy"></router-link>
+            <span class="small">{{ s.nhan }}</span>
+          </li>
+        </ol>
+        <p v-else class="small">Trang chủ chưa có gì để gợi ý.</p>
+        <p v-if="homeMsg" class="small" role="status">{{ homeMsg }}</p>
       </section>
 
       <!-- ranking per dimension -->
@@ -60,6 +100,7 @@
               <div class="tr-row">
                 <span class="tr-name">{{ v.ten }}</span>
                 <span class="num tr-pct">{{ v.ti_le }}%</span>
+                <HomeSettingSelect v-if="home" :value="d.ma + ':' + v.ma" :name="v.ten" :mode="homeMode(d.ma, v.ma)" @change="setHome" />
                 <span v-if="v.xu_huong || v.thay_doi !== null" class="tr-trend" :class="'is-' + (v.xu_huong || 'flat')"
                       :title="trendText(v)">
                   <span aria-hidden="true">{{ ARROW[v.xu_huong] || '' }}</span>
@@ -156,6 +197,16 @@
             <p class="small bh-anon num">Không đồng ý: {{ bh.an_danh.gui_form }} form · {{ bh.an_danh.nhan_chatbot }} tin nhắn · {{ bh.an_danh.chia_se }} chia sẻ</p>
           </div>
           <div class="bh-block">
+            <h3 class="bh-h">Tìm kiếm và gợi ý tương tự</h3>
+            <ul class="bh-list">
+              <li>Tìm bằng mô tả <span class="num">{{ bh.tim_kiem.mo_ta || 0 }}</span></li>
+              <li>Tìm bằng ảnh <span class="num">{{ bh.tim_kiem.anh || 0 }}</span></li>
+              <li>Gợi ý tương tự đã hiện <span class="num">{{ bh.goi_y.hien }}</span>, được mở <span class="num">{{ bh.goi_y.chon }}</span>
+                <span v-if="bh.goi_y.ty_le !== null" class="num">({{ bh.goi_y.ty_le }}%)</span></li>
+            </ul>
+            <p class="small bh-anon num">Không đồng ý: {{ bh.an_danh.tim_kiem }} lượt tìm · {{ bh.an_danh.xem_goi_y_tuong_tu }} lần hiện gợi ý</p>
+          </div>
+          <div class="bh-block">
             <h3 class="bh-h">Bộ lọc được dùng</h3>
             <ol v-if="bh.bo_loc.length" class="bh-list">
               <li v-for="f in bh.bo_loc" :key="f.gia_tri">{{ f.gia_tri.split(':')[1].replaceAll('_', ' ') }}
@@ -186,11 +237,12 @@
 <script setup>
 /* Bảng điều khiển xu hướng (UC22; act-3, seq-18) cho TP Kinh doanh, KTS trưởng, admin. Chỉ số tổng hợp, không có dữ liệu cá nhân. */
 import { computed, ref, watch } from 'vue'
-import { APPROVERS, getBehaviour, getOverview, getWeeklyOptIn, hasRole, imageUrl, setWeeklyOptIn, spaceLabel } from '@/api'
+import { APPROVERS, getBehaviour, getHomeSettings, getOverview, getWeeklyOptIn, hasRole, imageUrl, setHomeSetting, setWeeklyOptIn, spaceLabel } from '@/api'
+import HomeSettingSelect from '@/components/HomeSettingSelect.vue'
 import WeeklyReportPanel from '@/components/WeeklyReportPanel.vue'
 
 const SOURCES = [{ v: 'form', t: 'Form' }, { v: 'chat', t: 'Chat' }, { v: 'brief', t: 'Bộ sưu tập' }, { v: 'estimate', t: 'Ước tính' }]
-const ARROW = { dang_tang: '↑', moi_noi: '✦', dang_giam: '↓' }
+const ARROW = { dang_tang: '↑', moi_noi: '✦', nhom_moi: '◆', dang_giam: '↓' }
 const LABEL = { dang_tang: 'đang tăng', moi_noi: 'mới nổi', dang_giam: 'đang giảm' }
 
 const days = ref(30)
@@ -216,6 +268,21 @@ async function load() {
   error.value = ''
   try { data.value = await getOverview(days.value) } catch (e) { error.value = e.message }
   bh.value = await getBehaviour(days.value).catch(() => null) // the dashboard works without it
+  home.value = await getHomeSettings().catch(() => null)
+}
+const dateVi = iso => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}` }
+
+/* act-3 "Điều chỉnh gợi ý trên trang chủ" (tracking-pipeline) */
+const home = ref(null)
+const homeMsg = ref('')
+const homeMode = (dim, code) => home.value?.cai_dat.find(s => s.gia_tri === dim + ':' + code)?.che_do || 'tu_dong'
+async function setHome(value, mode, name) {
+  homeMsg.value = ''
+  try {
+    await setHomeSetting(value, mode)
+    home.value = await getHomeSettings()
+    homeMsg.value = `Đã lưu: ${name} — ${{ tu_dong: 'tự động', uu_tien: 'ưu tiên', an: 'ẩn' }[mode]} trên trang chủ.`
+  } catch (e) { homeMsg.value = 'Chưa lưu được: ' + e.message }
 }
 watch(days, load, { immediate: true })
 
@@ -300,4 +367,12 @@ async function saveOptIn(on) {
   .bh-table td::before { content: attr(data-k); color: var(--faint); font-size: 11px }
 }
 .tr-top a:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 3px }
+.tr-fresh { margin: 10px 0 0; color: var(--dim) }
+.tr-groups { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
+.tr-groups li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap }
+.tr-gshare { min-width: 3.5em; font-weight: 600 }
+.tr-new { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--accent); color: var(--page) }
+.tr-preview { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) }
+.tr-preview li { display: flex; flex-direction: column; gap: 6px }
+.tr-preview img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm) }
 </style>

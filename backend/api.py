@@ -1,7 +1,9 @@
 """D3 Studio AI API.  Run: uvicorn api:app --reload"""
 
 import asyncio
+from collections import Counter
 import io
+import mimetypes
 import os
 import random
 import re
@@ -14,6 +16,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 import psycopg
+from pgvector.psycopg import register_vector
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,11 +29,11 @@ from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 import auth
-from pipeline import (behaviour, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
+from pipeline import (behaviour, explain, home_suggestions, hours, project_filter, image_sizes, intake, space_knowledge, label_feedback, rollup, bo_suu_tap, conversations, discovery, estimate, items, knowledge, leads, notify, project_stats, quiz, taxonomy, taxonomy_admin,
                       topic_guard, trends, value_suggest, vertex, weekly_report)
 from pipeline.assistant import KB_KINDS, respond, with_services
 from auth import APPROVERS, ROLES, STAFF, optional_user, require
-from pipeline.search import by_image, by_text, similar_to
+from pipeline.search import MIN_IMAGE_SCORE, by_image, by_text, embed_photo, similar_to
 from pipeline.store import DSN, save_records
 from ratelimit import check as rate_check, limit
 
@@ -38,7 +41,9 @@ IMG_DIR = Path("image_d3")
 UPLOAD_DIR = IMG_DIR / "uploads"
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_UPLOAD = 8 * 1024 * 1024  # photo search; nginx allows 50 MB, so this is the limit users hit
-FIELDS = "id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status"
+AI_FIELDS = "space_type_ai, design_style_ai, space_type_confidence"  # seq-1 b17: the AI's proposal with its confidence
+FIELDS = ("id, relative_path, space_type, design_style, style_confidence, materials, caption, alt_text, review_status, "
+          "ngay_xuat_ban, kich_thuoc, chieu_rong, chieu_cao")
 # taxonomy values of each space as {dimension: [value, ...]}; the portfolio filters on these
 TAGS = ("(SELECT COALESCE(jsonb_object_agg(dim, vals), '{}') FROM (SELECT d.ma_dinh_danh AS dim, jsonb_agg(v.ma_dinh_danh) AS vals "
         "FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id JOIN chieu_phan_loai d ON d.id = v.chieu_id "
@@ -48,7 +53,9 @@ PENDING_VALUE = ("(SELECT COALESCE(jsonb_object_agg(u.bang_chung->>'chieu', u.te
                  "WHERE u.loai = 'gia_tri' AND u.trang_thai = 'cho_duyet' AND u.bang_chung->'space_ids' @> to_jsonb(space.id)) "
                  "AS cho_duyet_gia_tri")
 # QT-01 order; an architect confirms AI tags before anything is published
-NEXT = {"draft": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
+# QT-01 / seq-6 (publishing-workflow): draft -> "Chờ biên tập" (content edits, SEO) -> "Chờ duyệt" -> ... -> published
+NEXT = {"draft": "editing", "editing": "in_review", "in_review": "approved", "approved": "cleared", "cleared": "published"}
+ADVANCE_ROLES = {"draft": STAFF, "editing": {"content", *APPROVERS}}  # every later step: APPROVERS only
 
 
 def _check_value(dim: str, field: str, code: Optional[str]):
@@ -64,6 +71,10 @@ WEEKLY_FIRST, WEEKLY_EVERY = 30, 600
 _last_purge = None
 
 
+def _on(var: str) -> bool:
+    return os.getenv(var, "on").lower() not in ("off", "0", "false", "no")
+
+
 def _weekly_once():
     """The maintenance check: the weekly report when due, and once a day the 90-day conversation purge."""
     global _last_purge
@@ -74,7 +85,11 @@ def _weekly_once():
         _last_purge = now
         if n:
             weekly_report.log.info("purged %d conversations older than %d days", n, conversations.KEEP_DAYS)
-    if weekly_report.due(now):
+    for lead_id in notify.due_leads(now):  # act-4: chat leads that arrived outside working hours
+        notify.notify_new_lead(lead_id)
+    if _on("D3_NIGHTLY"):  # seq-4 loop "Hằng đêm": from 01:00 UTC+7, once yesterday is missing from the analytics store
+        rollup.due_and_run(now)
+    if _on("D3_WEEKLY_REPORT") and weekly_report.due(now):
         with _db() as c:
             weekly_report.send_week(c, now)
 
@@ -92,14 +107,22 @@ async def _weekly_loop():
 @asynccontextmanager
 async def lifespan(_app):
     task = None
-    if os.getenv("D3_WEEKLY_REPORT", "on").lower() in ("off", "0", "false", "no"):
-        weekly_report.log.info("weekly report scheduler: off (D3_WEEKLY_REPORT)")
-    elif "pytest" not in sys.modules:  # tests call the module directly and must never send
-        weekly_report.log.info("weekly report scheduler: on (Monday from 08:00 UTC+7)")
-        task = asyncio.create_task(_weekly_loop())
+    if "pytest" not in sys.modules:  # tests call the modules directly and must never send or roll up
+        weekly_report.log.info("weekly report: %s (Monday from 08:00 UTC+7); nightly analytics: %s (from 01:00 UTC+7)",
+                               "on" if _on("D3_WEEKLY_REPORT") else "off", "on" if _on("D3_NIGHTLY") else "off")
+        task = asyncio.create_task(_weekly_loop())  # also the daily conversation purge
+    worker = None
+    if os.getenv("D3_INTAKE_WORKER", "on").lower() in ("off", "0", "false", "no"):
+        intake.log.info("upload queue worker: off (D3_INTAKE_WORKER)")
+    elif "pytest" not in sys.modules:  # tests drive intake.process_next directly
+        worker = intake.Worker({"processor": _processor, "img_dir": IMG_DIR,
+                                "after_photo": [image_sizes.after_photo]})  # act-1: optimised sizes (publishing-workflow)
+        worker.start()
     yield
     if task:
         task.cancel()
+    if worker:
+        worker.stop.set()
 
 
 app = FastAPI(title="D3 Studio AI", lifespan=lifespan)
@@ -109,6 +132,7 @@ if origins := [o.strip() for o in os.getenv("D3_CORS_ORIGINS", "").split(",") if
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(auth.router)
 IMG_DIR.mkdir(exist_ok=True)
+mimetypes.add_type("image/webp", ".webp")  # the optimised copies (publishing-workflow); slim images lack the entry
 app.mount("/images", StaticFiles(directory=IMG_DIR), name="images")
 
 
@@ -127,6 +151,18 @@ def _log(c, space_id, user, action, detail):
 
 def _hit(r):  # tuple from pipeline.search -> dict
     return {"relative_path": r[0], "space_type": r[1], "design_style": r[2], "score": round(float(r[3]), 4), "id": r[4]}
+
+
+def _hits(rows) -> list[dict]:
+    """Search / similar results with their optimised copies (publishing-workflow), in one lookup."""
+    out = [_hit(r) for r in rows]
+    if out:
+        with _db() as c:
+            sizes = {r["id"]: r for r in c.execute("SELECT id, kich_thuoc, chieu_rong FROM space WHERE id = ANY(%s)",
+                                                   ([h["id"] for h in out],)).fetchall()}
+        for h in out:
+            h.update({k: sizes.get(h["id"], {}).get(k) for k in ("kich_thuoc", "chieu_rong")})
+    return out
 
 
 @lru_cache(maxsize=1)
@@ -148,10 +184,12 @@ def list_spaces(space_type: Optional[str] = None, design_style: Optional[str] = 
     if not staff:
         review_status = "published" if review_status in (None, "published") else "none"  # no such status: matches nothing
     with _db() as c:
-        return c.execute(
-            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}"
-            + (", ly_do_duyet, " + PENDING_VALUE if staff else "") + " "  # review reason and suggestions: staff-only
-            "FROM space WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
+        return c.execute(  # hang_xem: rank by views in the last 30 processed days, for sorting (search-explanations)
+            "WITH hx AS (SELECT k.space_id, rank() OVER (ORDER BY sum(k.so_xem) DESC) AS hang_xem FROM tk_khong_gian_ngay k "
+            "            WHERE k.ngay > (SELECT max(ngay) FROM tk_ngay) - 30 GROUP BY k.space_id HAVING sum(k.so_xem) > 0) "
+            f"SELECT {FIELDS}, palette->>'brightness' AS brightness, palette->>'temperature' AS temperature, {TAGS}, hx.hang_xem"
+            + (", ly_do_duyet, " + AI_FIELDS + ", " + PENDING_VALUE if staff else "") + " "  # staff-only: review reason, AI proposal, suggestions
+            "FROM space LEFT JOIN hx ON hx.space_id = space.id WHERE (%(t)s::text IS NULL OR space_type=%(t)s) "
             "AND (NOT %(rv)s OR ly_do_duyet->>'loai' IN ('tra_ve', 'mo_lai', 'go_xuong')) "
             "AND (%(s)s::text IS NULL OR design_style=%(s)s) AND (%(r)s::text IS NULL OR review_status=%(r)s) "
             "AND (%(i)s::int[] IS NULL OR id = ANY(%(i)s)) ORDER BY id LIMIT %(l)s OFFSET %(o)s",
@@ -176,7 +214,10 @@ def similar(space_id: int, k: int = 6, user=Depends(optional_user)):
     staff = _is_staff(user)
     if not row or (row["review_status"] != "published" and not staff):
         raise HTTPException(404, "space not found")
-    return [_hit(r) for r in similar_to(row["relative_path"], min(k, 24), published_only=not staff)]
+    hits = _hits(similar_to(row["relative_path"], min(k, 24), published_only=not staff))
+    with _db() as c:  # seq-2 b9-b10: why each one is similar, from the labels it shares with this photo
+        why = explain.shared_reasons(c, space_id, [h["id"] for h in hits])
+    return [{**h, "ly_do": why.get(h["id"], [])} for h in hits]
 
 
 @app.get("/projects/{folder}/spaces")
@@ -192,7 +233,12 @@ def project_spaces(folder: str = PathParam(pattern=r"^[a-z0-9_]{1,60}$"), user=D
 
 # ── Project catalog (change: project-catalog; roadmap 0.1, UC02) ─────────────────────────────────────────────
 SLUG = r"^[a-z0-9-]{1,60}$"
-PROJECT_STAFF_FIELDS = ("dien_tich_m2", "so_phong_ngu", "thoi_gian_thi_cong", "muc_dau_tu", "thuyet_minh")
+PROJECT_STAFF_FIELDS = ("dien_tich_m2", "so_phong_ngu", "thoi_gian_thi_cong", "so_ngay_thi_cong", "du_an_bat_dong_san",
+                        "muc_dau_tu", "thuyet_minh")
+# class-6 DuAn (admin-tools): derived from the project's photos, never stored twice
+PROJECT_STATE = ("CASE WHEN bool_or(s.review_status = 'published') THEN 'da_xuat_ban' ELSE 'chua_xuat_ban' END AS trang_thai, "
+                 "COALESCE(bool_or(s.review_status = 'published'), false) AS da_xac_nhan_quyen_cong_bo, "  # published = rights step passed
+                 "min(s.ngay_xuat_ban) FILTER (WHERE s.review_status = 'published') AS ngay_xuat_ban")
 PROJECT_FIELDS = "slug, ten, loai, nam, mo_ta_ngan, co_trang, " + ", ".join(PROJECT_STAFF_FIELDS) + ", cap_nhat_luc"
 PHOTO_ORDER = 'anh_trang COLLATE "C" NULLS LAST, relative_path COLLATE "C"'  # the site's photo order, then file name
 
@@ -203,7 +249,7 @@ def list_projects(user=Depends(optional_user)):
     staff = _is_staff(user)
     with _db() as c:
         rows = c.execute(f"""
-            SELECT d.slug, d.ten, d.loai, d.nam, d.mo_ta_ngan, d.co_trang,
+            SELECT d.slug, d.ten, d.loai, d.nam, d.mo_ta_ngan, d.co_trang, {PROJECT_STATE},
                    count(s.id) FILTER (WHERE s.review_status = 'published') AS so_anh_da_dang,
                    count(s.id) FILTER (WHERE s.review_status <> 'published') AS so_anh_chua_dang,
                    (SELECT json_build_object('id', p.id, 'relative_path', p.relative_path, 'anh_trang', p.anh_trang,
@@ -221,11 +267,25 @@ def list_projects(user=Depends(optional_user)):
     return rows
 
 
+@app.get("/projects/filter", dependencies=[Depends(limit("projects", 120, 60))])
+def projects_filter(phong_cach: list[str] = Query(default=[]), loai_cong_trinh: list[str] = Query(default=[]),
+                    muc_dau_tu: list[str] = Query(default=[]), dien_tich_tu: Optional[float] = Query(default=None, ge=0),
+                    dien_tich_den: Optional[float] = Query(default=None, ge=0),
+                    sap_xep: Literal["moi_nhat", "dien_tich", "xem_nhieu"] = "moi_nhat", limit: int = Query(default=60, ge=1, le=60)):
+    """seq-10, BFD 1.1-1.2: published projects matching every filter, counts per value, a loosening suggestion when
+    nothing matches, sorted. Public."""
+    with _db() as c:
+        return project_filter.filter_projects(c, {"phong_cach": phong_cach, "loai_cong_trinh": loai_cong_trinh,
+                                                   "muc_dau_tu": muc_dau_tu}, (dien_tich_tu, dien_tich_den), sap_xep, limit)
+
+
 @app.get("/projects/{slug}", dependencies=[Depends(limit("projects", 120, 60))])
 def get_project(slug: str = PathParam(pattern=SLUG), user=Depends(optional_user)):
     staff = _is_staff(user)
     with _db() as c:
-        project = c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
+        project = c.execute(f"SELECT {', '.join('d.' + f.strip() for f in PROJECT_FIELDS.split(','))}, {PROJECT_STATE} "
+                            "FROM du_an d LEFT JOIN space s ON s.du_an_slug = d.slug WHERE d.slug = %s GROUP BY d.slug",
+                            (slug,)).fetchone()
         spaces = c.execute(f"SELECT {FIELDS}, anh_trang FROM space WHERE du_an_slug = %(s)s "
                            f"AND (%(all)s OR review_status = 'published') ORDER BY {PHOTO_ORDER}",
                            {"s": slug, "all": staff}).fetchall() if project else []
@@ -239,6 +299,8 @@ class ProjectDetailsIn(BaseModel):
     dien_tich_m2: Optional[float] = Field(default=None, gt=0, le=100000)
     so_phong_ngu: Optional[int] = Field(default=None, gt=0, le=100)
     thoi_gian_thi_cong: Optional[str] = Field(default=None, max_length=80)
+    so_ngay_thi_cong: Optional[int] = Field(default=None, gt=0, le=3650)      # class-6 DuAn (admin-tools)
+    du_an_bat_dong_san: Optional[str] = Field(default=None, max_length=120)   # the real-estate development
     muc_dau_tu: Optional[str] = None
     thuyet_minh: Optional[str] = Field(default=None, max_length=4000)
 
@@ -262,27 +324,60 @@ def save_project(body: ProjectDetailsIn, slug: str = PathParam(pattern=SLUG), us
         return c.execute(f"SELECT {PROJECT_FIELDS} FROM du_an WHERE slug = %s", (slug,)).fetchone()
 
 
+WEAK_TEXT_SCORE = 0.10  # calibrated on 11 queries (search-explanations/tasks.md): vague / unrelated ones scored 0.03-0.09
+INTERIOR_MIN = 0.5      # zero-shot interior share: library photos >= 0.92, logo / text / grey / noise <= 0.012
+NOT_INTERIOR = "Ảnh này có vẻ không phải ảnh nội thất. Bạn thử một ảnh chụp căn phòng khác nhé."
+WEAK_HINT = "Ít kết quả thật sát. Bạn thử mô tả cụ thể hơn: loại phòng, phong cách, vật liệu hoặc màu sắc."
+
+
 @app.get("/search")
 def search(q: str, space_type: Optional[str] = None, k: int = 6, user=Depends(optional_user)):
+    """seq-11: room type / style named in the description become hard filters (an explicit space_type wins), the rest
+    is compared by meaning; each result says which of its labels the description named; weak matches get a hint."""
     _check_value("khong_gian", "space_type", space_type)
-    return [_hit(r) for r in by_text(q, space_type, min(k, 24), published_only=not _is_staff(user))]
+    found, rest = explain.parse_query(q)
+    cons = [c for c in found if not (space_type and c["chieu"] == "khong_gian")]
+    room = space_type or next((c["ma"] for c in cons if c["chieu"] == "khong_gian"), None)
+    style = next((c["ma"] for c in cons if c["chieu"] == "phong_cach"), None)
+    rows = by_text(rest or q, room, min(k, 24), published_only=not _is_staff(user), design_style=style)
+    hits = _hits(rows)
+    with _db() as c:
+        why = explain.text_reasons(c, q, cons, [h["id"] for h in hits])
+    weak = not rows or (not cons and rows[0][3] < WEAK_TEXT_SCORE)
+    return {"ket_qua": [{**h, "ly_do": why.get(h["id"], [])} for h in hits], "rang_buoc": cons,
+            "goi_y": WEAK_HINT if weak else None}
 
 
 @app.post("/search/image", dependencies=[Depends(limit("search_image", 10, 60))])
 def search_image(file: UploadFile = File(...), space_type: Optional[str] = Form(None), k: int = 6,
                  user=Depends(optional_user)):
-    """Spaces that look like the uploaded photo; the photo is embedded in memory and never stored."""
+    """seq-8: the photo is embedded in memory and never stored. Not an interior -> a polite refusal and no results;
+    otherwise its likely style and tone (from the closest library photos) and the results with reasons."""
     if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
         raise HTTPException(415, "Chỉ nhận ảnh JPG, PNG hoặc WEBP.")
     _check_value("khong_gian", "space_type", space_type)
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Ảnh quá lớn, tối đa 8 MB.")
+    staff = _is_staff(user)
     try:
-        hits = by_image(io.BytesIO(data), space_type, k, published_only=not _is_staff(user))
+        vec = embed_photo(io.BytesIO(data))
     except (OSError, Image.DecompressionBombError):  # not an image, truncated, or a decompression bomb
         raise HTTPException(415, "Không đọc được ảnh này, hãy thử một ảnh JPG, PNG hoặc WEBP khác.")
-    return [_hit(r) for r in hits]
+    with _db() as c:
+        register_vector(c)
+        best = c.execute("SELECT 1 - (embedding <=> %s) AS s FROM space WHERE embedding IS NOT NULL "
+                         "ORDER BY embedding <=> %s LIMIT 1", (vec, vec)).fetchone()
+        if explain.interior_score(vec) < INTERIOR_MIN or not best or best["s"] < MIN_IMAGE_SCORE:
+            return {"noi_that": False, "thong_bao": NOT_INTERIOR, "dac_diem": {}, "ket_qua": []}
+        traits = explain.traits(c, vec, published_only=not staff)
+    hits = _hits(by_image(None, space_type, k, published_only=not staff, vec=vec))
+    with _db() as c:  # a result's labels that match the photo's traits
+        labs = explain.labels(c, [h["id"] for h in hits])
+    want = {(d, t["ma"]) for d, t in traits.items()}
+    for h in hits:
+        h["ly_do"] = ["Cùng " + explain.phrase(d, dn, vn) for d, dn, v, vn in labs.get(h["id"], []) if (d, v) in want]
+    return {"noi_that": True, "dac_diem": traits, "ket_qua": hits}
 
 
 def project_folder(name: str) -> str:
@@ -290,21 +385,41 @@ def project_folder(name: str) -> str:
     return taxonomy_admin.slug(name)
 
 
-@app.post("/spaces/ingest", status_code=201)
-def ingest(file: UploadFile = File(...), project: str = Form(""), user=Depends(require(*STAFF))):
-    if Path(file.filename or "").suffix.lower() not in IMAGE_TYPES:
-        raise HTTPException(415, "image only (jpg/png/webp)")
+MAX_BATCH = 50
+INGEST_KIND = "xu_ly_anh"  # tests swap in a kind the live worker does not run
+
+
+@app.post("/spaces/ingest", status_code=202)
+def ingest(files: list[UploadFile] = File(...), project: str = Form(""), user=Depends(require(*STAFF))):
+    """seq-1 steps 2-5: store the originals, queue one processing task per photo and answer at once.
+    A file of the wrong type or size is refused alone; the rest are queued."""
+    if len(files) > MAX_BATCH:
+        raise HTTPException(422, f"tối đa {MAX_BATCH} ảnh mỗi lần tải lên")
     folder = IMG_DIR / (project_folder(project) or UPLOAD_DIR.name)
-    folder.mkdir(exist_ok=True)
-    dest = folder / Path(file.filename).name  # .name strips any path component; same name in a project = re-upload
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    rec = _processor().process_image(dest, base_dir=IMG_DIR)  # sync on purpose: GPU is a single resource
-    save_records([rec])
+    tasks, refused = [], []
     with _db() as c:
-        row = c.execute(f"SELECT {FIELDS} FROM space WHERE relative_path=%s", (rec.relative_path,)).fetchone()
-        _log(c, row["id"], user, "ingest", {"relative_path": rec.relative_path})
-        return row
+        for file in files:
+            name = Path(file.filename or "").name  # .name strips any path component; same name in a project = re-upload
+            if Path(name).suffix.lower() not in IMAGE_TYPES:
+                refused.append({"name": name, "ly_do": "Chỉ nhận ảnh JPG, PNG hoặc WEBP."})
+                continue
+            data = file.file.read(MAX_UPLOAD + 1)
+            if len(data) > MAX_UPLOAD:
+                refused.append({"name": name, "ly_do": "Ảnh quá lớn, tối đa 8 MB."})
+                continue
+            folder.mkdir(exist_ok=True)
+            (folder / name).write_bytes(data)
+            rel = (folder / name).relative_to(IMG_DIR).as_posix()
+            tid = intake.enqueue(c, INGEST_KIND, {"relative_path": rel}, user["id"])
+            tasks.append({"id": tid, "relative_path": rel, "trang_thai": "dang_xu_ly"})
+    return {"tasks": tasks, "refused": refused}
+
+
+@app.get("/spaces/ingest/tasks", dependencies=[Depends(require(*STAFF))])
+def ingest_tasks(ids: str = Query(pattern=r"^\d+(,\d+){0,199}$")):
+    """Progress of queued uploads (seq-1 b6, b16): dang_xu_ly | xong (with space_id) | loi (with the reason)."""
+    with _db() as c:
+        return intake.status(c, [int(i) for i in ids.split(",")])
 
 
 class HotspotKeep(BaseModel):
@@ -327,22 +442,44 @@ EDITABLE = ("space_type", "design_style", "caption", "alt_text", "materials")
 TEXT = {"caption", "alt_text"}  # all the content role may touch
 
 
+def _missing_required(c, space_id: int) -> list[str]:
+    """act-1 "Đủ các features bắt buộc?": names of required dimensions the photo has no value in."""
+    return [r["ten"] for r in c.execute(
+        "SELECT d.ten FROM chieu_phan_loai d JOIN space s ON s.id = %(s)s WHERE d.bat_buoc AND CASE d.ma_dinh_danh "
+        "  WHEN 'khong_gian' THEN COALESCE(s.space_type, '') = '' WHEN 'phong_cach' THEN COALESCE(s.design_style, '') = '' "
+        "  ELSE NOT EXISTS (SELECT 1 FROM space_gia_tri sg JOIN gia_tri_phan_loai g ON g.id = sg.gia_tri_id "
+        "                   WHERE sg.space_id = s.id AND g.chieu_id = d.id) END ORDER BY d.thu_tu, d.id", {"s": space_id}).fetchall()]
+
+
 def _advance(c, space_id: int, status: str, user, rights_confirmed: bool) -> str:
     """One QT-01 step with its role and rights rules. Raising inside `with _db()` rolls the transaction back."""
     if status not in NEXT:
         raise HTTPException(409, f"space {space_id}: '{status}' is the final state")
-    if status != "draft" and user["role"] not in APPROVERS:  # only the lead architect approves, clears, publishes
-        raise HTTPException(403, f"space {space_id}: approving, clearing and publishing require lead_architect")
+    if user["role"] not in ADVANCE_ROLES.get(status, APPROVERS):
+        raise HTTPException(403, f"space {space_id}: «{STATUS_VI.get(status, status)}» cannot be moved on by {user['role']}")
+    if status == "draft" and (missing := _missing_required(c, space_id)):
+        raise HTTPException(422, {"space_id": space_id, "thieu": missing, "msg": "Thiếu: " + ", ".join(missing)})
     new = NEXT[status]
     if new == "cleared" and not rights_confirmed:
         raise HTTPException(422, f"space {space_id}: confirm the client allowed publishing these photos (rights_confirmed)")
-    c.execute("UPDATE space SET review_status=%s, ly_do_duyet=NULL WHERE id=%s", (new, space_id))  # moved on: reason done
+    c.execute("UPDATE space SET review_status=%s, ly_do_duyet=NULL" + (", ngay_xuat_ban = now()" if new == "published" else "")
+              + " WHERE id=%s", (new, space_id))  # moved on: reason done; seq-6 b17: the publish date
     _log(c, space_id, user, "advance", {"from": status, "to": new, **({"rights_confirmed": True} if new == "cleared" else {})})
+    if new == "published":  # seq-6 b18: the photo joins the assistant's knowledge (queued, no Gemini call)
+        intake.enqueue(c, "nap_tri_thuc", {"space_id": space_id}, user["id"])
     return new
 
 
+def _handover(tasks: BackgroundTasks, moved: dict, rows_by_id: dict, user):
+    """seq-6 b4 / b7: tell the content staff (-> editing) and the lead architects (-> in review), once per action."""
+    for kind, status in (("bien_tap", "editing"), ("duyet", "in_review")):
+        items = [(sid, rows_by_id[sid]) for sid, st in moved.items() if st == status]
+        if items:
+            tasks.add_task(notify.notify_handover, kind, items, user.get("ho_ten") or user["email"])
+
+
 @app.patch("/spaces/{space_id}")
-def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))):
+def review(space_id: int, body: Review, tasks: BackgroundTasks, user=Depends(require(*STAFF, "content"))):
     _check_value("khong_gian", "space_type", body.space_type)
     _check_value("phong_cach", "design_style", body.design_style)
     sent = {k: v for k, v in body.model_dump(include=set(EDITABLE)).items() if v is not None}
@@ -353,12 +490,16 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
                         "FROM space WHERE id=%s FOR UPDATE", (space_id,)).fetchone()
         if not row:
             raise HTTPException(404, "space not found")
-        if user["role"] == "content" and (body.advance or body.hotspots is not None or set(sent) - TEXT
-                                          or row["review_status"] != "in_review"):
-            raise HTTPException(403, "content editors may only edit the caption and alt text of spaces in review")
+        if user["role"] == "content" and (body.hotspots is not None or set(sent) - TEXT
+                                          or row["review_status"] not in ("editing", "in_review")
+                                          or (body.advance and row["review_status"] != "editing")):
+            raise HTTPException(403, "content editors may only edit the caption and alt text of spaces being edited or in "
+                                     "review, and send edited ones to review")
         if changes := {k: v for k, v in sent.items() if v != row[k]}:
             c.execute(f"UPDATE space SET {', '.join(k + '=%s' for k in changes)} WHERE id=%s", (*changes.values(), space_id))
             _log(c, space_id, user, "edit", {"from": {k: row[k] for k in changes}, "to": changes})
+            if {"space_type", "design_style"} & set(changes):
+                label_feedback.record(c, space_id, user["id"])  # seq-1 b21: corrected labels, for model evaluation
         if body.hotspots is not None:
             objs = (row["hotspots"] or {}).get("objects", [])
             if bad := [h.index for h in body.hotspots if h.index >= len(objs)]:
@@ -367,7 +508,9 @@ def review(space_id: int, body: Review, user=Depends(require(*STAFF, "content"))
             c.execute("UPDATE space SET hotspots = jsonb_set(hotspots, '{objects}', %s) WHERE id=%s", (Jsonb(kept), space_id))
             _log(c, space_id, user, "hotspots", {"kept": [h.index for h in body.hotspots], "of": len(objs)})
         if body.advance:
-            _advance(c, space_id, row["review_status"], user, body.rights_confirmed)
+            new = _advance(c, space_id, row["review_status"], user, body.rights_confirmed)
+            path = c.execute("SELECT relative_path FROM space WHERE id=%s", (space_id,)).fetchone()["relative_path"]
+            _handover(tasks, {space_id: new}, {space_id: path}, user)
         return c.execute(f"SELECT {FIELDS} FROM space WHERE id=%s", (space_id,)).fetchone()
 
 
@@ -387,6 +530,7 @@ def _wait_on_suggestion(c, space, dim, text, user, draft) -> int:
     if space[col] != other:
         c.execute(f"UPDATE space SET {col} = %s WHERE id = %s", (other, space["id"]))
         _log(c, space["id"], user, "edit", {"from": {col: space[col]}, "to": {col: other}, "goi_y": cid})
+        label_feedback.record(c, space["id"], user["id"])
     return cid
 
 
@@ -434,19 +578,20 @@ class AdvanceMany(BaseModel):
 
 
 @app.post("/spaces/advance")
-def advance_many(body: AdvanceMany, user=Depends(require(*STAFF))):
+def advance_many(body: AdvanceMany, tasks: BackgroundTasks, user=Depends(require(*STAFF, "content"))):
     """All or nothing: one space that cannot move rolls the whole selection back, and the error names it."""
     with _db() as c:
-        rows = c.execute("SELECT id, review_status FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+        rows = c.execute("SELECT id, review_status, relative_path FROM space WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
                          (body.space_ids,)).fetchall()
         if missing := set(body.space_ids) - {r["id"] for r in rows}:
             raise HTTPException(404, f"space {min(missing)} not found")
         moved = {r["id"]: _advance(c, r["id"], r["review_status"], user, body.rights_confirmed) for r in rows}
+    _handover(tasks, moved, {r["id"]: r["relative_path"] for r in rows}, user)
     return {"advanced": sorted(moved), "status": sorted(set(moved.values()))}
 
 
 # ── Backward paths (change: review-return-reject; act-1, seq-6 b9-12) ─────────────────────────────────────
-RETURNABLE = {"in_review", "approved", "cleared"}           # -> draft ("Trả về nháp")
+RETURNABLE = {"editing", "in_review", "approved", "cleared"}  # -> draft ("Trả về nháp")
 BACK = {  # action: (allowed source statuses, target status, reason kind, log action)
     "return": (RETURNABLE, "draft", "tra_ve", "return"),
     "keep_internal": ({"approved", "cleared"}, "noi_bo", "noi_bo", "keep_internal"),  # client refused publishing
@@ -455,7 +600,7 @@ BACK = {  # action: (allowed source statuses, target status, reason kind, log ac
     "unpublish": ({"published"}, "draft", "go_xuong", "unpublish"),
     "unpublish_internal": ({"published"}, "noi_bo", "go_noi_bo", "unpublish"),
 }
-STATUS_VI = {"draft": "Nháp", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
+STATUS_VI = {"draft": "Nháp", "editing": "Chờ biên tập", "in_review": "Chờ duyệt", "approved": "Đã duyệt", "cleared": "Đã xác nhận quyền",
              "published": "Đã đăng", "noi_bo": "Lưu nội bộ"}
 
 
@@ -486,7 +631,10 @@ def _move_back(action: str, body: MoveBack, user, tasks: BackgroundTasks) -> dic
         for r in rows:
             c.execute("UPDATE space SET review_status=%s, ly_do_duyet=%s WHERE id=%s", (target, Jsonb(shown), r["id"]))
             _log(c, r["id"], user, log_action, {"from": r["review_status"], "to": target, "reason": body.ly_do})
-    tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows], user["email"])
+            if r["review_status"] == "published":  # taken down: out of the assistant's knowledge too (publishing-workflow)
+                c.execute("DELETE FROM space_text WHERE space_id = %s", (r["id"],))
+    tasks.add_task(notify.notify_returned, [(r["id"], r["relative_path"], kind, body.ly_do) for r in rows],
+                   user.get("ho_ten") or user["email"])  # the account's name when it has one (admin-tools)
     return {"moved": [r["id"] for r in rows], "status": target}
 
 
@@ -558,15 +706,22 @@ def set_tags(body: SetTags, user=Depends(require(*STAFF))):
     return {"spaces": len(ids), "values": [v["ma_dinh_danh"] for v in vals]}
 
 
-PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem")  # about one published photo
+# about one published photo: stored with that photo's taxonomy values at that moment (class-4 note)
+PHOTO_EVENTS = ("xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_goi_y_tuong_tu", "chon_goi_y")
+EVENT_TYPES = Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
+                      "nhan_chatbot", "chia_se", "ap_dung_bo_loc", "tim_kiem", "xem_goi_y_tuong_tu", "chon_goi_y",
+                      "phong_to_anh", "chuyen_anh", "bam_hotspot"]  # the last three: visitor-services-hotspots (Tùng)
+OBJECT_KIND = {"xem_du_an": "du_an", "xem_trang": "trang", "bam_CTA": "lien_ket", "gui_form": "form", "tim_kiem": "tim_kiem",
+               "chia_se": "bo_suu_tap", "ap_dung_bo_loc": "bo_loc", "nhan_chatbot": "tro_ly",
+               "phong_to_anh": "anh_du_an", "chuyen_anh": "anh_du_an", "bam_hotspot": "diem_nong",
+               **{k: "khong_gian" for k in PHOTO_EVENTS}}  # class-4 SuKien.loai_doi_tuong
+SESSION_ID = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser tokens, never tied to an account
+VN_DAY = "(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date"  # analytics days are UTC+7 dates (tracking-pipeline)
 
 
-class Event(BaseModel):
-    # photo events (view, heart save, quiz pick) and the behaviour events of UC21 (change behaviour-events)
-    loai: Literal["xem_khong_gian", "luu_anh", "chon_trac_nghiem", "xem_trang", "xem_du_an", "bam_CTA", "gui_form",
-                  "nhan_chatbot", "chia_se", "ap_dung_bo_loc", "phong_to_anh", "chuyen_anh", "bam_hotspot"]
-    dong_y: bool                                     # the visitor's answer on the consent banner
-    phien_id: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")  # random browser token
+class EventItem(BaseModel):
+    """One behaviour event (UC21; class-4 SuKien). In a batch, cach_ms says how long before sending it happened."""
+    loai: EVENT_TYPES
     space_id: Optional[int] = None
     trang: Optional[str] = Field(default=None, pattern=r"^/[a-z0-9/:_-]{0,99}$")  # route pattern, never a real path
     doi_tuong: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_/-]{1,100}$")  # slug, photo id, CTA target, form
@@ -574,37 +729,109 @@ class Event(BaseModel):
         default=None, max_length=20)                 # filter values of ap_dung_bo_loc
     thoi_gian_dung_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
     do_sau_cuon: Optional[float] = Field(default=None, ge=0, le=1)
+    so_ket_qua: Optional[int] = Field(default=None, ge=0, le=1000)  # tim_kiem: number of results, never the query
+    cach_ms: int = Field(default=0, ge=0, le=600_000)
+
+
+def _not_demo(v):  # 'demo-' is reserved for pipeline/demo_activity.py, so demo data stays identifiable
+    if v and v.startswith("demo-"):
+        raise ValueError("phien_id_du_tru")
+    return v
+
+
+class Event(EventItem):
+    """The earlier one-event body, still accepted."""
+    dong_y: bool                                     # the visitor's answer on the consent banner
+    phien_id: Optional[str] = SESSION_ID
 
     @field_validator("phien_id")
     @classmethod
-    def _not_demo(cls, v):  # 'demo-' is reserved for pipeline/demo_activity.py, so demo data stays identifiable
-        if v and v.startswith("demo-"):
-            raise ValueError("phien_id_du_tru")
-        return v
+    def _demo(cls, v):
+        return _not_demo(v)
+
+
+class EventBatch(BaseModel):
+    """seq-4 b2-b3: the browser's buffer, sent every 5 s and when the page is left (at most 50 events)."""
+    dong_y: bool
+    phien_id: Optional[str] = SESSION_ID
+    ma_thiet_bi: Optional[str] = SESSION_ID          # class-4: anonymous device id, only under analytics consent
+    nguon: Optional[str] = Field(default=None, pattern=r"^[a-z0-9_]{1,40}$")  # truc_tiep | tim_kiem | ... | utm name
+    thiet_bi: Optional[Literal["di_dong", "may_tinh_bang", "may_tinh"]] = None
+    ca_nhan_hoa: bool = False                        # act-7: personalisation allowed too
+    su_kien: list[EventItem] = Field(min_length=1, max_length=50)
+
+    @field_validator("phien_id")
+    @classmethod
+    def _demo(cls, v):
+        return _not_demo(v)
 
 
 @app.post("/events", status_code=204, dependencies=[Depends(limit("events", 120, 60))])
-def track(body: Event):
-    """Behaviour signal for taxonomy discovery (act-7, UC21). Only a consented session is stored, enriched with the
-    viewed space's facet values; otherwise nothing per visitor is kept, just the day's anonymous count (NFR-09)."""
+def track(body: EventBatch | Event):
+    """Behaviour signals (UC21; seq-4 b3-b5). The whole batch is validated first (one bad event refuses it). Only a
+    consented session is stored, each event at the time it happened; otherwise only the day's anonymous count per
+    type grows (NFR-09) and no session detail may be sent."""
+    batch = body if hasattr(body, "su_kien") else EventBatch(  # not isinstance: a test may reload this module
+        dong_y=body.dong_y, phien_id=body.phien_id, su_kien=[EventItem(**body.model_dump(exclude={"dong_y", "phien_id"}))])
     with _db() as c:
-        if not (body.dong_y and body.phien_id):
-            c.execute("INSERT INTO su_kien_an_danh (ngay, loai, so_luong) VALUES (current_date, %s, 1) "
-                      "ON CONFLICT (ngay, loai) DO UPDATE SET so_luong = su_kien_an_danh.so_luong + 1", (body.loai,))
+        if not (batch.dong_y and batch.phien_id):
+            if batch.ma_thiet_bi or batch.nguon or batch.thiet_bi or batch.ca_nhan_hoa:
+                raise HTTPException(422, "session details are only sent with consent")
+            for loai, n in Counter(e.loai for e in batch.su_kien).items():
+                c.execute(f"INSERT INTO su_kien_an_danh (ngay, loai, so_luong) VALUES ({VN_DAY}, %s, %s) "
+                          "ON CONFLICT (ngay, loai) DO UPDATE SET so_luong = su_kien_an_danh.so_luong + EXCLUDED.so_luong",
+                          (loai, n))
             return
-        c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true) ON CONFLICT DO NOTHING",
-                  (body.phien_id,))
-        if body.loai not in PHOTO_EVENTS:  # behaviour-events: no photo, so stored as sent (all fields validated)
-            c.execute("INSERT INTO su_kien (phien_id, loai, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, do_sau_cuon) "
-                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", (body.phien_id, body.loai, body.trang, body.doi_tuong,
-                                                        body.gia_tri or [], body.thoi_gian_dung_ms, body.do_sau_cuon))
-            return
-        c.execute("INSERT INTO su_kien (phien_id, loai, space_id, gia_tri) "
-                  "SELECT %(p)s, %(l)s, s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
-                  "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
-                  "  JOIN chieu_phan_loai d ON d.id = v.chieu_id WHERE sg.space_id = s.id), '{}') "
-                  "FROM space s WHERE s.id = %(s)s AND s.review_status = 'published'",
-                  {"p": body.phien_id, "l": body.loai, "s": body.space_id})
+        oldest, newest = max(e.cach_ms for e in batch.su_kien), min(e.cach_ms for e in batch.su_kien)
+        c.execute(
+            "INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap, ma_thiet_bi, nguon, thiet_bi, ca_nhan_hoa, bat_dau, ket_thuc) "
+            "VALUES (%(p)s, true, %(d)s, %(n)s, %(t)s, %(c)s, now() - %(o)s * interval '1 millisecond', "
+            "        now() - %(w)s * interval '1 millisecond') "
+            "ON CONFLICT (id) DO UPDATE SET ma_thiet_bi = COALESCE(EXCLUDED.ma_thiet_bi, phien_truy_cap.ma_thiet_bi), "
+            "  nguon = COALESCE(phien_truy_cap.nguon, EXCLUDED.nguon), thiet_bi = COALESCE(EXCLUDED.thiet_bi, phien_truy_cap.thiet_bi), "
+            "  ca_nhan_hoa = EXCLUDED.ca_nhan_hoa, bat_dau = LEAST(COALESCE(phien_truy_cap.bat_dau, EXCLUDED.bat_dau), EXCLUDED.bat_dau), "
+            "  ket_thuc = GREATEST(COALESCE(phien_truy_cap.ket_thuc, EXCLUDED.ket_thuc), EXCLUDED.ket_thuc)",
+            {"p": batch.phien_id, "d": batch.ma_thiet_bi, "n": batch.nguon, "t": batch.thiet_bi, "c": batch.ca_nhan_hoa,
+             "o": oldest, "w": newest})
+        for e in batch.su_kien:
+            at = {"p": batch.phien_id, "l": e.loai, "k": OBJECT_KIND[e.loai], "ms": e.cach_ms, "s": e.space_id,
+                  "o": e.doi_tuong}
+            if e.loai not in PHOTO_EVENTS:  # no photo: stored as sent (every field validated)
+                c.execute("INSERT INTO su_kien (phien_id, loai, loai_doi_tuong, trang, doi_tuong, gia_tri, thoi_gian_dung_ms, "
+                          "do_sau_cuon, so_ket_qua, created_at) VALUES (%(p)s, %(l)s, %(k)s, %(t)s, %(o)s, %(g)s, %(d)s, %(c)s, "
+                          "%(r)s, now() - %(ms)s * interval '1 millisecond')",
+                          {**at, "t": e.trang, "g": e.gia_tri or [], "d": e.thoi_gian_dung_ms, "c": e.do_sau_cuon,
+                           "r": e.so_ket_qua})
+                continue
+            c.execute("INSERT INTO su_kien (phien_id, loai, loai_doi_tuong, space_id, doi_tuong, gia_tri, created_at) "
+                      "SELECT %(p)s, %(l)s, %(k)s, s.id, %(o)s, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.ma_dinh_danh) "
+                      "  FROM space_gia_tri sg JOIN gia_tri_phan_loai v ON v.id = sg.gia_tri_id "
+                      "  JOIN chieu_phan_loai d ON d.id = v.chieu_id WHERE sg.space_id = s.id), '{}'), "
+                      "  now() - %(ms)s * interval '1 millisecond' "
+                      "FROM space s WHERE s.id = %(s)s AND s.review_status = 'published'", at)
+
+
+class ForgetMe(BaseModel):
+    phien_id: Optional[str] = SESSION_ID
+    ma_thiet_bi: Optional[str] = SESSION_ID
+
+
+@app.post("/privacy/xoa-du-lieu", dependencies=[Depends(limit("privacy", 5, 60))])
+def forget_me(body: ForgetMe):
+    """act-7 "Gửi yêu cầu xóa dữ liệu cá nhân": delete this browser's sessions (the current one and every one carrying
+    its device id) with their events. Both ids are random values only that browser holds. Conversations and leads stay,
+    detached (their FKs are ON DELETE SET NULL); figures already aggregated hold no session data and stay too.
+    Only the counts and the time are logged."""
+    if not (body.phien_id or body.ma_thiet_bi):
+        raise HTTPException(422, "phien_id or ma_thiet_bi is required")
+    with _db() as c:
+        ids = [r["id"] for r in c.execute("SELECT id FROM phien_truy_cap WHERE id = %s OR (%s::text IS NOT NULL AND ma_thiet_bi = %s)",
+                                           (body.phien_id, body.ma_thiet_bi, body.ma_thiet_bi)).fetchall()]
+        events = c.execute("SELECT count(*) AS n FROM su_kien WHERE phien_id = ANY(%s)", (ids,)).fetchone()["n"]
+        if ids:
+            c.execute("DELETE FROM phien_truy_cap WHERE id = ANY(%s)", (ids,))
+            c.execute("INSERT INTO yeu_cau_xoa_du_lieu (so_phien, so_su_kien) VALUES (%s, %s)", (len(ids), events))
+    return {"so_phien": len(ids), "so_su_kien": events}
 
 
 PHIEN = r"^[A-Za-z0-9_-]{16,64}$"  # the random browser session token of /events
@@ -630,11 +857,15 @@ def chat(body: Chat, tasks: BackgroundTasks):
         out = respond(body.message, stored or body.history, body.contact, body.phien_id, body.gui_ho_so,
                       rang_buoc=rang_buoc, lead_history=body.history or stored)
         blocked = out.pop("chu_de_cam", None)  # staff only: never in the public reply
+        if out.get("lead_id") and (opens := hours.next_open()):  # act-4: outside working hours
+            out["answer"] = f"{out['answer']} {hours.sentence(opens)}"
+            out["lien_he_luc"] = opens.isoformat()
+            c.execute("UPDATE lead SET thong_bao_luc = %s, da_thong_bao = false WHERE id = %s", (opens, out["lead_id"]))
         conversations.add_turn(c, hid, body.message, out["answer"], out["sources"], out.get("diem_cao_nhat"),
                                out["answered"], out["rang_buoc"], blocked)
         if out.get("lead_id"):
             conversations.link_lead(c, hid, out["lead_id"], handoff=not out["answered"])
-    if out.get("lead_id"):
+    if out.get("lead_id") and not out.get("lien_he_luc"):  # outside hours: sent when the next working period starts
         tasks.add_task(notify.notify_new_lead, out["lead_id"])
     return {**out, "hoi_thoai_id": hid}
 
@@ -813,6 +1044,27 @@ def merge_collection(body: Merge, user=Depends(require(*ROLES))):
         return bo_suu_tap.merge(c, user["id"], [i.model_dump() for i in body.items])
 
 
+class ShareItem(BaseModel):
+    space_id: int
+    ghi_chu: Optional[str] = Field(default=None, max_length=bo_suu_tap.MAX_NOTE)
+
+
+class ShareCollection(BaseModel):
+    items: list[ShareItem] = Field(min_length=1, max_length=bo_suu_tap.MAX_ITEMS)
+
+
+@app.post("/collections/share", status_code=201, dependencies=[Depends(limit("collection_share", 10, 60))])
+def share_collection(body: ShareCollection):
+    """BFD 2.3 "Chia sẻ bộ sưu tập": a snapshot of the visitor's current collection (signed in or not), published
+    photos only, readable at /bo-suu-tap/xem/<code>."""
+    with _db() as c:
+        keep = set(bo_suu_tap.published(c, [i.space_id for i in body.items]))
+        chosen = [i.model_dump() for i in body.items if i.space_id in keep]
+        if not chosen:
+            raise HTTPException(422, "Bộ sưu tập chưa có ảnh nào đã đăng để chia sẻ.")
+        return {"ma": bo_suu_tap.share_copy(c, chosen), "so_anh": len(chosen)}
+
+
 @app.get("/collections/shared/{code}")
 def shared_collection(code: str = PathParam(pattern=r"^[A-Za-z0-9_-]{8,64}$")):
     """Read-only view of a sent brief: photos, notes, summary; never the sender's name or contact."""
@@ -924,7 +1176,9 @@ class EstimateIn(BaseModel):
 def post_estimate(body: EstimateIn):
     """Public. Arithmetic on the price table; nothing is stored."""
     with _db() as c:
-        return estimate.estimate(c, body.loai_nha, body.dien_tich_m2, body.so_phong_ngu, body.goi)
+        out = estimate.estimate(c, body.loai_nha, body.dien_tich_m2, body.so_phong_ngu, body.goi)
+        out["du_an_goi_y"] = estimate.budget_projects(c, body.loai_nha, out["tong"])  # seq-9 b6-b7
+        return out
 
 
 class EstimateLeadIn(LeadIn, EstimateIn):
@@ -996,12 +1250,26 @@ def save_price(price_id: int, body: PriceIn, user=Depends(require(*APPROVERS))):
 
 
 # ── Hotspots by hand and the item library (seq-14; class-1 Hotspot / MonDo; roadmap 1.9) ──────────────
+class Box(BaseModel):
+    x_min: float = Field(ge=0, le=1)
+    y_min: float = Field(ge=0, le=1)
+    x_max: float = Field(ge=0, le=1)
+    y_max: float = Field(ge=0, le=1)
+
+
+class AiSuggestion(BaseModel):  # admin-tools: what POST /spaces/{id}/detect proposed, kept with the accepted point
+    label: str = Field(pattern=r"^[a-z0-9 _-]{1,60}$")
+    confidence: float = Field(ge=0, le=1)
+    bbox: Box
+
+
 class HotspotIn(BaseModel):
     index: Optional[int] = None          # position of the detected object it comes from; None = made by hand
     x: float
     y: float
     label_vi: str = Field(max_length=120)
     mon_do_id: Optional[int] = None
+    goi_y_ai: Optional[AiSuggestion] = None  # an accepted on-demand suggestion: source "AI" with its confidence
 
 
 class HotspotsIn(BaseModel):
@@ -1017,6 +1285,39 @@ def _item_error(e):
     if isinstance(e, items.InUse):
         return HTTPException(409, {"msg": str(e), "so_anh": e.n})
     return HTTPException(404, "no such item")
+
+
+DETECT_SAME_NAME = 0.05  # a suggestion this close to a hotspot of the same name is already marked
+
+
+@app.post("/spaces/{space_id}/detect", dependencies=[Depends(limit("detect", 10, 60))])
+def detect_objects(space_id: int, user=Depends(require(*STAFF))):
+    """seq-14 b6-b9 (admin-tools): run the local furniture detector on the photo now and propose objects (name, box,
+    centre, confidence). No external AI call; nothing is stored until the editor saves."""
+    with _db() as c:
+        row = c.execute("SELECT relative_path, hotspots FROM space WHERE id = %s", (space_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such space")
+    path = IMG_DIR / row["relative_path"]
+    if not path.is_file():
+        raise HTTPException(404, "the photo file is missing")
+    with intake.GPU_LOCK:  # the queue worker uses the same models: one job at a time
+        found = _processor().detector.detect(path).objects
+    marked = [((o.get("label_vi") or "").casefold(), o.get("hotspot_anchor") or [None, None])
+              for o in (row["hotspots"] or {}).get("objects", [])]
+
+    def already(o) -> bool:
+        b, name = o.bbox, o.label_vi.casefold()
+        for n, (x, y) in marked:
+            if n != name or x is None:
+                continue
+            near = abs(x - o.hotspot_anchor[0]) <= DETECT_SAME_NAME and abs(y - o.hotspot_anchor[1]) <= DETECT_SAME_NAME
+            inside = b.x_min <= x <= b.x_max and b.y_min <= y <= b.y_max
+            if near or inside:
+                return True
+        return False
+    return [{"label": o.label, "label_vi": o.label_vi, "confidence": o.confidence, "bbox": o.bbox.model_dump(),
+             "anchor": list(o.hotspot_anchor)} for o in found if not already(o)]
 
 
 @app.put("/spaces/{space_id}/hotspots")
@@ -1046,6 +1347,7 @@ class ItemIn(BaseModel):
     vat_lieu: Optional[str] = Field(default=None, max_length=60)
     mau_sac: Optional[str] = Field(default=None, max_length=40)
     nha_cung_cap: Optional[str] = Field(default=None, max_length=120)
+    khoang_gia: Optional[str] = Field(default=None, max_length=60)  # class-6 MonDo (admin-tools); never shown to visitors
     ghi_chu: Optional[str] = Field(default=None, max_length=500)
     dich_vu_id: Optional[int] = None  # a knowledge entry of kind 'service'; null unlinks
 
@@ -1113,6 +1415,35 @@ def analytics_overview(days: int = 30, user=Depends(require("sales", *APPROVERS)
         return trends.overview(c, days)
 
 
+
+
+# ── Homepage suggestions (tracking-pipeline; act-3 "Điều chỉnh gợi ý trên trang chủ") ─────────────────────────────
+@app.get("/home/suggestions", dependencies=[Depends(limit("home_suggestions", 60, 60))])
+def home_suggestions_public(phien_id: Optional[str] = Query(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")):
+    """Public. Up to 8 published spaces for "Đang được quan tâm"; the session id is used only when that session
+    allowed personalisation (act-7), otherwise ignored."""
+    with _db() as c:
+        return home_suggestions.suggestions(c, phien_id)
+
+
+@app.get("/analytics/home-suggestions")
+def home_suggestions_admin(user=Depends(require("sales", *APPROVERS))):
+    with _db() as c:
+        return home_suggestions.admin_view(c)
+
+
+class HomeSetting(BaseModel):
+    gia_tri: str = Field(pattern=r"^[a-z0-9_]+:[A-Za-z0-9_]+$")
+    che_do: Literal["tu_dong", "uu_tien", "an"]
+
+
+@app.put("/analytics/home-suggestions")
+def home_suggestions_set(body: HomeSetting, user=Depends(require("sales", *APPROVERS))):
+    with _db() as c:
+        try:
+            return home_suggestions.set_mode(c, body.gia_tri, body.che_do, user["id"])
+        except KeyError:
+            raise HTTPException(404, "no such visitor-facing value")
 
 
 @app.get("/analytics/behaviour")
@@ -1410,7 +1741,7 @@ def knowledge_delete(entry_id: int, user=Depends(require(*APPROVERS))):
 
 
 # ── Sitemap (seq-6 b18, roadmap 4.5; change topic-guard-sitemap-item-services) ─
-SITEMAP_PAGES = ("", "du-an", "khong-gian", "uoc-tinh", "trac-nghiem", "lien-he", "ve-chung-toi")
+SITEMAP_PAGES = ("", "du-an", "khong-gian", "trac-nghiem", "lien-he", "ve-chung-toi")  # /uoc-tinh removed from the site (Tùng)
 SITEMAP_FOLDER = re.compile(r"^[a-z0-9_]{1,60}$")
 
 

@@ -3,7 +3,7 @@
  * One route hook and one click listener, so no page needs editing. Pages are stored by route pattern
  * (/bo-suu-tap/xem/:ma), never the real path, query or hash; staff pages are skipped.
  * ═══════════════════════════════════════════════════════════════════ */
-import { trackEvent } from '@/api'
+import { flushEvents, takeSimilarPick, trackEvent } from '@/api'
 
 export const CTA = ['/lien-he', '/trac-nghiem']
 const MAX_MS = 86_400_000
@@ -47,6 +47,10 @@ export function startPageTracking(router, win = window) {
     const trang = routePattern(route)
     if (!trang) return
     const obj = objectOf(trang, route.params)
+    if (trang === '/khong-gian/:id' && obj) { // seq-2 b14: a similar space shown on the previous page was opened
+      const src = takeSimilarPick(obj)
+      if (src !== null) trackEvent('chon_goi_y', { space_id: Number(obj), doi_tuong: String(src) })
+    }
     cur = { trang, obj, loai: trang === '/du-an/:slug' ? 'xem_du_an' : 'xem_trang', t0: Date.now(), max: 0 }
     onScroll()
   }
@@ -71,9 +75,10 @@ export function startPageTracking(router, win = window) {
   })
   win.addEventListener('scroll', onScroll, { passive: true })
   win.document.addEventListener('visibilitychange', () => {
-    if (win.document.visibilityState === 'hidden') close() // background time is not reading time
+    if (win.document.visibilityState === 'hidden') { close(); flushEvents() } // background time is not reading time
     else if (!cur) open(router.currentRoute.value)
   })
+  win.addEventListener('pagehide', () => { close(); flushEvents() }) // tab closed or reloaded: the view leaves with the batch
   win.document.addEventListener('click', e => {
     const a = e.target?.closest?.('a[href]')
     if (!a) return

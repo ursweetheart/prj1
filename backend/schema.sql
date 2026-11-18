@@ -457,3 +457,188 @@ CREATE TABLE IF NOT EXISTS nhat_ky_du_an (
 ALTER TABLE space ADD COLUMN IF NOT EXISTS du_an_slug text REFERENCES du_an(slug) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE space ADD COLUMN IF NOT EXISTS anh_trang text;  -- the site file it matches, e.g. 02.jpg
 CREATE INDEX IF NOT EXISTS space_du_an ON space (du_an_slug);
+
+-- labelling-queue-feedback (seq-1): uploads go through a task queue; a single worker runs one task at a time.
+-- loai names the handler (pipeline/intake.py HANDLERS): xu_ly_anh = process an uploaded photo (du_lieu.relative_path).
+CREATE TABLE IF NOT EXISTS hang_doi_tac_vu (
+  id serial PRIMARY KEY,
+  loai text NOT NULL,
+  du_lieu jsonb NOT NULL DEFAULT '{}',
+  trang_thai text NOT NULL DEFAULT 'cho' CHECK (trang_thai IN ('cho', 'dang_xu_ly', 'xong', 'loi')),
+  so_lan int NOT NULL DEFAULT 0,
+  space_id int REFERENCES space(id) ON DELETE SET NULL,
+  loi text,
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  tao_luc timestamptz NOT NULL DEFAULT now(),
+  bat_dau_luc timestamptz,
+  xong_luc timestamptz
+);
+CREATE INDEX IF NOT EXISTS hang_doi_tac_vu_cho ON hang_doi_tac_vu (id) WHERE trang_thai = 'cho';
+-- what the AI proposed, kept unchanged by human edits (seq-1 b11): the evaluation baseline
+ALTER TABLE space ADD COLUMN IF NOT EXISTS space_type_ai text;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS design_style_ai text;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS space_type_confidence real;
+-- backfill once: the AI label is the 'from' side of the first human edit, else the current label
+UPDATE space s SET
+  space_type_ai = COALESCE((SELECT r.detail->'from'->>'space_type' FROM review_log r WHERE r.space_id = s.id
+                            AND r.action = 'edit' AND r.detail->'from' ? 'space_type' ORDER BY r.id LIMIT 1), s.space_type),
+  design_style_ai = COALESCE((SELECT r.detail->'from'->>'design_style' FROM review_log r WHERE r.space_id = s.id
+                              AND r.action = 'edit' AND r.detail->'from' ? 'design_style' ORDER BY r.id LIMIT 1), s.design_style)
+WHERE s.space_type_ai IS NULL AND s.design_style_ai IS NULL;
+-- seq-1 b21: one row per photo and dimension while the saved label differs from the AI's
+CREATE TABLE IF NOT EXISTS nhan_bi_sua (
+  space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  chieu text NOT NULL CHECK (chieu IN ('khong_gian', 'phong_cach')),
+  ai_gia_tri text,
+  do_tin_cay real,
+  gia_tri_dung text,
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  luc timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (space_id, chieu)
+);
+-- backfill: corrections made before nhan_bi_sua existed (idempotent: only photos with no row yet)
+INSERT INTO nhan_bi_sua (space_id, chieu, ai_gia_tri, do_tin_cay, gia_tri_dung)
+SELECT id, 'khong_gian', space_type_ai, space_type_confidence, space_type FROM space
+ WHERE space_type_ai IS NOT NULL AND space_type IS DISTINCT FROM space_type_ai
+UNION ALL
+SELECT id, 'phong_cach', design_style_ai, style_confidence, design_style FROM space
+ WHERE design_style_ai IS NOT NULL AND design_style IS DISTINCT FROM design_style_ai
+ON CONFLICT (space_id, chieu) DO NOTHING;
+
+-- ── tracking-pipeline (seq-4, act-3, act-7, dfd-2-1, dfd-2-5, seq-2, class-4) ──────────────────────────────────────
+-- class-4 PhienTruyCap: device id (random, kept by the browser only under analytics consent), source, device type,
+-- start / end; ca_nhan_hoa = the visitor also allowed personalisation (act-7 Tùy chỉnh)
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS ma_thiet_bi text CHECK (ma_thiet_bi ~ '^[A-Za-z0-9_-]{16,64}$');
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS nguon text CHECK (nguon ~ '^[a-z0-9_]{1,40}$');
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS thiet_bi text CHECK (thiet_bi IN ('di_dong', 'may_tinh_bang', 'may_tinh'));
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS bat_dau timestamptz;
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS ket_thuc timestamptz;
+ALTER TABLE phien_truy_cap ADD COLUMN IF NOT EXISTS ca_nhan_hoa boolean NOT NULL DEFAULT false;
+UPDATE phien_truy_cap p SET bat_dau = COALESCE((SELECT min(created_at) FROM su_kien WHERE phien_id = p.id), p.created_at),
+                            ket_thuc = COALESCE((SELECT max(created_at) FROM su_kien WHERE phien_id = p.id), p.created_at)
+ WHERE bat_dau IS NULL;
+CREATE INDEX IF NOT EXISTS phien_truy_cap_thiet_bi ON phien_truy_cap (ma_thiet_bi) WHERE ma_thiet_bi IS NOT NULL;
+-- class-4 SuKien: object type; real dwell time (nightly, seq-4 b8); result count of a search (dfd-2-1 1.3)
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS loai_doi_tuong text;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS dung_thuc_ms int;
+ALTER TABLE su_kien ADD COLUMN IF NOT EXISTS so_ket_qua int CHECK (so_ket_qua >= 0);
+ALTER TABLE su_kien DROP CONSTRAINT IF EXISTS su_kien_loai_check;
+ALTER TABLE su_kien ADD CONSTRAINT su_kien_loai_check CHECK (loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem',
+  'xem_trang', 'xem_du_an', 'bam_CTA', 'gui_form', 'nhan_chatbot', 'chia_se', 'ap_dung_bo_loc',
+  'tim_kiem', 'xem_goi_y_tuong_tu', 'chon_goi_y',
+  'phong_to_anh', 'chuyen_anh', 'bam_hotspot'));  -- visitor-services-hotspots (Tùng), kept when this block re-adds the CHECK
+UPDATE su_kien SET loai_doi_tuong = CASE
+    WHEN loai IN ('xem_khong_gian', 'luu_anh', 'chon_trac_nghiem', 'xem_goi_y_tuong_tu', 'chon_goi_y') THEN 'khong_gian'
+    WHEN loai = 'xem_du_an' THEN 'du_an' WHEN loai = 'xem_trang' THEN 'trang' WHEN loai = 'bam_CTA' THEN 'lien_ket'
+    WHEN loai = 'gui_form' THEN 'form' WHEN loai = 'tim_kiem' THEN 'tim_kiem' WHEN loai = 'chia_se' THEN 'bo_suu_tap'
+    WHEN loai = 'ap_dung_bo_loc' THEN 'bo_loc' WHEN loai = 'nhan_chatbot' THEN 'tro_ly'
+    WHEN loai IN ('phong_to_anh', 'chuyen_anh') THEN 'anh_du_an' WHEN loai = 'bam_hotspot' THEN 'diem_nong' END
+ WHERE loai_doi_tuong IS NULL;
+CREATE INDEX IF NOT EXISTS su_kien_phien_luc ON su_kien (phien_id, created_at);
+CREATE INDEX IF NOT EXISTS su_kien_luc ON su_kien (created_at);
+-- seq-4 b8: a session left out of a day's figures; raw events stay so the decision can be checked
+CREATE TABLE IF NOT EXISTS phien_bat_thuong (
+  ngay date NOT NULL,
+  phien_id text NOT NULL REFERENCES phien_truy_cap(id) ON DELETE CASCADE,
+  ly_do text NOT NULL,
+  PRIMARY KEY (ngay, phien_id)
+);
+-- D10 analytics store (seq-4 b9-b11, dfd-2-5): daily facts over the taxonomy dimensions; no session id, no person
+CREATE TABLE IF NOT EXISTS tk_ngay (               -- one row per processed day (UTC+7 dates)
+  ngay date PRIMARY KEY,
+  xu_ly_luc timestamptz NOT NULL DEFAULT now(),
+  so_su_kien int NOT NULL DEFAULT 0,
+  so_phien int NOT NULL DEFAULT 0,
+  so_phien_bat_thuong int NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS tk_gia_tri_ngay (       -- per taxonomy value 'dimension:value'
+  ngay date NOT NULL, gia_tri text NOT NULL,
+  so_xem int NOT NULL DEFAULT 0, so_luu int NOT NULL DEFAULT 0, so_brief int NOT NULL DEFAULT 0,
+  so_phien int NOT NULL DEFAULT 0, tong_dung_ms bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, gia_tri)
+);
+CREATE TABLE IF NOT EXISTS tk_khong_gian_ngay (    -- per space
+  ngay date NOT NULL, space_id int NOT NULL REFERENCES space(id) ON DELETE CASCADE,
+  so_xem int NOT NULL DEFAULT 0, so_luu int NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, space_id)
+);
+CREATE TABLE IF NOT EXISTS tk_hanh_vi_ngay (       -- per behaviour event type and page / object ('' when none)
+  ngay date NOT NULL, loai text NOT NULL, trang text NOT NULL DEFAULT '', doi_tuong text NOT NULL DEFAULT '',
+  so_luot int NOT NULL DEFAULT 0, tong_dung_ms bigint NOT NULL DEFAULT 0, so_co_dung int NOT NULL DEFAULT 0,
+  tong_cuon double precision NOT NULL DEFAULT 0, so_co_cuon int NOT NULL DEFAULT 0,
+  PRIMARY KEY (ngay, loai, trang, doi_tuong)
+);
+CREATE TABLE IF NOT EXISTS tk_tong_ngay (          -- per day: briefs sent, leads by source
+  ngay date PRIMARY KEY, so_brief int NOT NULL DEFAULT 0, lead jsonb NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS tk_xu_huong (           -- seq-4 b11: interest score and trend per value, one set per run date
+  ngay_tinh date NOT NULL, gia_tri text NOT NULL,
+  tuan0 int NOT NULL, tb4 real NOT NULL, so_tin_hieu int NOT NULL, thay_doi int, xu_huong text,
+  PRIMARY KEY (ngay_tinh, gia_tri)
+);
+CREATE TABLE IF NOT EXISTS tk_nhom_chay (          -- act-3: one taste-group run per run date
+  ngay_tinh date PRIMARY KEY, so_phien int NOT NULL, du_du_lieu boolean NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tk_nhom_thi_hieu (
+  ngay_tinh date NOT NULL REFERENCES tk_nhom_chay(ngay_tinh) ON DELETE CASCADE, nhom int NOT NULL,
+  so_phien int NOT NULL, ty_le real NOT NULL, gia_tri text[] NOT NULL, moi boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (ngay_tinh, nhom)
+);
+-- act-3 "Điều chỉnh gợi ý trên trang chủ": leadership prioritises or hides a value on the homepage section
+CREATE TABLE IF NOT EXISTS goi_y_trang_chu (
+  gia_tri text PRIMARY KEY CHECK (gia_tri ~ '^[a-z0-9_]+:[A-Za-z0-9_]+$'),
+  che_do text NOT NULL CHECK (che_do IN ('uu_tien', 'an')),
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL,
+  luc timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS goi_y_trang_chu_nhat_ky (
+  id serial PRIMARY KEY, gia_tri text NOT NULL, che_do_cu text, che_do_moi text NOT NULL,
+  nguoi_id int REFERENCES app_user(id) ON DELETE SET NULL, luc timestamptz NOT NULL DEFAULT now()
+);
+-- act-7 "Gửi yêu cầu xóa dữ liệu cá nhân": only the counts and the time are kept
+CREATE TABLE IF NOT EXISTS yeu_cau_xoa_du_lieu (
+  id serial PRIMARY KEY, luc timestamptz NOT NULL DEFAULT now(), so_phien int NOT NULL, so_su_kien int NOT NULL
+);
+
+-- ── publishing-workflow (seq-6, act-1, class-6 Anh / DuAn / VectorMoTa) ─────────────────────────────────────────────
+-- review_status also takes 'editing' ("Chờ biên tập", seq-6 b2): draft -> editing -> in_review -> approved -> cleared -> published
+ALTER TABLE space ADD COLUMN IF NOT EXISTS ngay_xuat_ban timestamptz;      -- seq-6 b17
+ALTER TABLE space ADD COLUMN IF NOT EXISTS kich_thuoc jsonb;               -- act-1: {"480": "_kt/480/<path>.webp", ...}
+ALTER TABLE space ADD COLUMN IF NOT EXISTS chieu_rong int;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS chieu_cao int;
+ALTER TABLE space_text ADD COLUMN IF NOT EXISTS mo_hinh text;              -- class-6 VectorMoTa.ten_mo_hinh
+UPDATE space s SET ngay_xuat_ban = (SELECT max(r.at) FROM review_log r WHERE r.space_id = s.id AND r.action = 'advance'
+                                     AND r.detail->>'to' = 'published')
+ WHERE s.review_status = 'published' AND s.ngay_xuat_ban IS NULL;
+
+-- ── visitor-touchpoints (seq-13, BFD 2.3, seq-9, act-4, seq-5/seq-7 SMS) ───────────────────────────────────────────
+-- BFD 2.3: a shared snapshot of a saved collection ('chia_se'): read-only, a share code, no owner needed
+ALTER TABLE bo_suu_tap DROP CONSTRAINT IF EXISTS bo_suu_tap_loai_check;
+ALTER TABLE bo_suu_tap ADD CONSTRAINT bo_suu_tap_loai_check CHECK (loai IN ('dang_luu', 'da_gui', 'chia_se'));
+ALTER TABLE bo_suu_tap DROP CONSTRAINT IF EXISTS bo_suu_tap_check;
+ALTER TABLE bo_suu_tap ADD CONSTRAINT bo_suu_tap_check CHECK ((loai IN ('da_gui', 'chia_se')) = (ma_chia_se IS NOT NULL));
+ALTER TABLE bo_suu_tap DROP CONSTRAINT IF EXISTS bo_suu_tap_check1;
+ALTER TABLE bo_suu_tap ADD CONSTRAINT bo_suu_tap_check1 CHECK (loai IN ('da_gui', 'chia_se') OR nguoi_dung_id IS NOT NULL);
+-- act-4: a chat lead outside working hours is announced to the team when the next working period starts
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS thong_bao_luc timestamptz;
+ALTER TABLE lead ADD COLUMN IF NOT EXISTS da_thong_bao boolean NOT NULL DEFAULT true;  -- existing leads were notified
+-- seq-5 b11 / seq-7 b9: every SMS attempt, the number masked
+CREATE TABLE IF NOT EXISTS tin_nhan_sms (
+  id serial PRIMARY KEY,
+  lead_id int REFERENCES lead(id) ON DELETE SET NULL,
+  so_che text NOT NULL,
+  noi_dung text NOT NULL,
+  trang_thai text NOT NULL CHECK (trang_thai IN ('da_gui', 'chua_cau_hinh', 'loi')),
+  loi text,
+  luc timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── admin-tools (seq-14, seq-15, class-6) ──────────────────────────────────────────────────────────────────────────
+ALTER TABLE mon_do ADD COLUMN IF NOT EXISTS khoang_gia text CHECK (length(khoang_gia) <= 60);       -- class-6 MonDo
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS ho_ten text CHECK (length(ho_ten) <= 100);            -- class-6 NguoiDung
+ALTER TABLE space ADD COLUMN IF NOT EXISTS mo_hinh_nhung text;                                      -- class-6 VectorAnh
+UPDATE space SET mo_hinh_nhung = 'hf-hub:timm/ViT-B-16-SigLIP2' WHERE embedding IS NOT NULL AND mo_hinh_nhung IS NULL;
+ALTER TABLE du_an ADD COLUMN IF NOT EXISTS du_an_bat_dong_san text CHECK (length(du_an_bat_dong_san) <= 120);
+ALTER TABLE du_an ADD COLUMN IF NOT EXISTS so_ngay_thi_cong int CHECK (so_ngay_thi_cong > 0);
+UPDATE du_an SET so_ngay_thi_cong = substring(thoi_gian_thi_cong FROM '^\s*(\d+)\s*ngày')::int
+ WHERE so_ngay_thi_cong IS NULL AND thoi_gian_thi_cong ~ '^\s*\d+\s*ngày';

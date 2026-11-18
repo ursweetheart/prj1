@@ -42,6 +42,7 @@
             {{ hits.length }} không gian {{ photoUrl ? 'giống ảnh của bạn' : `gần với “${lastQuery}”` }}
           </p>
         </div>
+        <SearchNote v-if="hits && !searchError" />
         <div v-if="hits && hits.length" class="projects-grid">
           <SpaceTile v-for="s in hits" :key="s.id" :space="s" />
         </div>
@@ -117,6 +118,7 @@ import { useBrowse } from '@/composables/useBrowse'
 import { usePortfolio } from '@/composables/usePortfolio'
 import FacetPanel from '@/components/FacetPanel.vue'
 import SpaceTile from '@/components/SpaceTile.vue'
+import SearchNote from '@/components/SearchNote.vue'
 import { searchByImage, searchSpaces, toCard } from '@/api'
 import { takePendingPhoto } from '@/lib/projectSpaces'
 

@@ -13,7 +13,7 @@ from psycopg.rows import tuple_row
 from pipeline.taxonomy import fold
 
 MAX_POINTS = 30
-FIELDS = ("ten", "phan_loai", "kieu_dang", "vat_lieu", "mau_sac", "nha_cung_cap", "ghi_chu")
+FIELDS = ("ten", "phan_loai", "kieu_dang", "vat_lieu", "mau_sac", "nha_cung_cap", "khoang_gia", "ghi_chu")  # khoang_gia: staff only
 PUBLIC = ("id", "ten", "phan_loai")
 USED = ("SELECT count(DISTINCT s.id) FROM space s, jsonb_array_elements(COALESCE(s.hotspots->'objects', '[]')) o "
         "WHERE o->>'mon_do_id' = %s::text")
@@ -176,6 +176,10 @@ def validate_hotspots(conn, current: dict | None, edited: list) -> dict:
                 raise Invalid(i, "điểm gốc không tồn tại")
             o = {**objs[idx]}
             o.setdefault("nguon_tao", "ai")
+        elif p.get("goi_y_ai"):  # admin-tools (seq-14 b6-b9): an on-demand detector suggestion the editor accepted
+            g = p["goi_y_ai"]
+            o = {"nguon_tao": "ai", "nguon_ai": "yolo_theo_yeu_cau", "label": g["label"], "confidence": g["confidence"],
+                 "bbox": g["bbox"]}
         else:
             o = {"nguon_tao": "thu_cong"}
         o.update({"hotspot_anchor": [round(float(x), 4), round(float(y), 4)], "label_vi": name, "mon_do_id": item})

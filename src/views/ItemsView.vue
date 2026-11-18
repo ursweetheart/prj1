@@ -21,7 +21,7 @@
     <div v-else class="it-list" role="table" aria-label="Món đồ">
       <div class="it-head" role="row">
         <span role="columnheader">Tên</span><span role="columnheader">Loại</span><span role="columnheader">Vật liệu</span>
-        <span role="columnheader">Màu</span><span role="columnheader">Nhà cung cấp</span><span role="columnheader">Dịch vụ</span><span role="columnheader">Số ảnh</span>
+        <span role="columnheader">Màu</span><span role="columnheader">Nhà cung cấp</span><span role="columnheader">Khoảng giá</span><span role="columnheader">Dịch vụ</span><span role="columnheader">Số ảnh</span>
         <span role="columnheader"><span class="sr-only">Thao tác</span></span>
       </div>
       <div v-for="it in shown" :key="it.id" class="it-row" role="row">
@@ -30,6 +30,7 @@
         <span role="cell"><span class="it-k">Vật liệu</span>{{ it.vat_lieu || '–' }}</span>
         <span role="cell"><span class="it-k">Màu</span>{{ it.mau_sac || '–' }}</span>
         <span role="cell"><span class="it-k">Nhà cung cấp</span>{{ it.nha_cung_cap || '–' }}</span>
+        <span role="cell"><span class="it-k">Khoảng giá</span>{{ it.khoang_gia || '–' }}</span>
         <span role="cell"><span class="it-k">Dịch vụ</span>{{ it.dich_vu || '–' }}</span>
         <span role="cell" class="num"><span class="it-k">Số ảnh</span>{{ it.so_anh }}</span>
         <span role="cell" class="it-act">
@@ -75,7 +76,8 @@ import ServicePicker from '@/components/ServicePicker.vue'
 const FIELDS = [
   { k: 'ten', t: 'Tên', max: 120 }, { k: 'phan_loai', t: 'Loại', max: 60 }, { k: 'kieu_dang', t: 'Kiểu dáng', max: 60 },
   { k: 'vat_lieu', t: 'Vật liệu', max: 60 }, { k: 'mau_sac', t: 'Màu', max: 40 },
-  { k: 'nha_cung_cap', t: 'Nhà cung cấp (nội bộ)', max: 120 }, { k: 'ghi_chu', t: 'Ghi chú (nội bộ)', max: 500 }
+  { k: 'nha_cung_cap', t: 'Nhà cung cấp (nội bộ)', max: 120 }, { k: 'khoang_gia', t: 'Khoảng giá (nội bộ)', max: 60 },
+  { k: 'ghi_chu', t: 'Ghi chú (nội bộ)', max: 500 }
 ]
 const rows = ref(null)
 const q = ref('')
@@ -152,7 +154,7 @@ load()
 .it-inuse { grid-column: 1 / -1; display: grid; gap: 6px; padding: 10px; border: 1px solid var(--danger); border-radius: var(--radius-sm) }
 .it-photos { margin: 0; padding-left: 18px; font-size: 13px }
 @media (min-width: 760px) {
-  .it-head, .it-row { grid-template-columns: minmax(0, 2fr) 1fr 1fr .8fr 1.2fr 1.4fr .6fr auto; align-items: center }
+  .it-head, .it-row { grid-template-columns: minmax(0, 2fr) 1fr 1fr .8fr 1.2fr 1fr 1.4fr .6fr auto; align-items: center }
   .it-head { display: grid; gap: 14px; padding: 0 14px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint) }
   .it-name, .it-act { grid-column: auto }
   .it-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }

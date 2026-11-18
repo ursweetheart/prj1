@@ -13,7 +13,9 @@ def _draft_id(h):
 def _reset(sid):
     with psycopg.connect(DSN) as c:
         c.execute("DELETE FROM review_log WHERE space_id=%s", (sid,))
-        c.execute("UPDATE space SET review_status='draft' WHERE id=%s", (sid,))
+        c.execute("UPDATE space SET review_status='draft', ngay_xuat_ban=NULL WHERE id=%s", (sid,))
+        c.execute("DELETE FROM space_text WHERE space_id=%s", (sid,))
+        c.execute("DELETE FROM hang_doi_tac_vu WHERE loai='nap_tri_thuc' AND du_lieu->>'space_id' = %s", (str(sid),))
 
 
 def test_register_login_me_and_bad_credentials():
@@ -54,10 +56,10 @@ def test_anonymous_and_visitor_see_only_published(as_role):
             listed = client.get("/spaces", params={"limit": 200}, headers=h).json()
             assert all(r["review_status"] == "published" for r in listed)
             assert client.get("/spaces", params={"review_status": "draft"}, headers=h).json() == []
-            hits = client.get("/search", params={"q": "phòng khách", "k": 24}, headers=h).json()
+            hits = client.get("/search", params={"q": "phòng khách", "k": 24}, headers=h).json()["ket_qua"]
             assert sid not in [x["id"] for x in hits]
         assert client.get(f"/spaces/{sid}", headers=as_role("architect")).status_code == 200
-        for _ in range(4):  # draft -> in_review -> approved -> cleared -> published
+        for _ in range(5):  # draft -> editing -> in_review -> approved -> cleared -> published
             client.patch(f"/spaces/{sid}", json={"advance": True, "rights_confirmed": True}, headers=admin)
         assert client.get(f"/spaces/{sid}").status_code == 200  # published -> public
     finally:
@@ -66,7 +68,7 @@ def test_anonymous_and_visitor_see_only_published(as_role):
 
 def test_write_endpoints_by_role(as_role):
     sid = _draft_id(as_role("admin"))
-    png = {"file": ("a.png", b"x", "image/png")}
+    png = [("files", ("a.png", b"x", "image/png"))]
     try:
         # ingest + edit: anonymous 401, non-architect roles 403
         assert client.post("/spaces/ingest", files=png).status_code == 401
@@ -75,10 +77,11 @@ def test_write_endpoints_by_role(as_role):
             h = as_role(role)
             assert client.post("/spaces/ingest", files=png, headers=h).status_code == 403
             assert client.patch(f"/spaces/{sid}", json={"design_style": "Japandi"}, headers=h).status_code == 403
-        # architect: may edit and send draft -> in_review, may not approve
+        # architect: may edit and send draft -> editing, may not send on to review or approve (publishing-workflow)
         arch = as_role("architect")
-        assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=arch).json()["review_status"] == "in_review"
+        assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=arch).json()["review_status"] == "editing"
         assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=arch).status_code == 403
+        assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=as_role("content")).json()["review_status"] == "in_review"
         # lead architect approves, clears (with the rights confirmation) and publishes
         lead = as_role("lead_architect")
         assert client.patch(f"/spaces/{sid}", json={"advance": True}, headers=lead).json()["review_status"] == "approved"
@@ -108,7 +111,7 @@ def test_audit_log_records_who_and_what(as_role):
         with psycopg.connect(DSN) as c:
             rows = c.execute("SELECT action, detail FROM review_log WHERE space_id=%s AND user_id=%s ORDER BY id", (sid, uid)).fetchall()
         assert [r[0] for r in rows] == ["edit", "advance"]
-        assert rows[0][1]["to"]["design_style"] == style and rows[1][1] == {"from": "draft", "to": "in_review"}
+        assert rows[0][1]["to"]["design_style"] == style and rows[1][1] == {"from": "draft", "to": "editing"}
     finally:
         _reset(sid)
         with psycopg.connect(DSN) as c:

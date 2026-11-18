@@ -75,3 +75,27 @@ def test_folder_route_also_returns_matched_spaces_with_their_site_file(project):
     """The site asks by folder (slug with '_'); spaces stored under another folder come with anh_trang."""
     rows = client.get("/projects/zzt_api/spaces").json()
     assert sorted((r["anh_trang"], r["du_an_slug"]) for r in rows) == [("01.jpg", SLUG), ("03.jpg", SLUG)]
+
+
+# ── admin-tools 5.3: class-6 DuAn attributes ─────────────────────────────────────────────────────────────────────
+def test_new_details_and_derived_state(project, as_role):
+    lead = as_role("lead_architect")
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE space SET ngay_xuat_ban = CASE WHEN anh_trang = '01.jpg' THEN timestamptz '2026-11-12 10:00+07' ELSE timestamptz '2026-11-18 10:00+07' END "
+                  "WHERE id = ANY(%s) AND review_status = 'published'", (project,))
+    r = client.put(f"/projects/{SLUG}", json={"so_ngay_thi_cong": 90, "du_an_bat_dong_san": "Vinhomes Ocean Park"}, headers=lead)
+    assert r.status_code == 200
+    p = client.get(f"/projects/{SLUG}").json()
+    assert (p["so_ngay_thi_cong"], p["du_an_bat_dong_san"]) == (90, "Vinhomes Ocean Park")
+    assert (p["trang_thai"], p["da_xac_nhan_quyen_cong_bo"]) == ("da_xuat_ban", True) and p["ngay_xuat_ban"].startswith("2026-11-1")
+    assert p["ngay_xuat_ban"][:10] == "2026-11-12"  # the earliest publish date
+    listed = _row(client.get("/projects").json())
+    assert listed["trang_thai"] == "da_xuat_ban"
+    assert client.put(f"/projects/{SLUG}", json={"so_ngay_thi_cong": 0}, headers=lead).status_code == 422
+
+
+def test_unpublished_project_state(project, as_role):
+    with psycopg.connect(DSN) as c:
+        c.execute("UPDATE space SET review_status = 'draft' WHERE id = ANY(%s)", (project,))
+    p = client.get(f"/projects/{SLUG}", headers=as_role("architect")).json()
+    assert (p["trang_thai"], p["da_xac_nhan_quyen_cong_bo"], p["ngay_xuat_ban"]) == ("chua_xuat_ban", False, None)

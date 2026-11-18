@@ -43,7 +43,7 @@ def test_similar_same_type_excludes_self(as_role):
 
 def test_text_search_vietnamese(as_role):
     h = as_role("admin")
-    hits = client.get("/search", params={"q": "phòng ngủ ấm áp tông gỗ", "space_type": "phong_ngu_master"}, headers=h).json()
+    hits = client.get("/search", params={"q": "phòng ngủ ấm áp tông gỗ", "space_type": "phong_ngu_master"}, headers=h).json()["ket_qua"]
     assert hits and all(x["space_type"] == "phong_ngu_master" for x in hits)
     assert client.get("/search", params={"q": "x", "space_type": "bogus"}, headers=h).status_code == 422
 
@@ -54,7 +54,7 @@ def test_review_flow_and_validation(as_role):
     orig = client.get(f"/spaces/{sid}", headers=h).json()["design_style"]
     try:
         r = client.patch(f"/spaces/{sid}", json={"advance": True, "design_style": "Japandi"}, headers=h).json()
-        assert r["review_status"] == "in_review" and r["design_style"] == "Japandi"
+        assert r["review_status"] == "editing" and r["design_style"] == "Japandi"
         assert client.patch(f"/spaces/{sid}", json={"design_style": "nope"}, headers=h).status_code == 422
     finally:  # leave the data as found
         with psycopg.connect(DSN) as c:
@@ -69,9 +69,11 @@ def test_project_folder_is_path_safe():
     assert project_folder("  ") == ""             # -> uploads/
 
 
-def test_ingest_rejects_non_image(as_role):
-    r = client.post("/spaces/ingest", files={"file": ("notes.txt", b"hello", "text/plain")}, headers=as_role("architect"))
-    assert r.status_code == 415
+def test_ingest_refuses_a_non_image_alone(as_role):
+    # labelling-queue-feedback: a bad file is refused on its own, nothing is queued for it
+    r = client.post("/spaces/ingest", files=[("files", ("notes.txt", b"hello", "text/plain"))], headers=as_role("architect"))
+    assert r.status_code == 202
+    assert r.json() == {"tasks": [], "refused": [{"name": "notes.txt", "ly_do": "Chỉ nhận ảnh JPG, PNG hoặc WEBP."}]}
 
 
 
@@ -80,7 +82,7 @@ from pathlib import Path
 
 import api
 
-HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id"}
+HIT_KEYS = {"relative_path", "space_type", "design_style", "score", "id", "kich_thuoc", "chieu_rong", "ly_do"}  # + the optimised copies (publishing-workflow)
 
 
 def _first(where="TRUE"):
@@ -99,8 +101,9 @@ def test_photo_search_staff_gets_hits_and_nothing_is_stored(as_role):
     with psycopg.connect(DSN) as c:
         before = files(), c.execute("SELECT count(*) FROM space").fetchone()[0]
     r = _upload(Path("image_d3", path).read_bytes(), headers=h)
-    assert r.status_code == 200 and r.json() and all(set(x) == HIT_KEYS for x in r.json())
-    assert r.json()[0]["score"] >= 0.99  # the photo itself, or a stored duplicate tied with it
+    hits = r.json()["ket_qua"]  # search-explanations: {noi_that, dac_diem, ket_qua}
+    assert r.status_code == 200 and r.json()["noi_that"] is True and hits and all(set(x) == HIT_KEYS for x in hits)
+    assert hits[0]["score"] >= 0.99  # the photo itself, or a stored duplicate tied with it
     with psycopg.connect(DSN) as c:
         assert (files(), c.execute("SELECT count(*) FROM space").fetchone()[0]) == before
 
@@ -110,7 +113,7 @@ def test_photo_search_visitor_sees_only_published(drafts):
     with psycopg.connect(DSN) as c:
         c.execute("UPDATE space SET review_status='published' WHERE id=%s", (sid,))
         path = c.execute("SELECT relative_path FROM space WHERE id=%s", (sid,)).fetchone()[0]
-    hits = _upload(Path("image_d3", path).read_bytes()).json()
+    hits = _upload(Path("image_d3", path).read_bytes()).json()["ket_qua"]
     assert sid in [x["id"] for x in hits]
     with psycopg.connect(DSN) as c:
         status = c.execute("SELECT DISTINCT review_status FROM space WHERE id = ANY(%s)", ([x["id"] for x in hits],)).fetchall()

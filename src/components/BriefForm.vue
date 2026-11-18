@@ -106,7 +106,7 @@ const BUDGETS = [{ v: 'chua_ro', t: 'Chưa rõ' }, { v: 'duoi_300tr', t: 'Dướ
 const uid = 'bf' + useId()
 const route = useRoute()
 const router = useRouter()
-const consented = consent.get() === 'yes'
+const consented = consent.analytics()
 const shownAt = Date.now()
 const f = reactive({ ho_ten: '', so_dien_thoai: '', email: '', loai_nha: '', dien_tich_m2: '', ngan_sach: 'chua_ro',
                      loi_nhan: '', gui_ho_so: false, website: '' })

@@ -206,6 +206,11 @@ def merge(conn, user, source_id, target_id) -> dict:
         raise Invalid(f"{src['chieu']} values are computed from the photo and cannot be merged")
     counts = usage(conn, source_id)
     col = MIRRORED.get(src["chieu"])
+    # seq-15 b20 (admin-tools): the photos whose index entries name the source value, refreshed by a queued task
+    affected = [r[0] if not isinstance(r, dict) else r["id"] for r in conn.execute(
+        "SELECT DISTINCT s.id FROM space s JOIN space_text t ON t.space_id = s.id WHERE s.id IN "
+        "(SELECT space_id FROM space_gia_tri WHERE gia_tri_id = %s)" + (f" OR s.{col} = %s" if col else ""),
+        (source_id, src["ma_dinh_danh"]) if col else (source_id,)).fetchall()]
     moved_cols = 0
     if col:  # the trigger re-tags these spaces with the target value
         moved_cols = conn.execute(f"UPDATE space SET {col} = %s WHERE {col} = %s",
@@ -217,4 +222,7 @@ def merge(conn, user, source_id, target_id) -> dict:
     conn.execute("DELETE FROM gia_tri_phan_loai WHERE id = %s", (source_id,))
     detail = {"nguon": src["ma_dinh_danh"], "dich": dst["ma_dinh_danh"], **counts, "cot_cap_nhat": moved_cols}
     _log(conn, user, "gop_gia_tri", f"{src['chieu']}:{src['ma_dinh_danh']}", {"ten": src["ten"]}, detail)
-    return {"merged_into": target_id, "affected": counts["so_khong_gian"], **detail}
+    if affected:  # committed with the merge, so the worker only sees it once the merge is done
+        from pipeline import intake, space_knowledge  # noqa: F401  (space_knowledge registers the handler)
+        intake.enqueue(conn, "cap_nhat_chi_muc", {"space_ids": affected}, user["id"] if user else None)
+    return {"merged_into": target_id, "affected": counts["so_khong_gian"], "so_anh_cap_nhat": len(affected), **detail}

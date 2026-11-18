@@ -8,7 +8,7 @@ import psycopg
 import pytest
 
 from conftest import client
-from pipeline import notify, weekly_report as wr
+from pipeline import notify, rollup, weekly_report as wr
 from pipeline.store import DSN
 
 VN = wr.VN
@@ -65,24 +65,35 @@ def activity():
                         (f"test_wr_{uuid.uuid4().hex[:8]}/x.jpg",)).fetchone()[0]
         pid = "t" + uuid.uuid4().hex
         c.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap) VALUES (%s, true)", (pid,))
-    leads = []
+    leads, days = [], set()
+
+    def day_of(at):
+        return at.astimezone(wr.VN).date()
 
     def events(loai, n, at):
+        """n events from `at` on, 2 s apart (a burst of 60 in one minute would be an abnormal session, seq-4 b8);
+        the day is then processed into the analytics store, which the report reads (tracking-pipeline)."""
         with psycopg.connect(DSN) as c:
-            for _ in range(n):
-                c.execute("INSERT INTO su_kien (phien_id, loai, space_id, created_at) VALUES (%s,%s,%s,%s)", (pid, loai, sid, at))
+            for i in range(n):
+                c.execute("INSERT INTO su_kien (phien_id, loai, space_id, created_at) VALUES (%s,%s,%s,%s)",
+                          (pid, loai, sid, at + timedelta(seconds=2 * i)))
+        days.update({day_of(at), day_of(at + timedelta(seconds=2 * n))})
+        rollup.run(days=sorted(days))
 
     def lead(at):
         with psycopg.connect(DSN) as c:
             leads.append(c.execute("INSERT INTO lead (nguon, ho_ten, so_dien_thoai, email, created_at, phien_id) VALUES "
                                    "('form', 'Nguyễn Văn Thử', '0912345678', 'thu@example.com', %s, %s) RETURNING id",
                                    (at, pid)).fetchone()[0])
+        days.add(day_of(at))
+        rollup.run(days=sorted(days))
 
     yield type("A", (), {"events": staticmethod(events), "lead": staticmethod(lead), "pid": pid})
     with psycopg.connect(DSN) as c:
         c.execute("DELETE FROM lead WHERE id = ANY(%s)", (leads,))
         c.execute("DELETE FROM phien_truy_cap WHERE id = %s", (pid,))
         c.execute("DELETE FROM space WHERE id = %s", (sid,))
+    rollup.run(days=sorted(days))  # the store forgets the test data too
 
 
 def _build(now):

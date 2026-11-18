@@ -73,3 +73,45 @@ def text_lines(dau_vao: dict, ket_qua: dict) -> list[str]:
     if ket_qua.get("mau"):
         lines.append(SAMPLE_NOTICE)
     return lines
+
+
+# ── seq-9 b6-b7 / act-6 (visitor-touchpoints): real projects in the same budget range ─────────────────────────────
+import re as _re
+
+from psycopg.rows import dict_row as _dict_row
+
+BUDGET_LABEL, FALLBACK_LABEL = "Dự án trong cùng khoảng ngân sách", "Cùng loại công trình (chưa có dữ liệu ngân sách)"
+MILLION = 1_000_000
+
+
+def budget_range(code: str | None) -> tuple[float, float] | None:
+    """'duoi_300tr' -> (0, 300e6), '300tr_700tr' -> (300e6, 700e6), 'tren_1500tr' -> (1500e6, inf); else None."""
+    if not code:
+        return None
+    if m := _re.fullmatch(r"duoi_(\d+)tr", code):
+        return 0.0, int(m[1]) * MILLION
+    if m := _re.fullmatch(r"(\d+)tr_(\d+)tr", code):
+        return int(m[1]) * MILLION, int(m[2]) * MILLION
+    if m := _re.fullmatch(r"tren_(\d+)tr", code):
+        return int(m[1]) * MILLION, float("inf")
+    return None
+
+
+def budget_projects(conn, loai_nha: str, tong: dict, k: int = 3) -> dict:
+    """Up to k published projects whose investment level overlaps [tong.min, tong.max], same building type first;
+    when none overlaps, published projects of the same type under the fallback label."""
+    from pipeline.project_filter import TYPE_TO_BUILDING
+    rows = conn.cursor(row_factory=_dict_row).execute("""
+        SELECT d.slug, d.ten, d.co_trang, d.loai, d.muc_dau_tu,
+               (array_agg(s.id ORDER BY s.anh_trang COLLATE "C" NULLS LAST, s.id))[1] AS anh_id,
+               (array_agg(s.relative_path ORDER BY s.anh_trang COLLATE "C" NULLS LAST, s.id))[1] AS anh_path
+          FROM du_an d JOIN space s ON s.du_an_slug = d.slug AND s.review_status = 'published'
+         GROUP BY d.slug ORDER BY d.thu_tu NULLS LAST, d.slug""").fetchall()
+    card = lambda r: {"slug": r["slug"], "ten": r["ten"], "co_trang": r["co_trang"],  # noqa: E731
+                      "anh": {"id": r["anh_id"], "relative_path": r["anh_path"]}}
+    same = lambda r: TYPE_TO_BUILDING.get(r["loai"]) == loai_nha  # noqa: E731
+    lo, hi = tong["min"], tong["max"]
+    fits = [r for r in rows if (b := budget_range(r["muc_dau_tu"])) and b[0] <= hi and lo <= b[1]]
+    if fits:
+        return {"nhan": BUDGET_LABEL, "ds": [card(r) for r in sorted(fits, key=lambda r: not same(r))[:k]]}
+    return {"nhan": FALLBACK_LABEL, "ds": [card(r) for r in rows if same(r)][:k]}

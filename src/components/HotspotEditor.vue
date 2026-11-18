@@ -5,6 +5,12 @@
     </p>
     <div ref="stage" class="he-stage" @pointerdown="onStagePointer">
       <img :src="src" alt="" draggable="false">
+      <!-- seq-14 b9: the detector's suggestions, dashed until accepted -->
+      <span v-for="g in suggestions" :key="'g' + g.key" class="he-sugg" aria-hidden="true"
+            :style="{ left: g.bbox.x_min * 100 + '%', top: g.bbox.y_min * 100 + '%',
+                      width: (g.bbox.x_max - g.bbox.x_min) * 100 + '%', height: (g.bbox.y_max - g.bbox.y_min) * 100 + '%' }">
+        <span class="he-sugg-label">{{ g.label_vi }} · {{ Math.round(g.confidence * 100) }}%</span>
+      </span>
       <button v-for="(p, i) in points" :key="p.key" :ref="el => (dotEls[i] = el)" type="button" class="he-dot"
               :class="{ 'is-sel': sel === i, 'is-hand': p.nguon_tao === 'thu_cong' }"
               :style="{ left: p.x * 100 + '%', top: p.y * 100 + '%' }"
@@ -15,7 +21,18 @@
 
     <div class="row g10 he-tools">
       <button type="button" class="btn btn-secondary" @click="addCentre">Thêm điểm</button>
+      <button type="button" class="btn btn-secondary" :disabled="detecting" :aria-busy="String(detecting)" @click="detect">
+        {{ detecting ? 'Đang nhận diện…' : 'AI gợi ý vật thể' }}</button>
       <span class="small">{{ points.length }}/{{ MAX }} điểm</span>
+    </div>
+    <div v-if="suggestions.length || detectMsg" class="he-suggs">
+      <p class="small" role="status" style="margin:0">{{ detectMsg }}</p>
+      <ul v-if="suggestions.length" class="he-sugg-list">
+        <li v-for="g in suggestions" :key="'l' + g.key">
+          <span>{{ g.label_vi }} <span class="small num">{{ Math.round(g.confidence * 100) }}%</span></span>
+          <button type="button" class="btn btn-ghost" @click="accept(g)">Thêm</button>
+        </li>
+      </ul>
     </div>
 
     <p v-if="!points.length" class="small">Chưa có điểm nào.</p>
@@ -60,6 +77,7 @@
             <label>Vật liệu<input v-model="creating.vat_lieu" class="txt" maxlength="60" :list="uid + '-mat'"></label>
             <label>Màu<input v-model="creating.mau_sac" class="txt" maxlength="40"></label>
             <label class="he-wide">Nhà cung cấp (chỉ nội bộ)<input v-model="creating.nha_cung_cap" class="txt" maxlength="120"></label>
+            <label>Khoảng giá (chỉ nội bộ)<input v-model="creating.khoang_gia" class="txt" maxlength="60" placeholder="vd: 12 – 18 triệu"></label>
             <ServicePicker :id="uid + '-dv'" v-model="creating.dich_vu_id" class="he-wide" :services="services" />
           </div>
           <p v-if="creating.error" class="field-err" role="alert">{{ creating.error }}</p>
@@ -84,7 +102,7 @@
 /* Gắn hotspot món đồ (seq-14; change hotspot-items) cho KTS: thêm, kéo, dời bằng phím, đặt tên, gắn món đồ trong thư viện.
    Khách chỉ thấy tên điểm; nhà cung cấp không bao giờ rời trang quản trị. */
 import { computed, nextTick, reactive, ref, useId } from 'vue'
-import { createItem, getTaxonomy, itemServices, saveHotspots, searchItems } from '@/api'
+import { createItem, detectObjects, getTaxonomy, itemServices, saveHotspots, searchItems } from '@/api'
 import ServicePicker from '@/components/ServicePicker.vue'
 
 const props = defineProps({
@@ -102,6 +120,28 @@ const points = ref(props.objects.map((o, index) => ({
   auto: o.label_vi || o.label || '', mon_do_id: o.mon_do_id ?? null, nguon_tao: o.nguon_tao || 'ai'
 })))
 const sel = ref(-1)
+
+/* seq-14 b6-b9 (admin-tools): ask the local detector; an accepted suggestion becomes an AI point with its confidence */
+const suggestions = ref([])
+const detecting = ref(false)
+const detectMsg = ref('')
+async function detect() {
+  detecting.value = true; detectMsg.value = ''
+  try {
+    const found = await detectObjects(props.spaceId)
+    suggestions.value = found.map(g => ({ ...g, key: seq++ }))
+    detectMsg.value = found.length ? `AI gợi ý ${found.length} vật thể. Bấm «Thêm» để tạo điểm.` : 'AI không thấy vật thể nào chưa được gắn.'
+  } catch (e) { detectMsg.value = 'Chưa nhận diện được: ' + e.message }
+  finally { detecting.value = false }
+}
+function accept(g) {
+  if (points.value.length >= MAX) { error.value = `Tối đa ${MAX} điểm.`; return }
+  points.value.push({ key: seq++, index: null, x: g.anchor[0], y: g.anchor[1], label_vi: g.label_vi, auto: g.label_vi,
+    mon_do_id: null, nguon_tao: 'ai', goi_y_ai: { label: g.label, confidence: g.confidence, bbox: g.bbox } })
+  suggestions.value = suggestions.value.filter(x => x !== g)
+  sel.value = points.value.length - 1
+  detectMsg.value = `Đã thêm «${g.label_vi}».`
+}
 const stage = ref(null)
 const dotEls = []
 const busy = ref(false)
@@ -196,17 +236,17 @@ function link(i, item) {
   if (!p.label_vi.trim() || p.label_vi === p.auto) p.label_vi = item.phan_loai || item.ten // never the supplier
   pick.open = false; pick.q = ''
 }
-const creating = reactive({ row: -1, ten: '', phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', dich_vu_id: null, error: '', busy: false })
+const creating = reactive({ row: -1, ten: '', phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', khoang_gia: '', dich_vu_id: null, error: '', busy: false })
 const services = ref([])
 itemServices().then(r => { services.value = r }).catch(() => {})
 function choose(i, o) {
   if (o.id) return link(i, o)
-  Object.assign(creating, { row: i, ten: o.ten, phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', dich_vu_id: null, error: '', busy: false })
+  Object.assign(creating, { row: i, ten: o.ten, phan_loai: '', kieu_dang: '', vat_lieu: '', mau_sac: '', nha_cung_cap: '', khoang_gia: '', dich_vu_id: null, error: '', busy: false })
   pick.open = false
 }
 async function createAndLink(i) {
   creating.busy = true; creating.error = ''
-  const body = Object.fromEntries(['ten', 'phan_loai', 'kieu_dang', 'vat_lieu', 'mau_sac', 'nha_cung_cap']
+  const body = Object.fromEntries(['ten', 'phan_loai', 'kieu_dang', 'vat_lieu', 'mau_sac', 'nha_cung_cap', 'khoang_gia']
     .map(k => [k, creating[k].trim() || null]).filter(([, v]) => v))
   if (creating.dich_vu_id) body.dich_vu_id = creating.dich_vu_id
   try {
@@ -222,7 +262,7 @@ async function save() {
   busy.value = true; error.value = ''
   for (const k of Object.keys(errors)) delete errors[k]
   const body = points.value.map(p => ({ ...(p.index !== null ? { index: p.index } : {}), x: p.x, y: p.y,
-    label_vi: p.label_vi.trim(), mon_do_id: p.mon_do_id }))
+    label_vi: p.label_vi.trim(), mon_do_id: p.mon_do_id, ...(p.goi_y_ai ? { goi_y_ai: p.goi_y_ai } : {}) }))
   const empty = body.findIndex(p => !p.label_vi)
   if (empty >= 0) { errors[empty] = 'Đặt tên cho điểm này.'; busy.value = false; return focusName(empty) }
   try {
@@ -274,4 +314,10 @@ async function save() {
 .he-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)) }
 .he-grid label { display: grid; gap: 4px; font-size: 12px; color: var(--dim) }
 .he-wide { grid-column: 1 / -1 }
+.he-sugg { position: absolute; border: 2px dashed var(--accent); border-radius: 4px; pointer-events: none }
+.he-sugg-label { position: absolute; left: 0; top: -22px; font-size: 11px; white-space: nowrap; padding: 1px 6px;
+                 background: var(--page); color: var(--ink); border-radius: 3px }
+.he-suggs { display: grid; gap: 6px; margin: 4px 0 8px }
+.he-sugg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px }
+.he-sugg-list li { display: flex; align-items: center; gap: 6px }
 </style>

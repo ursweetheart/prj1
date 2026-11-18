@@ -27,16 +27,38 @@ SNAPSHOT = ("SELECT s.id, COALESCE((SELECT array_agg(d.ma_dinh_danh || ':' || v.
             "WHERE sg.space_id = s.id), '{}'), s.design_style FROM space s WHERE s.review_status = 'published'")
 
 
-def remove(conn) -> int:
-    """Delete demo sessions (their events go with them: ON DELETE CASCADE)."""
-    return conn.execute("DELETE FROM phien_truy_cap WHERE id LIKE %s", (PREFIX + "%",)).rowcount
+def _demo_days(conn) -> set:
+    return {d for (d,) in conn.execute("SELECT DISTINCT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date FROM su_kien "
+                                       "WHERE phien_id LIKE %s", (PREFIX + "%",)).fetchall()}
+
+
+def _refresh(conn, days: set):
+    """tracking-pipeline: the dashboard reads the analytics store, so the touched days are reprocessed at once.
+    The rows must be committed first: the nightly job reads them over its own connection."""
+    from pipeline import rollup
+    conn.commit()
+    if days:
+        rollup.run(days=sorted(days))
+
+
+def remove(conn, refresh: bool = True) -> int:
+    """Delete demo sessions (their events go with them: ON DELETE CASCADE), then reprocess the days they were on."""
+    days = _demo_days(conn)
+    n = conn.execute("DELETE FROM phien_truy_cap WHERE id LIKE %s", (PREFIX + "%",)).rowcount
+    if refresh:
+        _refresh(conn, days)
+    return n
 
 
 def generate(conn, sessions: int = SESSIONS, seed: int = 42, now: datetime | None = None) -> dict:
     """Replace the demo activity. Returns what was made, including which style was made to rise."""
     rnd = random.Random(seed)
     now = now or datetime.now(timezone.utc)
-    remove(conn)
+    # the store's last day is yesterday (UTC+7): demo time ends at today's local midnight, so its rise is fully counted
+    local = now.astimezone(timezone(timedelta(hours=7)))
+    now = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    old_days = _demo_days(conn)
+    remove(conn, refresh=False)
     spaces = conn.execute(SNAPSHOT).fetchall()  # (id, tags, design_style) — tags exactly as /events snapshots them
     if not spaces:
         raise SystemExit("no published space: publish some first (/quan-tri)")
@@ -55,7 +77,8 @@ def generate(conn, sessions: int = SESSIONS, seed: int = 42, now: datetime | Non
         pull = RISING_PULL.get(week, BASE_PULL)
         taste = rising if rnd.random() < pull else rnd.choice(ranked)
         sid = PREFIX + uuid.UUID(int=rnd.getrandbits(128)).hex
-        conn.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap, created_at) VALUES (%s, true, %s)", (sid, start))
+        conn.execute("INSERT INTO phien_truy_cap (id, da_dong_y_thu_thap, created_at, bat_dau) VALUES (%s, true, %s, %s)",
+                     (sid, start, start))
         picks = [rnd.choice(by_style[taste]) if rnd.random() < 0.7 else rnd.choice(spaces) for _ in range(rnd.randint(3, 10))]
         rows = []
         for n, (space_id, tags, _) in enumerate(picks):
@@ -68,6 +91,7 @@ def generate(conn, sessions: int = SESSIONS, seed: int = 42, now: datetime | Non
         made_sessions += 1
         views += sum(r[1] == "xem_khong_gian" for r in rows)
         saves += sum(r[1] == "luu_anh" for r in rows)
+    _refresh(conn, old_days | _demo_days(conn))
     return {"sessions": made_sessions, "views": views, "saves": saves, "rising_style": rising}
 
 

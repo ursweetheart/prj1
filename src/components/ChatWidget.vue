@@ -89,14 +89,14 @@ const consented = ref(false)
 const input = ref(null)
 watch(open, o => {
   if (!o) return
-  consented.value = consent.get() === 'yes' // the banner may be answered meanwhile
+  consented.value = consent.analytics() // the banner may be answered meanwhile
   restore()
 })
 
 /* chat-history: the conversation id lives in localStorage with consent (restored on a later visit), otherwise in
    sessionStorage (this tab only, survives a reload). Holding the id is what opens the conversation. */
 const KEY = 'd3_hoi_thoai'
-const store = () => (consent.get() === 'yes' ? localStorage : sessionStorage)
+const store = () => (consent.analytics() ? localStorage : sessionStorage)
 const getId = () => { try { return store().getItem(KEY) || sessionStorage.getItem(KEY) } catch { return null } }
 function setId(id) {
   try {

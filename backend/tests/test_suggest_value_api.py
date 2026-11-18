@@ -32,9 +32,10 @@ def scratch():
 
 def _space(style="Hien_dai"):
     with psycopg.connect(DSN) as c:
-        return c.execute("INSERT INTO space (relative_path, space_type, design_style, review_status, caption) "
-                         "VALUES (%s, 'phong_khach', %s, 'draft', 'Phòng khách gỗ sáng') RETURNING id",
-                         (f"test_tsv_p/{uuid.uuid4().hex[:8]}.jpg", style)).fetchone()[0]
+        return c.execute("INSERT INTO space (relative_path, space_type, design_style, review_status, caption, "
+                         "space_type_ai, design_style_ai) VALUES (%s, 'phong_khach', %s, 'draft', 'Phòng khách gỗ sáng', "
+                         "'phong_khach', %s) RETURNING id",
+                         (f"test_tsv_p/{uuid.uuid4().hex[:8]}.jpg", style, style)).fetchone()[0]
 
 
 @pytest.fixture
@@ -178,6 +179,9 @@ def test_accept_creates_value_and_moves_waiting_photos(scratch, as_role, gemini)
     assert _q("SELECT hanh_dong FROM nhat_ky_phan_loai WHERE doi_tuong LIKE %s", f"%{code}")[0][0] == "them_gia_tri"
     assert _q("SELECT trang_thai FROM ung_vien_phan_loai WHERE id=%s", cid)[0][0] == "chap_nhan"
     assert code in taxonomy.values("phong_cach")  # the autocomplete and the AI see it straight away
+    # labelling-queue-feedback 4.1: the correction of the moved photo now names the accepted value
+    assert _q("SELECT ai_gia_tri, gia_tri_dung FROM nhan_bi_sua WHERE space_id=%s AND chieu='phong_cach'", a) == \
+        [("Hien_dai", code)]
     assert _dec(cid, "reject", lead).status_code == 409  # decided once
 
 
