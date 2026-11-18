@@ -421,3 +421,38 @@ ALTER TABLE tin_nhan ADD COLUMN IF NOT EXISTS chu_de_cam jsonb;  -- {id, ten, o:
 
 -- Item -> service package (same change; roadmap 1.9): the visitor's hotspot card shows it, over the label mapping.
 ALTER TABLE mon_do ADD COLUMN IF NOT EXISTS dich_vu_id int REFERENCES kb_chunk(id) ON DELETE SET NULL;
+
+-- review-tag-autocomplete: a reviewer's suggested new value (loai = 'gia_tri') waits here with the photos set to "Other"
+-- until an approver decides. bang_chung = {chieu, khoa (folded text), space_ids, nguoi_de_xuat, mo_ta, tu_dong_nghia, ai}.
+-- One undecided suggestion per dimension and folded word, so two reviewers typing the same word share it.
+CREATE UNIQUE INDEX IF NOT EXISTS ung_vien_gia_tri_mot_tu ON ung_vien_phan_loai ((bang_chung->>'chieu'), (bang_chung->>'khoa'))
+  WHERE loai = 'gia_tri' AND trang_thai = 'cho_duyet';
+
+-- project-catalog (roadmap 0.1): one record per project, shared by the site, the AI backend and the dashboards.
+-- Site fields (ten..co_trang) come from src/data/projects.js via sync_projects.py; the details are staff-entered.
+CREATE TABLE IF NOT EXISTS du_an (
+  slug text PRIMARY KEY CHECK (slug ~ '^[a-z0-9-]{1,60}$'),
+  ten text NOT NULL,
+  loai text,
+  nam int,
+  mo_ta_ngan text,
+  thu_tu int,                       -- position in the site's list; NULL = folder-only project
+  co_trang boolean NOT NULL DEFAULT false,  -- has a /du-an/<slug> page
+  dien_tich_m2 numeric CHECK (dien_tich_m2 > 0),
+  so_phong_ngu int CHECK (so_phong_ngu > 0),
+  thoi_gian_thi_cong text CHECK (length(thoi_gian_thi_cong) <= 80),
+  muc_dau_tu text,                  -- a muc_dau_tu taxonomy value
+  thuyet_minh text CHECK (length(thuyet_minh) <= 4000),
+  cap_nhat_luc timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS nhat_ky_du_an (
+  id serial PRIMARY KEY,
+  du_an_slug text REFERENCES du_an(slug) ON UPDATE CASCADE ON DELETE CASCADE,
+  user_id int REFERENCES app_user(id) ON DELETE SET NULL,  -- NULL = the sync
+  hanh_dong text NOT NULL,          -- lien_ket | sua | nhung (site-photo embedding cache)
+  chi_tiet jsonb,
+  luc timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE space ADD COLUMN IF NOT EXISTS du_an_slug text REFERENCES du_an(slug) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE space ADD COLUMN IF NOT EXISTS anh_trang text;  -- the site file it matches, e.g. 02.jpg
+CREATE INDEX IF NOT EXISTS space_du_an ON space (du_an_slug);

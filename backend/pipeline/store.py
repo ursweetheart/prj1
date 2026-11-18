@@ -3,6 +3,8 @@
 import os
 import psycopg
 from pgvector.psycopg import register_vector
+
+from pipeline import projects
 from pipeline.schemas import SpaceRecord
 
 DSN = os.getenv("D3_DSN", "postgresql://d3:d3@localhost:5432/d3")
@@ -32,4 +34,7 @@ def save_records(records: list[SpaceRecord]) -> int:
                 r.color_analysis.model_dump_json(), r.furniture_detection.model_dump_json(),
                 r.embedding,
             ))
+            folder = r.relative_path.split("/", 1)[0]  # project-catalog: a new photo joins its folder's project
+            conn.execute("UPDATE space SET du_an_slug = %s WHERE relative_path = %s AND du_an_slug IS NULL",
+                         (projects.project_for_folder(conn, folder), r.relative_path))
     return len(records)

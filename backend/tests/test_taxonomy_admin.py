@@ -195,3 +195,23 @@ def test_merge_endpoint_cross_dimension_422(scratch, as_role):
     b = client.post(f"/taxonomy/{vl}/values", json={"ten": "Tqa B"}, headers=boss).json()
     r = client.post(f"/taxonomy/values/{a['id']}/merge", json={"target_id": b["id"]}, headers=boss)
     assert r.status_code == 422 and "same dimension" in r.json()["detail"]
+
+
+# ── classifier-reads-taxonomy 3.1: room type / style are checked against the stored values ──
+def test_staff_can_set_a_style_added_by_hand(scratch, as_role):
+    lead = as_role("lead_architect")
+    v = client.post(f"/taxonomy/{_dim_id('phong_cach')}/values", json={"ten": "Tqa Mid century"}, headers=lead).json()
+    sid = _space(style="Hien_dai", status="draft")
+    r = client.patch(f"/spaces/{sid}", json={"design_style": v["ma_dinh_danh"]}, headers=as_role("architect"))
+    assert r.status_code == 200, r.text
+    assert f"phong_cach:{v['ma_dinh_danh']}" in _tags(sid)
+
+
+def test_unknown_style_or_room_is_422_and_changes_nothing(scratch, as_role):
+    h = as_role("architect")
+    sid = _space(style="Hien_dai", status="draft")
+    r = client.patch(f"/spaces/{sid}", json={"design_style": "Tqa_khong_co"}, headers=h)
+    assert r.status_code == 422 and "Hien_dai" in r.text
+    assert client.patch(f"/spaces/{sid}", json={"space_type": "tqa_garage"}, headers=h).status_code == 422
+    assert client.get("/search", params={"q": "x", "space_type": "tqa_garage"}).status_code == 422
+    assert _q("SELECT design_style, space_type FROM space WHERE id=%s", sid)[0] == ("Hien_dai", "phong_khach")

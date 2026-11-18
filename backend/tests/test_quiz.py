@@ -213,3 +213,27 @@ def test_saved_result_per_account(spaces, as_role):
         conn.execute("UPDATE space SET review_status='draft' WHERE id=%s", (extra_b,))
     assert extra_b not in [t["id"] for t in client.get("/quiz/me", headers=me).json()["goi_y"]]
     assert client.put("/quiz/me", json={**first, "chon": [a, 99999999]}, headers=me).status_code == 422
+
+
+# ── project-catalog 4.3: projects in the result ────────────────────────────────────────────────────────────────
+def test_suggested_projects_ranked_by_matching_photos_then_closeness(spaces):
+    chosen = spaces("Tq_p", 1, vec=_vec(1.0, 0.0))
+    a1, a2 = spaces("Tq_p", 2, vec=_vec(0.0, 1.0))             # project A: two matching photos, both far
+    b1 = spaces("Tq_q", 1, vec=_vec(0.99, 0.01))[0]           # project B: one matching photo, very close
+    b_draft = spaces("Tq_p", 1, vec=_vec(1.0, 0.0), status="draft")[0]
+    c_other = spaces("Tq_other", 3, vec=_vec(1.0, 0.0))       # project C: other style only
+    with psycopg.connect(DSN) as c:
+        for slug in ("zzt-qa", "zzt-qb", "zzt-qc"):
+            c.execute("INSERT INTO du_an (slug, ten, co_trang) VALUES (%s, %s, true)", (slug, slug.upper()))
+        for slug, ids in (("zzt-qa", [a1, a2]), ("zzt-qb", [b1, b_draft]), ("zzt-qc", c_other)):
+            c.execute("UPDATE space SET du_an_slug = %s WHERE id = ANY(%s)", (slug, ids))
+    try:
+        with psycopg.connect(DSN) as conn:
+            got = quiz.suggest_projects(conn, chosen, ["Tq_p", "Tq_q"])
+            assert [(p["slug"], p["phong_cach"], p["anh"]["id"]) for p in got] == [("zzt-qa", "Tq_p", a1), ("zzt-qb", "Tq_q", b1)]
+            assert got[0]["ten"] == "ZZT-QA" and got[0]["co_trang"] is True
+            assert quiz.suggest_projects(conn, chosen, ["Tq_none"]) == []
+    finally:
+        with psycopg.connect(DSN) as c:
+            c.execute("UPDATE space SET du_an_slug = NULL WHERE du_an_slug LIKE 'zzt-q%'")
+            c.execute("DELETE FROM du_an WHERE slug LIKE 'zzt-q%'")

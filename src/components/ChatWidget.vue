@@ -10,7 +10,22 @@
         <p v-if="!turns.length" class="small">Hỏi về giá, quy trình, thời gian thi công hoặc đặt lịch tư vấn.</p>
         <div v-for="(t, i) in turns" :key="i" class="chat-turn" :class="t.role">
           <p>{{ t.content }}</p>
-          <div v-if="t.images?.length" class="row g6" style="margin-top:8px;flex-wrap:wrap">
+          <!-- assistant-project-results: example projects, best match first -->
+          <ul v-if="t.projects?.length" class="chat-projects">
+            <li v-for="pr in t.projects" :key="pr.slug">
+              <router-link :to="projectLink(pr)" class="chat-project" @click="open = false"
+                           :aria-label="'Dự án ' + projectName(pr) + (pr.khop.length ? ', khớp ' + pr.khop.map(k => k.ten).join(', ') : '')">
+                <span class="chat-project-imgs">
+                  <img v-for="a in pr.anh" :key="a.id" :src="imageUrl(a.relative_path)" alt="" loading="lazy">
+                </span>
+                <span class="chat-project-text">
+                  <strong>{{ projectName(pr) }}</strong>
+                  <span v-if="pr.khop.length" class="small">{{ pr.khop.map(k => k.ten).join(' · ') }}</span>
+                </span>
+              </router-link>
+            </li>
+          </ul>
+          <div v-else-if="t.images?.length" class="row g6" style="margin-top:8px;flex-wrap:wrap">
             <router-link v-for="im in t.images" :key="im.id" :to="'/khong-gian/' + im.id" @click="open = false">
               <img :src="imageUrl(im.relative_path)" alt="Dự án gợi ý" loading="lazy"
                    style="width:84px;height:64px;object-fit:cover;border-radius:var(--radius-sm)">
@@ -52,6 +67,16 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue'
 import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
+import { fileOf, folderOf } from '@/lib/projectSpaces'
+
+/* a card opens the project page on its best photo when the project has a page and the photo is one of the page's
+   (anh_trang; or the slug's own folder), else that photo's space page. Names come from the catalog (project-catalog). */
+const projectName = pr => pr.ten || pr.folder.replaceAll('_', ' ')
+function projectLink(pr) {
+  const a = pr.anh[0]
+  const file = a.anh_trang || (pr.slug && folderOf(pr.slug) === pr.folder ? fileOf(a.relative_path) : null)
+  return pr.co_trang && file ? '/du-an/' + pr.slug + '?anh=' + encodeURIComponent(file) : '/khong-gian/' + a.id
+}
 
 const open = ref(false)
 const turns = ref([])
@@ -109,7 +134,7 @@ async function send() {
   try {
     const r = await sendChat(text, history, contact.value, consented.value && sendViews.value, getId())
     if (r.hoi_thoai_id) setId(r.hoi_thoai_id)
-    turns.value.push({ role: 'assistant', content: r.answer, images: r.images, sources: r.sources })
+    turns.value.push({ role: 'assistant', content: r.answer, images: r.images, projects: r.projects, sources: r.sources })
     trackEvent('nhan_chatbot') // behaviour-events: a count only, never the text
   } catch (e) { error.value = e.message } finally {
     busy.value = false
@@ -128,6 +153,14 @@ async function send() {
 .chat-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px }
 .chat-turn { max-width: 88%; padding: 10px 12px; border-radius: var(--radius-md); background: var(--line); white-space: pre-line }
 .chat-turn.user { align-self: flex-end; background: var(--accent); color: var(--accent-on) }
+.chat-projects { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; white-space: normal }
+.chat-project { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: var(--radius-sm);
+  background: var(--page); color: var(--ink); text-decoration: none }
+.chat-project:hover, .chat-project:focus-visible { outline: 2px solid var(--accent); outline-offset: 0 }
+.chat-project-imgs { display: flex; gap: 4px; flex: none }
+.chat-project-imgs img { width: 56px; height: 44px; object-fit: cover; border-radius: var(--radius-sm); display: block }
+.chat-project-text { display: grid; gap: 2px; min-width: 0 }
+.chat-project-text strong { overflow-wrap: anywhere }
 .chat-form { display: grid; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line) }
 .chat-form input { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; min-height: 42px; min-width: 0 }
 .chat-form input::placeholder { color: var(--faint) }

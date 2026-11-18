@@ -16,6 +16,15 @@ def test_list_has_seeded_dimensions():
     assert {"khong_gian", "phong_cach", "loai_cong_trinh"} <= dims
 
 
+def test_usage_counts_only_for_staff(as_role):
+    """review-tag-autocomplete 2.1: so_anh ranks the review page's suggestions; visitors never see draft counts."""
+    def styles(**kw):
+        return next(d for d in client.get("/taxonomy", **kw).json() if d["ma_dinh_danh"] == "phong_cach")["values"]
+    assert all("so_anh" not in v for v in styles())
+    staff = styles(headers=as_role("architect"))
+    assert all(isinstance(v["so_anh"], int) for v in staff)
+
+
 def test_add_value_requires_login():
     pc = next(d for d in client.get("/taxonomy").json() if d["ma_dinh_danh"] == "phong_cach")
     assert client.post(f"/taxonomy/{pc['id']}/values",

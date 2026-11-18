@@ -92,3 +92,13 @@ def test_public_search_only_sees_published_spaces(monkeypatch):
         finally:
             c.execute("UPDATE space SET review_status=%s WHERE id=%s", (status, sid))
             c.commit()
+
+
+def test_used_photos_are_grouped_by_project_in_first_use_order(monkeypatch):
+    """assistant-project-results 2.2: two used photos of one project make one card, the AI's order kept."""
+    hits = (HIT, (8, "luxury/behance_img_2.jpg", "phong_ngu_master", "Luxury", "Phòng ngủ đá.", 0.8),
+            (9, "Indochine/behance_img_1.jpg", "phong_khach", "Indochine", "Phòng khách gỗ.", 0.79))
+    fake_vertex(monkeypatch, {"answerable": True, "answer": "Có hai phòng ốp đá.", "used": [7, 8]}, hits=hits)
+    r = chat()
+    assert [p["folder"] for p in r["projects"]] == ["luxury"]
+    assert [a["id"] for a in r["projects"][0]["anh"]] == [7, 8] and [i["id"] for i in r["images"]] == [7, 8]

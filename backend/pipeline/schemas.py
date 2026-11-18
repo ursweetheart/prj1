@@ -15,9 +15,19 @@ class BoundingBox(BaseModel):
 class DetectedFurniture(BaseModel):
     label: str = Field(description="English label of detected furniture")
     label_vi: Optional[str] = Field(default=None, description="Vietnamese translation")
-    confidence: float = Field(description="Detection confidence score")
-    bbox: BoundingBox
-    hotspot_anchor: Tuple[float, float] = Field(description="(x, y) center normalized coordinate for M7 Hotspot")
+    # hotspot-accuracy: an item only the AI named has no detection box or confidence
+    confidence: Optional[float] = Field(default=None, description="Detection confidence score")
+    bbox: Optional[BoundingBox] = None
+    hotspot_anchor: Tuple[float, float] = Field(description="(x, y) normalized point for M7 Hotspot")
+    nguon_ai: Optional[Literal["yolo", "gemini", "ca_hai"]] = None  # which AI proposed it (absent: before hotspot-accuracy)
+
+
+class AiItem(BaseModel):
+    """An interior item the classifier named and pointed at (hotspot-accuracy)."""
+    ten: str
+    loai: str
+    x: float  # 0-1, from the left
+    y: float  # 0-1, from the top
 
 
 class FurnitureDetectionResult(BaseModel):
@@ -32,36 +42,16 @@ class SpaceSEOMetadata(BaseModel):
 
 
 class SpaceClassificationResult(BaseModel):
-    space_type: Literal[
-        "phong_khach",
-        "phong_ngu_master",
-        "phong_ngu_phu",
-        "bep_va_an",
-        "phong_lam_viec",
-        "sanh_thong_tang",
-        "ban_cong",
-        "phong_tam",
-        "lounge_thuong_mai",
-        "khac",
-    ]
+    space_type: str = Field(description="khong_gian value code from the taxonomy tables")
     space_type_label: Optional[str] = Field(default="Không gian nội thất")
-    design_style: Literal[
-        "Indochine",
-        "Japandi",
-        "Wabi_sabi",
-        "Hien_dai",
-        "Tan_co_dien",
-        "Luxury",
-        "Toi_gian",
-        "Scandinavian",
-        "Khac"
-    ]
+    design_style: str = Field(description="phong_cach value code from the taxonomy tables")
     design_style_confidence: float
     style_rationale: str = Field(description="Grounded explanation citing detected objects and color palette")
     materials: List[str] = Field(description="Main identified materials e.g. walnut wood, cane webbing, marble")
     materials_description: Optional[str] = Field(default="", description="Chi tiết mô tả và ứng dụng chất liệu trong không gian")
     seo_metadata: SpaceSEOMetadata
     review_status: Literal["draft", "in_review", "approved", "published"] = "draft"
+    items: List[AiItem] = Field(default_factory=list)  # main interior items with a point on each (hotspot-accuracy)
     llm_usage: Optional["LLMUsage"] = None
 
 

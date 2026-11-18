@@ -175,6 +175,10 @@ export const mergeValue = (id, targetId) => request('POST', '/taxonomy/values/' 
 export const listCandidates = () => get('/taxonomy/candidates')
 export const acceptCandidate = (id, ten, gia_tri) => request('POST', `/taxonomy/candidates/${id}/accept`, { body: { ten, gia_tri } })
 export const rejectCandidate = id => request('POST', `/taxonomy/candidates/${id}/reject`)
+/* review-tag-autocomplete: a reviewer's word -> new value, synonym of an existing one, or nothing */
+export const acceptValueCandidate = (id, body) => request('POST', `/taxonomy/value-candidates/${id}/accept`, { body })
+export const mapValueCandidate = (id, gia_tri_id) => request('POST', `/taxonomy/value-candidates/${id}/map`, { body: { gia_tri_id } })
+export const rejectValueCandidate = id => request('POST', `/taxonomy/value-candidates/${id}/reject`)
 
 export const searchSpaces = (q, k = 12) => get('/search', { q, k })
 export function searchByImage(file, k = 12) {
@@ -220,8 +224,6 @@ export const trackSave = spaceId => track('luu_anh', spaceId) // trend-dashboard
 export const trackQuizPick = spaceId => track('chon_trac_nghiem', spaceId) // style-quiz: not in the interest score
 export const getSimilar = (id, k = 8) => get('/spaces/' + id + '/similar', { k })
 
-export const SPACE_TYPES = Object.keys(SPACE_VI)
-export const STYLES = [...Object.keys(PC), 'Khac']
 // QT-01; 'cleared' = the client allowed publishing the photos
 export const NEXT_STATUS = { draft: 'in_review', in_review: 'approved', approved: 'cleared', cleared: 'published' }
 export const STATUS_VI = { draft: 'Nháp', in_review: 'Chờ duyệt', approved: 'Đã duyệt', cleared: 'Đã xác nhận quyền', published: 'Đã đăng',
@@ -237,6 +239,9 @@ export const EDITORS = [...STAFF, 'content'] // content may only edit caption / 
 
 export const listSpaces = (params = {}) => get('/spaces', { limit: 200, ...params })
 export const reviewSpace = (id, body) => request('PATCH', '/spaces/' + id, { body })
+/* review-tag-autocomplete: a room type / style the list doesn't have -> {kind: existing|suggested, ...} */
+export const suggestValue = (id, chieu, text, force = false) =>
+  request('POST', `/spaces/${id}/suggest-value`, { body: { chieu, text, force } })
 /* hotspot-items: hotspots edited by hand and the item library (seq-14) */
 export const saveHotspots = (id, hotspots) => request('PUT', '/spaces/' + id + '/hotspots', { body: { hotspots } })
 export const searchItems = (q = '', limit = 200) => get('/items', { q, limit })

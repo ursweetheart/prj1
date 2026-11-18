@@ -115,7 +115,8 @@ def test_audit_log_records_who_and_what(as_role):
             c.execute("UPDATE space SET design_style=%s WHERE id=%s", (orig, sid))
 
 
-def test_google_sign_in_linking_and_config():
+def test_google_sign_in_linking_and_config(monkeypatch):
+    monkeypatch.setattr(auth, "oauth", None)  # .env may configure Google; the 501 path is what's under test
     assert client.get("/auth/google/login").status_code == 501  # not configured in tests
     email = "google-test@example.com"
     with psycopg.connect(DSN) as c:
@@ -132,6 +133,7 @@ def test_google_sign_in_linking_and_config():
 
 
 def test_facebook_sign_in_never_links_by_email(monkeypatch):
+    monkeypatch.setattr(auth, "oauth", None)
     assert client.get("/auth/facebook/login").status_code == 501  # not configured in tests
     email = "victim@example.com"
     with psycopg.connect(DSN) as c:
@@ -146,6 +148,7 @@ def test_facebook_sign_in_never_links_by_email(monkeypatch):
 
 
 def test_oauth_returns_to_the_site_when_frontend_url_is_set(monkeypatch):
+    monkeypatch.delenv("D3_FRONTEND_URL", raising=False)  # the container sets it
     assert auth._signed_in(1)["token_type"] == "bearer"
     monkeypatch.setenv("D3_FRONTEND_URL", "http://localhost:5173/prj1/")
     r = auth._signed_in(1)
