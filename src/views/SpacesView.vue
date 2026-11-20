@@ -71,7 +71,7 @@
             <span v-if="portfolio.source === 'loading'" class="sp-note">Đang tải…</span>
             <button v-for="c in activeChips" :key="c.fid + c.vid" class="chip"
                     aria-pressed="true" type="button" @click="toggle(c.fid, c.vid)">
-              {{ c.label }}<span class="x" aria-hidden="true">×</span>
+              {{ c.label }}<Icon name="close" />
               <span class="sr-only">— bỏ điều kiện này</span>
             </button>
           </div>
@@ -110,6 +110,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Mục "Không gian": tìm không gian tương tự bằng mô tả, bằng ảnh, hoặc lọc theo các chiều phân loại.
  * Logic tìm / lọc giữ nguyên của trang /cong-trinh cũ; giao diện theo lưới dự án. */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -214,8 +215,11 @@ onBeforeUnmount(dropPhoto)
 .sp-input::placeholder { color: var(--faint) }
 .sp-input:focus, .sp-input:focus-visible { border-bottom-color: var(--ink); outline: none; box-shadow: none }
 .sp-actions { display: flex; flex-wrap: wrap; gap: 6px 22px }
-.sp-btn { padding: 6px 0; border: 0; background: none; cursor: pointer; font: inherit; font-size: 14px;
-          color: var(--ink); letter-spacing: 0.02em }
+.sp-btn { padding: 6px 0; border: 0; cursor: pointer; font: inherit; font-size: 14px;
+          color: var(--ink); letter-spacing: 0.02em;
+          background: linear-gradient(currentColor, currentColor) no-repeat 0 100% / 0% 1px;
+          transition: background-size .55s cubic-bezier(0.22, 1, 0.36, 1), color .4s cubic-bezier(0.22, 1, 0.36, 1) }
+.sp-btn:hover, .sp-btn:focus-visible { background-size: 100% 1px; outline: none }
 .sp-btn.is-dim { color: var(--faint) }
 .sp-btn.is-dim:hover { color: var(--ink) }
 .sp-btn[disabled] { opacity: .45; cursor: default }

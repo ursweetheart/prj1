@@ -81,8 +81,6 @@ function onKey(e) {
 </script>
 
 <style scoped>
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 8px 10px; min-height: 40px; max-width: 100%; color-scheme: dark; font: inherit }
 .ti { position: relative; flex: 1 1 180px; min-width: 0 }
 .ti-input { position: relative; width: 100%; background: transparent }
 .ti-input:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring); outline: none }

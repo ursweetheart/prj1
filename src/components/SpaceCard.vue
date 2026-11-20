@@ -10,10 +10,7 @@
               :aria-pressed="String(moodboard.has(space.id))"
               :aria-label="moodboard.has(space.id) ? 'Bỏ lưu không gian này' : 'Lưu vào moodboard'"
               @click="moodboard.toggle(space.id)">
-        <svg viewBox="0 0 24 24" :fill="moodboard.has(space.id) ? 'currentColor' : 'none'"
-             stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-          <path d="M12 20s-7-4.4-7-9.4A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 7 3.6c0 5-7 9.4-7 9.4z"/>
-        </svg>
+        <Icon name="heart" :filled="moodboard.has(space.id)" />
       </button>
     </div>
     <router-link class="pcard-cap" :to="link">
@@ -24,6 +21,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
 import { LOAI_LABEL, KG_LABEL, PC_LABEL } from '@/data'
 import { useMoodboard } from '@/composables/useMoodboard'

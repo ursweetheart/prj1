@@ -44,7 +44,6 @@
       <!-- second opt-in, only after the visitor accepted the banner: their own views go to a consultant (NĐ13) -->
       <label v-if="consented" class="cf-check">
         <input v-model="f.gui_ho_so" type="checkbox">
-        <span class="cf-box" aria-hidden="true"></span>
         <span>Gửi kèm những không gian tôi đã xem, để tư vấn viên hiểu gu của tôi</span>
       </label>
 
@@ -155,38 +154,16 @@ async function submit() {
 
 .form-grid { gap: clamp(22px, 2.6vw, 30px) }
 .form-grid.two { column-gap: clamp(24px, 3vw, 40px) }
-.field { gap: 4px }
-.field label { display: flex; align-items: baseline; gap: 10px; font-size: 11.5px; letter-spacing: 0.14em;
-               text-transform: uppercase; color: var(--faint); transition: color .35s var(--ease) }
-.field:focus-within label { color: var(--ink-2) }
+/* fields, checkbox: global hairline styles (app.css); here only the larger display face and numbered labels */
+.field label { display: flex; align-items: baseline; gap: 10px }
 .cf-n { font-variant-numeric: tabular-nums; color: var(--accent); letter-spacing: 0.04em }
 .cf-opt { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--faint); opacity: .75 }
-.field input, .field textarea {
-  width: 100%; min-width: 0; min-height: 0; padding: 10px 0 12px;
-  font-family: var(--font-display); font-size: 17px; font-weight: 300; color: var(--ink);
-  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 100% / 0% 1px;
-  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
-  transition: background-size .6s var(--ease), border-color .35s var(--ease);
-}
-.field textarea { min-height: 88px; resize: vertical; line-height: 1.55 }
-.field input::placeholder, .field textarea::placeholder { color: var(--faint); opacity: .6; font-weight: 300 }
-.field input:hover, .field textarea:hover { border-bottom-color: var(--faint) }
-.field input:focus, .field textarea:focus,
-.field input:focus-visible, .field textarea:focus-visible { outline: none; box-shadow: none; background-size: 100% 1px }
-.field.bad input, .field.bad textarea { border-bottom-color: var(--accent) }
+.field input, .field textarea { font-family: var(--font-display); font-size: 17px; font-weight: 300 }
 .field-err { margin-top: 6px }
 
 .cf-check { position: relative; display: flex; gap: 12px; align-items: flex-start; font-size: var(--text-sm);
             line-height: 1.5; color: var(--dim); cursor: pointer }
-.cf-check input { position: absolute; opacity: 0; width: 18px; height: 18px; margin: 0 }
-.cf-box { flex: none; width: 16px; height: 16px; margin-top: 3px; border: 1px solid var(--faint);
-          display: grid; place-items: center; transition: border-color .3s var(--ease), background-color .3s var(--ease) }
-.cf-box::after { content: ""; width: 8px; height: 4px; margin-top: -2px; border: solid var(--accent-on);
-                 border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg) scale(0); transition: transform .3s var(--ease) }
-.cf-check:hover .cf-box { border-color: var(--ink-2) }
-.cf-check input:checked + .cf-box { background: var(--accent); border-color: var(--accent) }
-.cf-check input:checked + .cf-box::after { transform: rotate(-45deg) scale(1) }
-.cf-check input:focus-visible + .cf-box { box-shadow: var(--focus-ring) }
+.cf-check input { margin-top: 3px }
 
 .cf-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden }
 .cf-note { margin: 0; max-width: 56ch; font-size: 12.5px; line-height: 1.6; color: var(--faint) }

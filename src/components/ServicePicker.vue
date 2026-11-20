@@ -17,6 +17,5 @@ defineEmits(['update:modelValue'])
 
 <style scoped>
 .sp { display: grid; gap: 4px; font-size: 13px; color: var(--dim) }
-.sp .txt { width: 100%; max-width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-  border-radius: var(--radius-md); padding: 8px 10px; min-height: 40px; font: inherit; color-scheme: dark }
+.sp .txt { width: 100%; max-width: 100%; color-scheme: dark }
 </style>

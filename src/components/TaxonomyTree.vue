@@ -31,9 +31,9 @@
             Hiện cho khách
           </label>
           <button class="tt-icon" type="button" :disabled="di === 0 || !!busy" :aria-label="'Đưa «' + d.ten + '» lên'"
-                  @click="move(d, 'up')">↑</button>
+                  @click="move(d, 'up')"><Icon name="arrow-up" size="15" /></button>
           <button class="tt-icon" type="button" :disabled="di === dims.length - 1 || !!busy" :aria-label="'Đưa «' + d.ten + '» xuống'"
-                  @click="move(d, 'down')">↓</button>
+                  @click="move(d, 'down')"><Icon name="arrow-down" size="15" /></button>
           <button v-if="editDim !== d.id" class="tt-link" type="button" @click="startDimName(d)">Đổi tên</button>
         </div>
       </header>
@@ -144,6 +144,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Tab "Danh mục" of /quan-tri/phan-loai (seq-15): dimensions and values with usage, edits, merge, change log.
  * After each save the tree is reloaded from the server, so counts and log are always the server's. */
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
@@ -280,11 +281,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+.txt { width: 100% }  /* skin: global .txt (app.css) */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 9px 12px; min-height: 40px; width: 100%; max-width: 100%; color-scheme: dark; font: inherit }
-.txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
-.btn-sm { padding: 8px 14px; min-height: 38px; font-size: 14px }
 .tt-note { margin: 0 0 12px; font-size: 14px; color: var(--ink) }
 .tt-hint { margin: 0; font-size: 13px; color: var(--dim) }
 
@@ -297,13 +295,13 @@ onMounted(load)
 .tt-tag { font-size: 12px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px }
 .tt-dim-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px }
 .tt-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); cursor: pointer }
-.tt-switch input { width: 18px; height: 18px; accent-color: var(--accent) }
-.tt-icon { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: none; color: var(--ink);
+.tt-switch input { accent-color: var(--accent) }
+.tt-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: none; color: var(--ink);
            font-size: 15px; cursor: pointer }
 .tt-icon:disabled { opacity: .35; cursor: default }
 .tt-link { background: none; border: 0; padding: 4px 0; font: inherit; font-size: 14px; color: var(--ink);
            text-decoration: underline; text-underline-offset: 3px; cursor: pointer }
-.tt-icon:focus-visible, .tt-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.tt-icon:focus-visible, .tt-link:focus-visible { outline: none; box-shadow: var(--focus-ring) }
 
 .tt-values { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 0 }
 .tt-value { display: grid; grid-template-columns: 1fr; gap: 2px 16px; padding: 10px 0; border-top: 1px solid var(--line-soft) }

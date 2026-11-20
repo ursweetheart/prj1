@@ -325,6 +325,7 @@ onMounted(async () => { await load(); await answerFromHash() })
 </script>
 
 <style scoped>
+:deep(.txt) { width: 100% }  /* skin: global .txt (app.css) */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 .kn-page { padding-bottom: clamp(48px, 7vw, 96px) }
 .kn-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 24px 0 16px; border-bottom: 1px solid var(--line) }
@@ -336,9 +337,6 @@ onMounted(async () => { await load(); await answerFromHash() })
 .kn-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
 .kn-search { flex: 1 1 240px }
 .kn-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 }
-:deep(.txt) { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 9px 12px; min-height: 40px; width: 100%; max-width: 100%; color-scheme: dark; font: inherit }
-:deep(.txt:focus-visible) { border-color: var(--accent); box-shadow: var(--focus-ring) }
 :deep(.kn-fields) { display: grid; gap: 12px }
 :deep(.kn-fields .field) { display: grid; gap: 4px }
 :deep(.kn-fields label) { font-size: 14px; color: var(--ink) }
