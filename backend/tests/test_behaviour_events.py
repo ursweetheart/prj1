@@ -126,7 +126,7 @@ def test_overview_aggregates(pid):
     lh = next(c for c in ov["cta"] if c["dich"] == "/lien-he")
     assert {"trang": f"/test-{TAG}", "so_lan": 1} in lh["tu_trang"]
     assert ov["form"][f"test_{TAG}"] == 1 and ov["chia_se"][f"test_{TAG}"] == 1
-    assert {"gia_tri": f"test_{TAG}:A", "so_lan": 2} in ov["bo_loc"] or len(ov["bo_loc"]) == behaviour.TOP
+    assert {"gia_tri": f"test_{TAG}:A", "so_lan": 2, "ten": None} in ov["bo_loc"] or len(ov["bo_loc"]) == behaviour.TOP
     assert ov["dong_y"]["nhan_chatbot"] >= 1 and set(ov["an_danh"]) == set(behaviour.TYPES)
 
 
@@ -151,7 +151,7 @@ def test_photo_interactions_stored_and_listed(pid):
     to_yesterday(pid)  # tracking-pipeline: the dashboard reads processed days only
     ov = _ov()
     assert ov["dong_y"]["phong_to_anh"] >= 1 and ov["dong_y"]["bam_hotspot"] >= 2
-    assert {"doi_tuong": f"999999/test_{TAG}", "so_lan": 2} in ov["hotspot"] or len(ov["hotspot"]) == behaviour.TOP
+    assert {"doi_tuong": f"999999/test_{TAG}", "so_lan": 2, "ten": None} in ov["hotspot"] or len(ov["hotspot"]) == behaviour.TOP
 
 
 def test_photo_interaction_without_consent_counts_only():

@@ -54,15 +54,18 @@
               <span v-if="s.ghi_chu" class="small">“{{ s.ghi_chu }}”</span>
             </li>
           </ul>
-          <p v-if="l.ma_chia_se" class="small">
-            <router-link :to="'/bo-suu-tap/xem/' + l.ma_chia_se">Xem bộ sưu tập đã gửi</router-link>
-          </p>
+          <router-link v-if="l.ma_chia_se" class="btn btn-secondary lead-open" :to="'/bo-suu-tap/xem/' + l.ma_chia_se">
+            Xem bộ sưu tập đã gửi <span aria-hidden="true">→</span>
+          </router-link>
         </template>
 
         <details v-if="l.ho_so_hanh_vi" class="lead-profile">
           <summary class="small">Sở thích (khách đồng ý gửi): {{ l.tom_tat }}</summary>
-          <div class="row g6" style="flex-wrap:wrap;margin-top:8px">
-            <router-link v-for="s in l.ho_so_hanh_vi.spaces" :key="s.id" :to="'/khong-gian/' + s.id"
+          <p v-if="l.nguon === 'brief'" class="small" style="margin-top:8px">
+            {{ viewedOnly(l).length ? 'Khách còn xem thêm (ngoài bộ sưu tập đã gửi):' : 'Khách không xem thêm ảnh nào ngoài bộ sưu tập đã gửi.' }}
+          </p>
+          <div v-if="viewedOnly(l).length" class="row g6" style="flex-wrap:wrap;margin-top:8px">
+            <router-link v-for="s in viewedOnly(l)" :key="s.id" :to="'/khong-gian/' + s.id"
                          :aria-label="'Không gian ' + s.id + ' — ' + spaceLabel(s.space_type)">
               <img :src="imageUrl(s.relative_path)" alt="" loading="lazy" class="lead-thumb">
             </router-link>
@@ -95,6 +98,12 @@ const leads = ref([])
 const loading = ref(true)
 const error = ref('')
 const nguon = ref(null)
+
+// spaces the visitor viewed, minus the ones already shown above in the sent collection
+function viewedOnly(l) {
+  const sent = new Set((l.bo_suu_tap || []).map(s => s.id))
+  return (l.ho_so_hanh_vi?.spaces || []).filter(s => !sent.has(s.id))
+}
 
 // what the assistant understood from the question: only show the fields it found
 function summary(req = {}) {
@@ -142,5 +151,6 @@ watch(nguon, load, { immediate: true })
 .lead-sample { color: var(--accent) }
 .lead-brief-photos { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 12px }
 .lead-brief-photos li { display: grid; gap: 4px; max-width: 140px }
+.lead-open { margin-top: 12px; align-self: start; width: fit-content }
 .lead-thumb { width: 84px; height: 64px; object-fit: cover; border-radius: var(--radius-sm); display: block }
 </style>

@@ -7,7 +7,7 @@
       </header>
 
       <div ref="log" class="chat-log" aria-live="polite">
-        <p v-if="!turns.length" class="small">Hỏi về giá, quy trình, thời gian thi công hoặc đặt lịch tư vấn.</p>
+        <p v-if="!turns.length" class="small">Hỏi về phong cách, dự án, quy trình, thời gian thi công hoặc đặt lịch tư vấn.</p>
         <div v-for="(t, i) in turns" :key="i" class="chat-turn" :class="t.role">
           <p>{{ t.content }}</p>
           <!-- assistant-project-results: example projects, best match first -->
@@ -38,20 +38,34 @@
       </div>
 
       <form class="chat-form" @submit.prevent="send">
-        <input v-model.trim="contact" type="text" maxlength="200" placeholder="Số điện thoại hoặc email (không bắt buộc)"
-               aria-label="Liên hệ">
-        <!-- lead-intake: second opt-in, shown only after the visitor accepted the consent banner -->
-        <label v-if="consented" class="chat-check small">
-          <input v-model="sendViews" type="checkbox">
-          <span>Gửi kèm những không gian tôi đã xem cho kiến trúc sư</span>
-        </label>
-        <button v-if="turns.length" class="chat-new small" type="button" :disabled="busy" @click="startOver">
-          Bắt đầu cuộc mới</button>
+        <!-- contact and the "send what I viewed" opt-in stay folded until wanted; they open by themselves when a reply
+             hands the visitor to an architect and no contact was given yet -->
+        <div class="chat-tools">
+          <details class="chat-more" :open="moreOpen" @toggle="moreOpen = $event.target.open">
+            <summary class="small">Để lại liên hệ{{ contact ? ': ' + contact : '' }}</summary>
+            <div class="chat-more-body">
+              <div class="row g6">
+                <input v-model.trim="contact" type="text" maxlength="200" placeholder="Số điện thoại hoặc email (không bắt buộc)"
+                       aria-label="Liên hệ" style="flex:1" @keydown.enter.prevent="sendContact">
+                <!-- with a conversation, the contact can go on its own; before the first question it goes with it -->
+                <button v-if="turns.length" class="btn btn-secondary chat-contact-send" type="button"
+                        :disabled="busy || contact.length < 3" @click="sendContact">Gửi</button>
+              </div>
+              <!-- lead-intake: second opt-in, shown only after the visitor accepted the consent banner -->
+              <label v-if="consented" class="chat-check small">
+                <input v-model="sendViews" type="checkbox">
+                <span>Gửi kèm những không gian tôi đã xem cho kiến trúc sư</span>
+              </label>
+            </div>
+          </details>
+          <button v-if="turns.length" class="chat-new small" type="button" :disabled="busy" @click="startOver">
+            Bắt đầu cuộc mới</button>
+        </div>
         <div class="row g6">
           <input ref="input" v-model="message" type="text" maxlength="1000" placeholder="Nhập câu hỏi…" aria-label="Câu hỏi" required style="flex:1">
           <button class="btn btn-primary" :disabled="busy">Gửi</button>
         </div>
-        <p class="chat-note">Hội thoại được lưu ẩn danh 90 ngày để cải thiện trợ lý. Đừng gửi thông tin nhạy cảm.</p>
+        <p v-if="!turns.length" class="chat-note">Hội thoại được lưu ẩn danh 90 ngày để cải thiện trợ lý. Đừng gửi thông tin nhạy cảm.</p>
       </form>
     </section>
 
@@ -65,7 +79,7 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
-import { consent, deleteChat, getChat, imageUrl, sendChat, trackEvent } from '@/api'
+import { consent, deleteChat, getChat, imageUrl, sendChat, sendChatContact, trackEvent } from '@/api'
 import { fileOf, folderOf } from '@/lib/projectSpaces'
 
 /* a card opens the project page on its best photo when the project has a page and the photo is one of the page's
@@ -85,6 +99,7 @@ const busy = ref(false)
 const error = ref('')
 const log = ref(null)
 const sendViews = ref(false)
+const moreOpen = ref(false)
 const consented = ref(false)
 const input = ref(null)
 watch(open, o => {
@@ -124,6 +139,20 @@ async function startOver() {
   await nextTick(); input.value?.focus()
 }
 
+async function sendContact() {
+  const id = getId()
+  if (!id || contact.value.length < 3 || busy.value) return
+  error.value = ''; busy.value = true
+  try {
+    const r = await sendChatContact(id, contact.value, consented.value && sendViews.value)
+    turns.value.push({ role: 'assistant', content: r.tra_loi })
+    moreOpen.value = false
+  } catch (e) { error.value = e.message } finally {
+    busy.value = false
+    await nextTick(); log.value?.scrollTo(0, log.value.scrollHeight)
+  }
+}
+
 async function send() {
   const text = message.value
   if (!text || busy.value) return
@@ -134,6 +163,7 @@ async function send() {
     const r = await sendChat(text, history, contact.value, consented.value && sendViews.value, getId())
     if (r.hoi_thoai_id) setId(r.hoi_thoai_id)
     turns.value.push({ role: 'assistant', content: r.answer, images: r.images, projects: r.projects, sources: r.sources })
+    if (r.lead_id && !contact.value) moreOpen.value = true // handed to an architect: show where to leave a number
     trackEvent('nhan_chatbot') // behaviour-events: a count only, never the text
   } catch (e) { error.value = e.message } finally {
     busy.value = false
@@ -167,6 +197,14 @@ async function send() {
 .chat-new { justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--dim); cursor: pointer;
   text-decoration: underline; text-underline-offset: 3px; font: inherit; font-size: 13px }
 .chat-new:hover, .chat-new:focus-visible { color: var(--ink) }
+.chat-tools { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px }
+.chat-more { flex: 1; min-width: 0 }
+.chat-more summary { cursor: pointer; color: var(--dim); padding: 2px 0; width: fit-content }
+.chat-more summary:hover, .chat-more summary:focus-visible { color: var(--ink) }
+.chat-more[open] summary { color: var(--ink-2) }
+.chat-more-body { display: grid; gap: 8px; margin-top: 8px }
+.chat-tools .chat-new { flex: none }
+.chat-contact-send { flex: none; min-height: 42px; padding-inline: 14px }
 .chat-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--faint) }
 /* Nút mở trợ lý: viên tối trong mờ, viền mảnh; hover giống topbar (.glow-hover) */
 /* glass pill over photos: "online" accent dot, label set like the site's eyebrows, accent edge on hover */

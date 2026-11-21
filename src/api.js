@@ -429,6 +429,12 @@ export const sendChat = (message, history, contact, sendViews = false, hoiThoaiI
   return request('POST', '/chat', { body: { message, history, ...(contact ? { contact } : {}),
     ...(hoiThoaiId ? { hoi_thoai_id: hoiThoaiId } : {}), ...(phien ? { phien_id: phien } : {}), gui_ho_so: !!(phien && sendViews) } })
 }
+// "Để lại liên hệ" sent on its own: joins the conversation's lead, or starts one (act-4)
+export const sendChatContact = (hoiThoaiId, contact, sendViews = false) => {
+  const phien = consent.analytics() && visitId()
+  return request('POST', '/chat/' + encodeURIComponent(hoiThoaiId) + '/lien-he', { body: { contact,
+    ...(phien ? { phien_id: phien } : {}), gui_ho_so: !!(phien && sendViews) } })
+}
 export const getChat = id => get('/chat/' + encodeURIComponent(id))
 export const deleteChat = id => request('DELETE', '/chat/' + encodeURIComponent(id))
 export const listConversations = (params = {}) => get('/conversations', params)
