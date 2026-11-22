@@ -6,7 +6,7 @@
       <button v-for="(h, i) in hotspots" :key="i" class="hs" type="button"
               :style="{ left: h.x + '%', top: h.y + '%' }"
               :aria-expanded="String(active === i)" :aria-label="'Món đồ: ' + h.label"
-              @click="toggle(i)">{{ active === i ? '×' : '+' }}</button>
+              @click="toggle(i)"><Icon name="plus" /></button>
       <div v-for="(h, i) in hotspots" :key="'c' + i" v-show="active === i"
            class="hs-card" :style="cardStyle(h)">
         <b>{{ h.label }}</b>
@@ -25,6 +25,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Ảnh một không gian với các món đồ (AI nhận ra hoặc kiến trúc sư đặt tay).
  * Bấm "+" hiện tên món đồ, lối sang các không gian có cùng món đồ (hoặc tương tự) và một dòng nhỏ tới gói dịch vụ
  * liên quan ở /dich-vu (change visitor-services-hotspots) — không giá, không nút mua. */

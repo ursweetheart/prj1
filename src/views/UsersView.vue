@@ -290,10 +290,6 @@ onMounted(load)
 <style scoped>
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
 .us-page { padding-bottom: clamp(48px, 7vw, 96px) }
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 9px 12px; min-height: 40px; max-width: 100%; color-scheme: dark; font: inherit }
-.txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring) }
-.btn-sm { padding: 8px 14px; min-height: 38px; font-size: 14px }
 .us-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px }
 .us-search { flex: 1 1 240px }
 .us-role { flex: 0 1 200px }

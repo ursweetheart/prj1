@@ -12,9 +12,9 @@
         <div class="sv-actions">
           <SaveHeart :space-id="space.id" labelled />
         <div v-if="siblings.length > 1" class="sv-step">
-          <router-link class="pv-nav-link glow-hover" :to="'/khong-gian/' + step(-1).id" aria-label="Không gian trước">‹</router-link>
+          <router-link class="pv-nav-link glow-hover" :to="'/khong-gian/' + step(-1).id" aria-label="Không gian trước"><Icon name="chevron-left" size="16" /></router-link>
           <span class="sv-dim num">{{ pos + 1 }} / {{ siblings.length }}</span>
-          <router-link class="pv-nav-link glow-hover" :to="'/khong-gian/' + step(1).id" aria-label="Không gian tiếp">›</router-link>
+          <router-link class="pv-nav-link glow-hover" :to="'/khong-gian/' + step(1).id" aria-label="Không gian tiếp"><Icon name="chevron-right" size="16" /></router-link>
         </div>
         </div>
       </nav>
@@ -76,6 +76,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Một không gian (một ảnh) với phần AI đọc được: món đồ, mô tả, vật liệu, bảng màu, không gian tương tự.
  * Cùng ngôn ngữ thiết kế với trang dự án; ‹ › đi qua các ảnh đã đăng khác của cùng dự án. */
 import { computed, nextTick, ref, watch } from 'vue'

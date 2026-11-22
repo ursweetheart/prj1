@@ -4,18 +4,19 @@
       <span class="meta num">{{ index + 1 }} / {{ items.length }}</span>
       <div class="lb-bar-end">
         <slot name="bar" />
-        <button class="btn btn-secondary" type="button" @click="$emit('close')">Đóng</button>
+        <button class="btn btn-secondary btn-sm" type="button" @click="$emit('close')">Đóng <Icon name="close" /></button>
       </div>
     </div>
     <img :src="items[index].img" :alt="items[index].alt">
     <button v-if="items.length > 1" class="lb-nav p" type="button"
-            aria-label="Ảnh trước" @click="$emit('go', -1)">‹</button>
+            aria-label="Ảnh trước" @click="$emit('go', -1)"><Icon name="chevron-left" /></button>
     <button v-if="items.length > 1" class="lb-nav n" type="button"
-            aria-label="Ảnh sau" @click="$emit('go', 1)">›</button>
+            aria-label="Ảnh sau" @click="$emit('go', 1)"><Icon name="chevron-right" /></button>
   </div>
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 import { onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({

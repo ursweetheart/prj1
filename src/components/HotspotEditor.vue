@@ -47,7 +47,7 @@
           <div v-if="p.mon_do_id && byId[p.mon_do_id]" class="he-linked">
             <span>{{ byId[p.mon_do_id].ten }}</span>
             <button type="button" class="btn btn-ghost he-x" :aria-label="'Bỏ liên kết món đồ của điểm ' + (i + 1)"
-                    @click="p.mon_do_id = null">×</button>
+                    @click="p.mon_do_id = null"><Icon name="close" /></button>
           </div>
           <template v-else>
             <input class="txt" role="combobox" :aria-expanded="String(pick.row === i && pick.open)"
@@ -99,6 +99,7 @@
 </template>
 
 <script setup>
+import Icon from '@/components/Icon.vue'
 /* Gắn hotspot món đồ (seq-14; change hotspot-items) cho KTS: thêm, kéo, dời bằng phím, đặt tên, gắn món đồ trong thư viện.
    Khách chỉ thấy tên điểm; nhà cung cấp không bao giờ rời trang quản trị. */
 import { computed, nextTick, reactive, ref, useId } from 'vue'
@@ -277,9 +278,6 @@ async function save() {
 </script>
 
 <style scoped>
-.txt { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-md);
-  padding: 8px 10px; min-height: 40px; max-width: 100%; color-scheme: dark; font: inherit }
-.txt:focus-visible { border-color: var(--accent); box-shadow: var(--focus-ring); outline: none }
 .he { display: grid; gap: 10px; min-width: 0 }
 .he-help { margin: 0; color: var(--dim) }
 .he-stage { position: relative; cursor: crosshair; touch-action: none; user-select: none; max-width: 640px }

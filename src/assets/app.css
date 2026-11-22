@@ -75,7 +75,7 @@
   --elev-ring: 0 0 0 1px var(--border);
   --elev-raised: rgba(0, 0, 0, 0.05) 0px 4px 24px;
 
-  --focus-ring: 0 0 0 3px rgba(56, 152, 236, 0.3);
+  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent) 45%, transparent);
 
   --motion-fast: 150ms;
   --motion-base: 200ms;
@@ -193,39 +193,76 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .media.w169 { aspect-ratio: 16 / 9 }
 
 /* ─── Nút ─────────────────────────────────────────────────────────── */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  font-family: var(--face); font-size: var(--text-sm); font-weight: 500;
-  padding: 11px 18px; border: 1px solid transparent; border-radius: var(--radius-md);
-  background: transparent; cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard),
-              color var(--motion-fast) var(--ease-standard),
-              border-color var(--motion-fast) var(--ease-standard);
-  min-height: 44px;
+/* One family for every button on the site (visitor and admin pages alike):
+ * pill, hairline edge, small uppercase tracked label, one easing curve.
+ *   .btn-primary / .btn-line  accent edge, the accent sweeps in from the left on hover
+ *   .btn-secondary            neutral hairline edge, brightens on hover
+ *   .btn-ghost                no edge, a hairline draws under the label on hover
+ *   .btn-sm                   the compact size for dense admin rows
+ * Icons inside buttons are <Icon> (components/Icon.vue); a trailing .arrow slides on hover. */
+.btn, .btn-line {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 44px; padding: 12px 24px;
+  font: 500 12px/1.2 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-2); text-decoration: none; white-space: nowrap; cursor: pointer;
+  border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent;
+  transition: background-size .55s var(--ease), background-color .4s var(--ease), color .4s var(--ease),
+              border-color .4s var(--ease), box-shadow .45s var(--ease), transform .45s var(--ease);
 }
-.btn-primary   { background: var(--accent); color: var(--accent-on) }
-.btn-primary:hover  { background: var(--accent-hover) }
-.btn-primary:active { background: var(--accent-active) }
-.btn-secondary { background: transparent; color: var(--ink); border-color: var(--line) }
-.btn-secondary:hover { background: var(--panel); border-color: var(--ink-2) }
-.btn-ghost { color: var(--dim); padding-inline: 10px }
-.btn-ghost:hover { color: var(--ink) }
-.btn[disabled] { opacity: .45; cursor: not-allowed }
+.btn .ic, .btn-line .ic { width: 16px; height: 16px; flex: none }
+.btn .arrow, .btn-line .arrow { display: inline-block; font-size: 15px; letter-spacing: 0; transition: transform .45s var(--ease) }
+.btn:hover .arrow, .btn:focus-visible .arrow, .btn-line:hover .arrow, .btn-line:focus-visible .arrow { transform: translateX(5px) }
+.btn.is-down:hover .arrow, .btn-line.is-down:hover .arrow,
+.btn.is-down:focus-visible .arrow, .btn-line.is-down:focus-visible .arrow { transform: translateY(3px) }
+
+.btn-primary, .btn-line {
+  color: var(--ink); border-color: var(--accent);
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 0% 100%;
+}
+.btn-primary:hover, .btn-primary:focus-visible, .btn-line:hover, .btn-line:focus-visible {
+  background-size: 100% 100%; color: var(--accent-on); transform: translateY(-2px);
+  box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--accent) 70%, transparent)
+}
+.btn-primary:active, .btn-line:active { background-color: var(--accent-active); transform: none }
+.btn-secondary { color: var(--ink-2); border-color: var(--line) }
+.btn-secondary:hover, .btn-secondary:focus-visible { color: var(--ink); border-color: var(--ink-2); transform: translateY(-2px) }
+/* text-only actions read as text: sentence case, a hairline draws under them (same as .text-action) */
+.btn-ghost, .text-action { min-height: 40px; padding: 10px 2px; font-size: 14px; font-weight: 400; letter-spacing: 0.01em;
+             text-transform: none; color: var(--dim);
+             background: linear-gradient(currentColor, currentColor) no-repeat 0 calc(100% - 9px) / 0% 1px }
+.text-action { display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer; text-decoration: none;
+               font-family: var(--font-body); transition: background-size .55s cubic-bezier(0.22, 1, 0.36, 1), color .4s cubic-bezier(0.22, 1, 0.36, 1) }
+.text-action:hover, .text-action:focus-visible { color: var(--ink); background-size: 100% 1px; outline: none }
+.btn-ghost:hover, .btn-ghost:focus-visible { color: var(--ink); background-size: 100% 1px }
+.btn-ghost:has(> .ic:only-child) { padding: 10px; background: none }   /* icon-only: no underline */
+.btn-sm { min-height: 36px; padding: 9px 16px; font-size: 11px; letter-spacing: 0.12em }
+.btn-sm.btn-ghost { padding-inline: 2px; font-size: 13px; letter-spacing: 0.01em }
+.btn[disabled], .btn-line[disabled] { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; background-size: 0% 100% }
+.btn:focus-visible, .btn-line:focus-visible { outline: none; box-shadow: var(--focus-ring) }
+@media (prefers-reduced-motion: reduce) {
+  .btn, .btn-line, .btn .arrow, .btn-line .arrow { transition: none }
+  .btn:hover, .btn-line:hover, .btn:focus-visible, .btn-line:focus-visible { transform: none }
+}
+
+/* Icon base (components/Icon.vue) */
+.ic { display: inline-block; vertical-align: middle; flex: none; stroke-width: 1.5;
+      stroke-linecap: round; stroke-linejoin: round }
 
 /* ─── Chip / thẻ lọc ──────────────────────────────────────────────── */
 .chip {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: var(--text-sm); line-height: 1.3;
-  padding: 8px 13px; border-radius: var(--radius-sm);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; line-height: 1.3; letter-spacing: 0.02em;
+  padding: 8px 16px; border-radius: var(--radius-pill);
   border: 1px solid var(--line); background: transparent; color: var(--dim);
-  cursor: pointer; min-height: 38px;
-  transition: color var(--motion-fast) var(--ease-standard),
-              border-color var(--motion-fast) var(--ease-standard),
-              background var(--motion-fast) var(--ease-standard);
+  cursor: pointer; min-height: 36px;
+  transition: color .4s var(--ease), border-color .4s var(--ease), background-color .4s var(--ease);
 }
 .chip:hover { color: var(--ink); border-color: var(--ink-2) }
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-on) }
-.chip .x { font-size: 15px; line-height: 1; opacity: .8 }
+.chip[aria-pressed="true"] { background: color-mix(in oklab, var(--accent) 16%, transparent);
+                             border-color: var(--accent); color: var(--ink) }
+.chip .x, .chip .ic { width: 14px; height: 14px; font-size: 15px; line-height: 1; opacity: .8 }
 .chip-static { cursor: default; color: var(--dim) }
 .chip-static:hover { color: var(--dim); border-color: var(--line) }
 
@@ -393,8 +430,6 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .hero-side.is-prev { left: 0;  justify-content: flex-start }
 .hero-side.is-next { right: 0; justify-content: flex-end }
 .hero-side svg { width: clamp(30px, 3vw, 44px); height: clamp(30px, 3vw, 44px);
-                 fill: none; stroke: currentColor; stroke-width: 1.4;
-                 stroke-linecap: round; stroke-linejoin: round;
                  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, .55));
                  opacity: 0; transform: translateX(0);
                  transition: opacity .45s var(--ease-standard), transform .45s cubic-bezier(0.22, 1, 0.36, 1) }
@@ -575,22 +610,6 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .cta-link:hover .arrow, .cta-link:focus-visible .arrow { transform: translateX(4px) }
 .cta-link:focus-visible { outline: none }
 
-/* ─── Nút viền mảnh: lấp màu nhấn từ trái sang khi rê, mũi tên trượt ── */
-.btn-line { --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  display: inline-flex; align-items: center; justify-content: center; gap: 14px; padding: 15px 30px;
-  font: 500 12.5px/1 var(--font-body); letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--ink); text-decoration: none; cursor: pointer;
-  border: 1px solid var(--accent); border-radius: 999px;
-  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 0 / 0% 100%;
-  transition: background-size .55s var(--ease), color .4s var(--ease), box-shadow .45s var(--ease), transform .45s var(--ease) }
-.btn-line:hover, .btn-line:focus-visible { background-size: 100% 100%; color: var(--accent-on); transform: translateY(-2px);
-  box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--accent) 70%, transparent) }
-.btn-line:focus-visible { outline: none; box-shadow: var(--focus-ring) }
-.btn-line .arrow { display: inline-block; font-size: 16px; letter-spacing: 0; transition: transform .45s var(--ease) }
-.btn-line:hover .arrow, .btn-line:focus-visible .arrow { transform: translateX(5px) }
-.btn-line.is-down:hover .arrow, .btn-line.is-down:focus-visible .arrow { transform: translateY(3px) }
-.btn-line:disabled { opacity: .55; cursor: progress; transform: none }
-
 /* ─── Danh sách link editorial: số thứ tự, đường kẻ mảnh, vạch nhấn chạy dưới ── */
 .link-list { --ease: cubic-bezier(0.22, 1, 0.36, 1); display: flex; flex-direction: column;
              width: 100%; margin: 0; padding: 0; list-style: none }
@@ -613,8 +632,8 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .ll-item:hover .ll-arrow, .ll-item:focus-visible .ll-arrow { color: var(--accent); transform: translateX(6px) }
 .ll-item:focus-visible { outline: none }
 @media (prefers-reduced-motion: reduce) {
-  .btn-line, .btn-line .arrow, .ll-item::after, .ll-label, .ll-arrow { transition: none }
-  .btn-line:hover, .ll-item:hover .ll-label { transform: none }
+  .ll-item::after, .ll-label, .ll-arrow { transition: none }
+  .ll-item:hover .ll-label { transform: none }
 }
 
 /* ─── Thẻ công trình ──────────────────────────────────────────────── */
@@ -632,7 +651,7 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
               background: color-mix(in oklab, var(--fg) 62%, transparent);
               backdrop-filter: blur(6px); color: var(--surface-warm) }
 .pcard-save[aria-pressed="true"] { color: var(--accent) }
-.pcard-save svg { width: 17px; height: 17px }
+.pcard-save .ic { width: 17px; height: 17px }
 
 /* ─── Bộ lọc (câu 31: cột dọc bên trái) ───────────────────────────── */
 .browse { display: grid; gap: clamp(20px, 2.4vw, 44px); align-items: start }
@@ -702,8 +721,11 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
   background: color-mix(in oklab, var(--fg) 46%, transparent);
   backdrop-filter: blur(4px); cursor: pointer; z-index: 2;
   display: grid; place-items: center; color: var(--surface); font-size: 15px; line-height: 1;
+  transition: background-color .4s cubic-bezier(0.22, 1, 0.36, 1), border-color .4s cubic-bezier(0.22, 1, 0.36, 1);
 }
+.hs .ic { width: 14px; height: 14px; transition: transform .45s cubic-bezier(0.22, 1, 0.36, 1) }
 .hs[aria-expanded="true"] { background: var(--accent); border-color: var(--accent) }
+.hs[aria-expanded="true"] .ic { transform: rotate(45deg) }
 .hs-card { position: absolute; z-index: 5; width: min(232px, 74vw);
            background: var(--page); border: 1px solid var(--line);
            border-radius: var(--radius-md); padding: 14px; box-shadow: var(--elev-raised);
@@ -728,27 +750,86 @@ code   { font-family: var(--font-mono); font-size: 0.94em }
 .lb-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center;
           justify-content: space-between; gap: 12px; padding: 14px clamp(12px, 3vw, 24px) }
 .lb-nav { position: absolute; top: 50%; transform: translateY(-50%);
-          width: 48px; height: 48px; border-radius: var(--radius-pill); border: 1px solid var(--line);
-          background: color-mix(in oklab, var(--fg) 70%, transparent); color: var(--ink);
-          display: grid; place-items: center; cursor: pointer; font-size: 20px }
+          width: 48px; height: 48px; border-radius: var(--radius-pill); border: 1px solid rgba(255, 255, 255, 0.22);
+          background: rgba(20, 20, 19, 0.5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+          color: rgba(255, 255, 255, 0.9); display: grid; place-items: center; cursor: pointer;
+          transition: border-color .45s cubic-bezier(0.22, 1, 0.36, 1), color .4s cubic-bezier(0.22, 1, 0.36, 1) }
+.lb-nav .ic { width: 22px; height: 22px; transition: transform .45s cubic-bezier(0.22, 1, 0.36, 1) }
+.lb-nav:hover, .lb-nav:focus-visible { color: #fff; border-color: color-mix(in oklab, var(--accent) 80%, white) }
+.lb-nav.p:hover .ic { transform: translateX(-3px) } .lb-nav.n:hover .ic { transform: translateX(3px) }
 .lb-nav.p { left: clamp(8px, 2vw, 24px) } .lb-nav.n { right: clamp(8px, 2vw, 24px) }
 
 /* ─── Biểu mẫu (câu 37) ───────────────────────────────────────────── */
-.field { display: flex; flex-direction: column; gap: var(--space-2) }
-.field label { font-size: var(--text-sm); color: var(--dim) }
-.field input, .field textarea, .field select {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius-md); padding: 12px 14px; min-height: 46px;
-  transition: border-color var(--motion-fast) var(--ease-standard);
+/* Same field everywhere: hairline underline that draws an accent line on focus (like the contact form) */
+.field { --ease: cubic-bezier(0.22, 1, 0.36, 1); display: flex; flex-direction: column; gap: 4px }
+.field label { font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint);
+               transition: color .35s var(--ease) }
+.field:focus-within label { color: var(--ink-2) }
+.field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .field textarea, .field select {
+  width: 100%; min-width: 0; min-height: 42px; padding: 10px 0 11px;
+  font-size: 16px; color: var(--ink);
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 100% / 0% 1px;
+  transition: background-size .6s var(--ease), border-color .35s var(--ease);
 }
-.field textarea { min-height: 116px; resize: vertical; line-height: 1.5 }
-.field input::placeholder, .field textarea::placeholder { color: var(--faint) }
-.field input:focus-visible, .field textarea:focus-visible, .field select:focus-visible {
-  border-color: var(--accent); box-shadow: var(--focus-ring)
-}
+.field select { cursor: pointer; padding-right: 22px;
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 100% / 0% 1px,
+              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 2px center / 14px;
+  appearance: none; -webkit-appearance: none }
+.field select option { background: var(--page); color: var(--ink) }
+.field textarea { min-height: 96px; resize: vertical; line-height: 1.55 }
+.field input::placeholder, .field textarea::placeholder { color: var(--faint); opacity: .7 }
+.field input:hover, .field textarea:hover, .field select:hover { border-bottom-color: var(--faint) }
+.field input:focus-visible, .field textarea:focus-visible, .field select:focus-visible,
+.field input:focus, .field textarea:focus, .field select:focus { outline: none; box-shadow: none; background-size: 100% 1px }
+.field select:focus, .field select:focus-visible {
+  background-size: 100% 1px, 14px }
 .field-help { font-size: 13px; color: var(--faint) }
 .field-err  { font-size: 13px; color: var(--accent) }
-.field.bad input, .field.bad textarea { border-color: var(--accent) }
+.field.bad input, .field.bad textarea, .field.bad select { border-bottom-color: var(--accent) }
+
+/* .txt: a bare input / select / textarea outside a .field (admin rows, inline edits): same hairline skin */
+.txt { --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  max-width: 100%; min-width: 0; min-height: 40px; padding: 8px 0 9px;
+  font-size: 14px; color: var(--ink); color-scheme: dark;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 100% / 0% 1px;
+  transition: background-size .6s var(--ease), border-color .35s var(--ease) }
+.txt::placeholder { color: var(--faint); opacity: .7 }
+.txt:hover { border-bottom-color: var(--faint) }
+.txt:focus, .txt:focus-visible { outline: none; box-shadow: none; background-size: 100% 1px }
+textarea.txt { line-height: 1.55; resize: vertical }
+select.txt { cursor: pointer; padding-right: 22px; appearance: none; -webkit-appearance: none;
+  background: linear-gradient(var(--accent), var(--accent)) no-repeat 0 100% / 0% 1px,
+              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 2px center / 14px }
+select.txt:focus { background-size: 100% 1px, 14px }
+select.txt option { background: var(--page); color: var(--ink) }
+
+/* Native checkbox, radio and file button in the same hairline language */
+input[type="checkbox"], input[type="radio"] {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0 2px 0 0; vertical-align: -3px;
+  width: 16px; height: 16px; border: 1px solid var(--faint); background: transparent; cursor: pointer;
+  display: inline-grid; place-items: center;
+  transition: border-color .3s cubic-bezier(0.22, 1, 0.36, 1), background-color .3s cubic-bezier(0.22, 1, 0.36, 1) }
+input[type="radio"] { border-radius: 50% }
+input[type="checkbox"]::after { content: ""; width: 8px; height: 4px; margin-top: -2px;
+  border: solid var(--accent-on); border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg) scale(0);
+  transition: transform .3s cubic-bezier(0.22, 1, 0.36, 1) }
+input[type="radio"]::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  transform: scale(0); transition: transform .3s cubic-bezier(0.22, 1, 0.36, 1) }
+input[type="checkbox"]:hover, input[type="radio"]:hover { border-color: var(--ink-2) }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent) }
+input[type="checkbox"]:checked::after { transform: rotate(-45deg) scale(1) }
+input[type="radio"]:checked { border-color: var(--accent) }
+input[type="radio"]:checked::after { transform: scale(1) }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .45; cursor: not-allowed }
+input[type="file"] { font-size: 13px; color: var(--dim); max-width: 100% }
+input[type="file"]::file-selector-button {
+  margin-right: 14px; padding: 9px 16px; min-height: 36px; cursor: pointer;
+  font: 500 11px/1.2 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-2); background: transparent; border: 1px solid var(--line); border-radius: var(--radius-pill);
+  transition: border-color .4s cubic-bezier(0.22, 1, 0.36, 1), color .4s cubic-bezier(0.22, 1, 0.36, 1) }
+input[type="file"]::file-selector-button:hover { color: var(--ink); border-color: var(--ink-2) }
 .form-grid { display: grid; gap: 16px }
 @media (min-width: 640px) { .form-grid.two { grid-template-columns: 1fr 1fr } }
 .form-ok { display: flex; gap: 12px; align-items: flex-start;
