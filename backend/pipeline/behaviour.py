@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from psycopg.rows import tuple_row
 
+from pipeline.furniture_detector import VI_TRANSLATIONS
 from pipeline.trends import last_day
 
 TYPES = ("xem_trang", "xem_du_an", "bam_CTA", "gui_form", "nhan_chatbot", "chia_se", "ap_dung_bo_loc",
@@ -62,9 +63,16 @@ def overview(conn, days: int) -> dict:
                                               "AND loai = ANY(%s) GROUP BY loai", (start, end, list(TYPES)))}
     filters = sorted(({"gia_tri": v, "so_lan": n} for v, n in count_by("ap_dung_bo_loc").items() if v),
                      key=lambda f: (-f["so_lan"], f["gia_tri"]))[:TOP]
+    names = dict(_rows(conn, "SELECT c.ma_dinh_danh || ':' || g.ma_dinh_danh, c.ten || ' · ' || g.ten FROM gia_tri_phan_loai g "
+                             "JOIN chieu_phan_loai c ON c.id = g.chieu_id WHERE c.ma_dinh_danh || ':' || g.ma_dinh_danh = ANY(%s)",
+                       ([f["gia_tri"] for f in filters],))) if filters else {}
+    for f in filters:
+        f["ten"] = names.get(f["gia_tri"])  # None for a value no longer in the taxonomy: the page shows the code
     # visitor-services-hotspots (Tùng): most opened hotspots, "<space id>/mon_do_<item id>" or "<space id>/<label slug>"
     hotspots = sorted(({"doi_tuong": d, "so_lan": n} for d, n in count_by("bam_hotspot").items() if d),
                       key=lambda h: (-h["so_lan"], h["doi_tuong"]))[:TOP]
+    for h in hotspots:  # a detector label slug ("dining_table") gets its Vietnamese name; item ids stay as they are
+        h["ten"] = VI_TRANSLATIONS.get(h["doi_tuong"].split("/", 1)[-1].replace("_", " "))
     shown, chosen = totals["xem_goi_y_tuong_tu"], totals["chon_goi_y"]
     return {"days": int(days), "den_ngay": end.isoformat(), "trang": pages, "du_an": projects,
             "cta": sorted(cta.values(), key=lambda c: (-c["so_lan"], c["dich"])),

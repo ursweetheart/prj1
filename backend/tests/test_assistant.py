@@ -42,16 +42,18 @@ def test_price_question_is_never_answered_with_a_price_but_still_creates_a_lead(
             c.execute("DELETE FROM kb_chunk WHERE title = %s", (PRICE["title"],))
 
 
-def test_off_topic_is_refused_and_handed_off():
+def test_off_topic_is_declined_without_lead_or_gap():
+    q = "Giải giúp tôi phương trình x^2 - 5x + 6 = 0"
     try:
-        r = client.post("/chat", json={"message": "Cách nấu phở bò ngon", "contact": "0911111111"}).json()
-        assert not r["answered"] and not r["sources"] and not r["images"] and "chưa có thông tin" in r["answer"]
+        r = client.post("/chat", json={"message": q, "contact": "0911111111"}).json()
+        assert not r["answered"] and not r["sources"] and not r["images"] and r["lead_id"] is None and r.get("lac_de")
+        assert "chỉ trả lời các câu hỏi về thiết kế" in r["answer"] and "chưa có thông tin" not in r["answer"]
         with psycopg.connect(DSN) as c:
-            assert c.execute("SELECT intent FROM lead WHERE id=%s", (r["lead_id"],)).fetchone()[0] == "handoff"
+            assert c.execute("SELECT count(*) FROM khoang_trong_tri_thuc WHERE cau_hoi = %s", (q,)).fetchone()[0] == 0
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM lead WHERE contact = '0911111111'")
-            c.execute("DELETE FROM khoang_trong_tri_thuc WHERE cau_hoi = 'Cách nấu phở bò ngon'")
+            c.execute("DELETE FROM khoang_trong_tri_thuc WHERE cau_hoi = %s", (q,))
 
 
 def test_chat_images_only_published(drafts):
@@ -188,3 +190,63 @@ def test_kb_answer_returns_ranked_projects_of_published_photos(drafts):
 
 def test_small_talk_and_handoff_have_no_projects():
     assert client.post("/chat", json={"message": "xin chào"}).json()["projects"] == []
+
+
+# ── seq-3 RAG: a matched entry is used to answer the question itself, not pasted as it is ──────────────────────────
+def test_kb_answer_is_drafted_from_the_entries_and_falls_back_to_the_entry(monkeypatch):
+    from pipeline import assistant, vertex
+    q = "Phong cách Japandi hợp với căn hộ nhỏ không?"
+    hits = assistant.retrieve(q)
+    assert hits and hits[0][4] >= assistant.MIN_SCORE, "needs the Japandi sample entry (kb/sample.json)"
+    seen = {}
+
+    def fake(parts, **kw):
+        seen["prompt"] = parts[0]["text"]
+        return {"answerable": True, "answer": "Có, Japandi hợp với căn hộ nhỏ.", "used": [hits[0][0]]}, {}
+    monkeypatch.setattr(vertex, "available", lambda: True)
+    monkeypatch.setattr(vertex, "generate", fake)
+    r = assistant.respond(q)
+    assert r["answered"] and "Japandi hợp với căn hộ nhỏ" in r["answer"] and r["answer"] != hits[0][3]
+    assert hits[0][2] in seen["prompt"] and q in seen["prompt"]  # the entry and the question went to the model
+    assert r["answer"].startswith(assistant.SAMPLE) == hits[0][3].startswith(assistant.SAMPLE)  # sample stays marked
+    assert [s["id"] for s in r["sources"]] == [hits[0][0]]  # only the entry the answer used is named as a source
+
+    monkeypatch.setattr(vertex, "generate", lambda parts, **kw: ({"answerable": False}, {}))
+    assert assistant.respond(q)["answer"] == hits[0][3]  # the model can't: the best entry, as before
+
+    def broken(parts, **kw):
+        raise TimeoutError("vertex down")
+    monkeypatch.setattr(vertex, "generate", broken)
+    assert assistant.respond(q)["answer"] == hits[0][3]
+
+
+def test_price_question_the_entries_cannot_answer_says_prices_are_given_by_an_architect(monkeypatch):
+    from pipeline import assistant, vertex
+    monkeypatch.setattr(vertex, "available", lambda: True)
+    monkeypatch.setattr(vertex, "generate", lambda parts, **kw: ({"answerable": False}, {}))
+    monkeypatch.setattr(assistant.leads, "create_lead", lambda *a, **k: 1)
+    monkeypatch.setattr(assistant, "retrieve", lambda q, k=3: [(1, "faq", "Thời gian thi công", "Thi công 45 ngày.", 0.95)])
+    r = assistant.respond("bao nhiêu tiền?")
+    assert r["answer"].startswith(assistant.PRICE_REPLY) and "Thi công 45 ngày" not in r["answer"]
+    assert "để lại số điện thoại" in r["answer"] and r["lead_id"] == 1  # still the call-back offer and a lead
+
+
+def test_a_faq_answer_gets_no_project_cards_even_when_it_names_a_project_type(monkeypatch):
+    from pipeline import assistant
+    monkeypatch.setattr(assistant.leads, "create_lead", lambda *a, **k: None)
+    r = assistant.respond("Thiết kế căn hộ mất bao lâu?")  # names "căn hộ", answered by the timing FAQ
+    assert r["answered"] and r["request"]["project_type"] == "can_ho" and r["sources"][0]["kind"] == "faq"
+    assert r["projects"] == [] and r["images"] == []
+
+
+def test_the_call_back_line_is_not_added_when_the_answer_already_asks_for_a_contact(monkeypatch):
+    from pipeline import assistant, vertex
+    monkeypatch.setattr(vertex, "available", lambda: True)
+    monkeypatch.setattr(assistant.leads, "create_lead", lambda *a, **k: 1)
+    entry = (1, "faq", "Đặt lịch tư vấn", "Buổi tư vấn kéo dài 45 phút. Để lại số điện thoại để kiến trúc sư xác nhận lịch.", 0.95)
+    monkeypatch.setattr(assistant, "retrieve", lambda q, k=3: [entry])
+    monkeypatch.setattr(vertex, "generate", lambda parts, **kw: ({"answerable": False}, {}))
+    r = assistant.respond("Tôi muốn đặt lịch hẹn gặp kiến trúc sư")
+    assert r["answer"] == entry[3] and r["lead_id"] == 1  # asked once, by the entry itself
+    monkeypatch.setattr(assistant, "retrieve", lambda q, k=3: [entry[:3] + ("Buổi tư vấn kéo dài 45 phút.", 0.95)])
+    assert "để lại số điện thoại hoặc email" in assistant.respond("Tôi muốn đặt lịch hẹn gặp kiến trúc sư")["answer"]

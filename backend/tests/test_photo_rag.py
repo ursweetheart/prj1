@@ -102,3 +102,26 @@ def test_used_photos_are_grouped_by_project_in_first_use_order(monkeypatch):
     r = chat()
     assert [p["folder"] for p in r["projects"]] == ["luxury"]
     assert [a["id"] for a in r["projects"][0]["anh"]] == [7, 8] and [i["id"] for i in r["images"]] == [7, 8]
+
+
+# ── off-topic: a clear miss is declined (no lead, no gap); a borderline or interior-worded miss is still handed off ──
+@pytest.mark.parametrize("msg,score,declined", [
+    ("Hôm nay thời tiết thế nào?", 0.55, True),
+    ("Hôm nay thời tiết thế nào?", 0.64, False),               # borderline: a person looks at it
+    ("Phòng khách nhà tôi bị dột thì sao?", 0.55, False),       # names a room type: on-topic
+    ("Tôi muốn đặt lịch hẹn gặp kiến trúc sư", 0.40, False),     # an appointment is always a lead
+])
+def test_off_topic_line(monkeypatch, msg, score, declined):
+    monkeypatch.setattr(assistant, "retrieve", lambda q, *a, **k: [])
+    fake_vertex(monkeypatch, {"answerable": False, "answer": "", "used": []}, hits=(HIT[:5] + (score,),))
+    with psycopg.connect(DSN) as c:
+        gaps = c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0]
+    r = client.post("/chat", json={"message": msg, "contact": CONTACT}).json()
+    with psycopg.connect(DSN) as c:
+        new_gaps = c.execute("SELECT count(*) FROM khoang_trong_tri_thuc").fetchone()[0] - gaps
+        c.execute("DELETE FROM khoang_trong_tri_thuc WHERE cau_hoi = %s", (msg,))
+    assert not r["answered"]
+    if declined:
+        assert r["answer"] == assistant.OFF_TOPIC_REPLY and r["lead_id"] is None and new_gaps == 0
+    else:
+        assert r["lead_id"] and r["answer"] != assistant.OFF_TOPIC_REPLY

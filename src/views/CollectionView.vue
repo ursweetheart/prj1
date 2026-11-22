@@ -38,12 +38,14 @@
       <template v-else>
         <div class="col-bar">
           <p class="col-note num">{{ cards.length }} ảnh</p>
-          <button class="btn btn-primary" type="button" :aria-expanded="String(showBrief)" @click="openBrief">
-            Gửi cho kiến trúc sư
-          </button>
-          <button class="btn btn-secondary" type="button" :disabled="sharing" @click="share">Chia sẻ bộ sưu tập</button>
+          <div class="col-actions">
+            <button class="btn btn-primary" type="button" :aria-expanded="String(showBrief)" @click="openBrief">
+              Gửi cho kiến trúc sư
+            </button>
+            <button class="btn btn-secondary" type="button" :disabled="sharing" @click="share">Chia sẻ bộ sưu tập</button>
+          </div>
         </div>
-        <p v-if="shareMsg" class="col-note" role="status">{{ shareMsg }} <a v-if="shareUrl" :href="shareUrl">{{ shareUrl }}</a></p>
+        <p v-if="shareMsg" class="col-note col-share" role="status">{{ shareMsg }} <a v-if="shareUrl" :href="shareUrl">{{ shareUrl }}</a></p>
         <p v-if="!session.user" class="col-invite">
           Bộ sưu tập đang được giữ trong trình duyệt này.
           <router-link :to="{ path: '/dang-nhap', query: { next: '/bo-suu-tap' } }">Đăng ký để giữ bộ sưu tập</router-link>
@@ -121,8 +123,9 @@ async function share() {
   finally { sharing.value = false }
 }
 
-async function loadShared(code) {
+async function loadShared(raw) {
   loading.value = true; error.value = ''
+  const code = String(raw).match(/^[\w-]+/)?.[0] || raw // a pasted link often drags a "]", ")" or "." along
   try {
     sent.value = await getSharedCollection(code)
     rows.value = sent.value.items
@@ -166,6 +169,9 @@ async function openBrief() {
 .col-empty { display: grid; gap: 16px; justify-items: start; padding: 32px 0 }
 .col-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
            padding-bottom: 16px; border-bottom: 1px solid var(--line-soft) }
+.col-actions { display: flex; gap: 12px; flex-wrap: wrap }
+@media (max-width: 560px) { .col-actions { width: 100% } .col-actions .btn { flex: 1 1 auto } }
+.col-share { margin-top: 12px; overflow-wrap: anywhere }
 .col-invite { margin: 16px 0 0; font-size: 14px; color: var(--dim) }
 .col-invite a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px }
 .col-brief { margin-top: 28px; padding: clamp(20px, 3vw, 32px); border: 1px solid var(--line); border-radius: var(--radius-md);

@@ -39,7 +39,7 @@ def lead():
 
 
 def test_chat_lead_at_night_is_told_and_deferred(lead, monkeypatch):
-    monday = datetime(2026, 11, 23, 8, 0, tzinfo=VN)
+    monday = datetime(2020, 11, 23, 8, 0, tzinfo=VN)  # a past Monday: real waiting leads are never due then
     monkeypatch.setattr(hours, "next_open", lambda now=None, spec=None: monday)
     monkeypatch.setattr(api, "respond", lambda *a, **k: {"answer": "Em đã ghi nhận.", "sources": [], "answered": False,
                                                           "rang_buoc": {}, "lead_id": lead})

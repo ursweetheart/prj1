@@ -16,7 +16,7 @@
       ? `Số liệu đến hết ngày ${dateVi(data.den_ngay)} (tổng hợp hằng đêm, từ 1:00).`
       : 'Chưa có số liệu tổng hợp: tiến trình hằng đêm chưa chạy.' }}</p>
 
-    <div class="tr-bar">
+    <div class="tr-tools">
       <div class="row g6" role="group" aria-label="Khoảng thời gian">
         <button v-for="d in [7, 30, 90]" :key="d" type="button" class="chip" :aria-pressed="String(days === d)"
                 @click="days = d">{{ d }} ngày</button>
@@ -100,7 +100,6 @@
               <div class="tr-row">
                 <span class="tr-name">{{ v.ten }}</span>
                 <span class="num tr-pct">{{ v.ti_le }}%</span>
-                <HomeSettingSelect v-if="home" :value="d.ma + ':' + v.ma" :name="v.ten" :mode="homeMode(d.ma, v.ma)" @change="setHome" />
                 <span v-if="v.xu_huong || v.thay_doi !== null" class="tr-trend" :class="'is-' + (v.xu_huong || 'flat')"
                       :title="trendText(v)">
                   <span aria-hidden="true">{{ ARROW[v.xu_huong] || '' }}</span>
@@ -108,7 +107,10 @@
                 </span>
               </div>
               <div class="tr-bar" aria-hidden="true"><span :style="{ width: v.ti_le + '%' }"></span></div>
-              <p class="tr-counts num">{{ v.xem }} xem · {{ v.luu }} lưu · {{ v.brief }} ảnh gửi · {{ v.diem }} điểm</p>
+              <div class="tr-foot">
+                <p class="tr-counts num">{{ v.xem }} xem · {{ v.luu }} lưu · {{ v.brief }} ảnh gửi · {{ v.diem }} điểm</p>
+                <HomeSettingSelect v-if="home" :value="d.ma + ':' + v.ma" :name="v.ten" :mode="homeMode(d.ma, v.ma)" @change="setHome" />
+              </div>
             </li>
           </ol>
           <p v-else class="small">Chưa có hoạt động trong {{ days }} ngày.</p>
@@ -122,14 +124,26 @@
           <li v-for="s in SOURCES" :key="s.v"><span class="tr-sw" :class="'src-' + s.v" aria-hidden="true"></span>{{ s.t }}</li>
         </ul>
         <div class="tr-weeks">
-          <div v-for="w in data.lead_theo_tuan" :key="w.tuan_bat_dau" class="tr-week"
-               :aria-label="'Tuần ' + weekLabel(w.tuan_bat_dau) + ': ' + SOURCES.map(s => s.t + ' ' + w[s.v]).join(', ')">
+          <div v-for="w in data.lead_theo_tuan" :key="w.tuan_bat_dau" class="tr-week" tabindex="0"
+               :aria-label="'Tuần ' + weekRange(w.tuan_bat_dau) + ': ' + SOURCES.map(s => s.t + ' ' + w[s.v]).join(', ')"
+               @mouseenter="tip = { w: w.tuan_bat_dau, s: null }" @mouseleave="tip = null"
+               @focus="tip = { w: w.tuan_bat_dau, s: null }" @blur="tip = null">
             <div class="tr-stack">
-              <span v-for="s in SOURCES" :key="s.v" :class="'src-' + s.v"
-                    :style="{ height: (w[s.v] / maxWeek * 100) + '%' }"></span>
+              <span v-for="s in SOURCES" :key="s.v" :class="['src-' + s.v, { 'is-on': tip?.w === w.tuan_bat_dau && tip.s === s.v }]"
+                    :style="{ height: (w[s.v] / maxWeek * 100) + '%' }" @mouseenter="tip = { w: w.tuan_bat_dau, s: s.v }"
+                    @mouseleave="tip = { w: w.tuan_bat_dau, s: null }"></span>
+            </div>
+            <!-- hover / focus: the week's breakdown, the hovered source highlighted -->
+            <div v-if="tip?.w === w.tuan_bat_dau" class="tr-tip" aria-hidden="true">
+              <p class="tr-tip-h">Tuần {{ weekRange(w.tuan_bat_dau) }}</p>
+              <p v-for="s in SOURCES" :key="s.v" class="tr-tip-row" :class="{ 'is-on': tip.s === s.v }">
+                <span class="tr-sw" :class="'src-' + s.v"></span>{{ s.t }}
+                <span class="num">{{ w[s.v] }}<template v-if="weekTotal(w)"> · {{ Math.round(100 * w[s.v] / weekTotal(w)) }}%</template></span>
+              </p>
+              <p class="tr-tip-row tr-tip-sum">Tổng <span class="num">{{ weekTotal(w) }}</span></p>
             </div>
             <span class="tr-wl num">{{ weekLabel(w.tuan_bat_dau) }}</span>
-            <span class="tr-wn num">{{ SOURCES.reduce((n, s) => n + w[s.v], 0) }}</span>
+            <span class="tr-wn num">{{ weekTotal(w) }}</span>
           </div>
         </div>
       </section>
@@ -209,8 +223,8 @@
           <div class="bh-block">
             <h3 class="bh-h">Bộ lọc được dùng</h3>
             <ol v-if="bh.bo_loc.length" class="bh-list">
-              <li v-for="f in bh.bo_loc" :key="f.gia_tri">{{ f.gia_tri.split(':')[1].replaceAll('_', ' ') }}
-                <span class="small">{{ f.gia_tri.split(':')[0].replaceAll('_', ' ') }}</span> <span class="num">{{ f.so_lan }}</span></li>
+              <li v-for="f in bh.bo_loc" :key="f.gia_tri">{{ f.ten || f.gia_tri.replaceAll('_', ' ') }}
+                <span class="num">{{ f.so_lan }}</span></li>
             </ol>
             <p v-else class="small">Chưa có.</p>
           </div>
@@ -225,7 +239,7 @@
             <ol v-if="bh.hotspot?.length" class="bh-list" aria-label="Điểm món đồ được mở nhiều">
               <li v-for="x in bh.hotspot" :key="x.doi_tuong">
                 <router-link :to="'/khong-gian/' + spotOf(x.doi_tuong).id">ảnh #{{ spotOf(x.doi_tuong).id }}</router-link>
-                · {{ spotOf(x.doi_tuong).what }} <span class="num">{{ x.so_lan }}</span></li>
+                · {{ x.ten || spotOf(x.doi_tuong).what }} <span class="num">{{ x.so_lan }}</span></li>
             </ol>
           </div>
         </div>
@@ -256,6 +270,12 @@ const sign = n => (n > 0 ? '+' : '') + n + '%'
 const trendText = v => [LABEL[v.xu_huong], v.thay_doi !== null && v.thay_doi !== undefined ? sign(v.thay_doi) : null].filter(Boolean).join(' ')
 const trendShort = v => (v.xu_huong === 'moi_noi' ? 'mới' : v.thay_doi !== null ? sign(v.thay_doi) : '')
 const weekLabel = iso => { const [, m, d] = iso.split('-'); return d + '/' + m }
+const weekRange = iso => { // "16/11 – 22/11": Monday to Sunday
+  const sun = new Date(iso + 'T00:00:00'); sun.setDate(sun.getDate() + 6)
+  return weekLabel(iso) + ' – ' + String(sun.getDate()).padStart(2, '0') + '/' + String(sun.getMonth() + 1).padStart(2, '0')
+}
+const weekTotal = w => SOURCES.reduce((n, s) => n + w[s.v], 0)
+const tip = ref(null) // weekly leads chart: { w: week start, s: hovered source or null }
 
 const bh = ref(null) // behaviour-events: pages, CTAs, forms, chat, shares, filters
 const FORM_VI = { lien_he: 'liên hệ', brief: 'bộ sưu tập', uoc_tinh: 'ước tính' }
@@ -305,8 +325,8 @@ async function saveOptIn(on) {
 .tr-demo { margin: 16px 0 0; padding: 12px 14px; border: 1px solid var(--accent); border-radius: var(--radius-md);
            color: var(--ink); font-size: 14px; background: color-mix(in oklab, var(--accent) 12%, transparent) }
 .tr-demo code { font-size: 13px; overflow-wrap: anywhere }
-.tr-bar { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin-top: 20px }
-.tr-bar > .row { flex-wrap: wrap }
+.tr-tools { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin-top: 20px }
+.tr-tools > .row { flex-wrap: wrap }
 .tr-tiles { display: grid; gap: 14px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)) }
 .tr-tile, .tr-card { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); padding: 16px 18px; min-width: 0 }
 .tr-k { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint) }
@@ -316,12 +336,17 @@ async function saveOptIn(on) {
 .tr-h { margin: 0 0 12px; font-size: 16px; font-weight: 500; color: var(--ink) }
 .tr-note { font-size: 12px; font-weight: 400; color: var(--faint); margin-left: 6px }
 .tr-alerts { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px }
-.tr-alerts li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 14px; color: var(--ink-2) }
+.tr-alerts li { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto auto; gap: 6px 10px; align-items: center;
+                font-size: 14px; color: var(--ink-2) }
+@media (max-width: 600px) {
+  .tr-alerts li { grid-template-columns: 1.2em minmax(0, 1fr) auto }
+  .tr-alerts li > select { grid-column: 2 / -1; justify-self: start } /* the homepage setting on its own line */
+}
 .tr-arrow { width: 1.2em; text-align: center; font-weight: 600 }
 .is-dang_tang .tr-arrow, .tr-trend.is-dang_tang { color: var(--success) }
 .is-moi_noi .tr-arrow, .tr-trend.is-moi_noi { color: var(--accent) }
 .is-dang_giam .tr-arrow, .tr-trend.is-dang_giam { color: var(--danger) }
-.tr-change { margin-left: auto; color: var(--dim) }
+.tr-change { color: var(--dim); text-align: right }
 .tr-dims { display: grid; gap: 16px; margin-top: 0; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) }
 .tr-dims .tr-card { margin-top: 16px }
 .tr-rank { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px }
@@ -331,6 +356,8 @@ async function saveOptIn(on) {
 .tr-trend { font-size: 12px; color: var(--dim); white-space: nowrap }
 .tr-bar { height: 6px; border-radius: 3px; background: var(--line-soft); margin-top: 6px; overflow: hidden }
 .tr-bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px }
+.tr-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 4px }
+.tr-foot .tr-counts { margin: 0 }
 .tr-counts { margin: 4px 0 0; font-size: 11px; color: var(--faint) }
 .tr-legend { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--dim) }
 .tr-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px }
@@ -339,7 +366,21 @@ async function saveOptIn(on) {
 .src-brief { background: var(--success) }
 .src-estimate { background: var(--dim) }
 .tr-weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; align-items: end }
-.tr-week { display: grid; gap: 4px; justify-items: center; min-width: 0 }
+.tr-week { display: grid; gap: 4px; justify-items: center; min-width: 0; position: relative; cursor: default; border-radius: 4px }
+.tr-week:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px }
+.tr-stack span.is-on { filter: brightness(1.25); box-shadow: inset 0 0 0 2px var(--ink) }
+.tr-tip { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 3; min-width: 168px;
+          padding: 10px 12px; background: var(--page); border: 1px solid var(--line); border-radius: var(--radius-sm);
+          box-shadow: var(--elev-raised); font-size: 12px; color: var(--dim); pointer-events: none }
+.tr-weeks > .tr-week:nth-child(-n+2) .tr-tip { left: 0; transform: none }  /* first and last weeks: keep the box inside the card */
+.tr-weeks > .tr-week:nth-last-child(-n+2) .tr-tip { left: auto; right: 0; transform: none }
+.tr-tip p { margin: 0 }
+.tr-tip-h { color: var(--ink); font-weight: 600; margin-bottom: 6px !important }
+.tr-tip-row { display: flex; align-items: center; gap: 0; line-height: 1.7 }
+.tr-tip-row .num { margin-left: auto; padding-left: 12px; color: var(--ink-2) }
+.tr-tip-row.is-on { color: var(--ink) }
+.tr-tip-row.is-on .num { color: var(--ink); font-weight: 600 }
+.tr-tip-sum { border-top: 1px solid var(--line-soft); margin-top: 4px !important; padding-top: 4px; color: var(--ink-2) }
 .tr-stack { height: 120px; width: min(100%, 36px); display: flex; flex-direction: column-reverse; background: var(--line-soft); border-radius: 3px; overflow: hidden }
 .tr-stack span { display: block; width: 100% }
 .tr-wl { font-size: 11px; color: var(--faint) }
@@ -369,7 +410,7 @@ async function saveOptIn(on) {
 .tr-top a:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 3px }
 .tr-fresh { margin: 10px 0 0; color: var(--dim) }
 .tr-groups { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px }
-.tr-groups li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap }
+.tr-groups li { display: grid; grid-template-columns: 3.5em minmax(0, 1fr) auto; gap: 10px; align-items: baseline }
 .tr-gshare { min-width: 3.5em; font-weight: 600 }
 .tr-new { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--accent); color: var(--page) }
 .tr-preview { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) }

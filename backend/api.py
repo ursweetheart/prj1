@@ -888,6 +888,47 @@ def chat_delete(hid: str):
     return Response(status_code=204)
 
 
+class ChatContact(BaseModel):
+    contact: str = Field(min_length=3, max_length=200)
+    phien_id: Optional[str] = Field(default=None, pattern=PHIEN)
+    gui_ho_so: bool = False
+
+
+@app.post("/chat/{hid}/lien-he", dependencies=[Depends(limit("chat", 20, 60))])
+def chat_contact(hid: str, body: ChatContact, tasks: BackgroundTasks):
+    """"Để lại liên hệ" sent on its own (act-4): the phone or email joins the conversation's latest lead, or, when the
+    conversation made none, starts a handoff lead with its turns. Sales hear of it unless the lead's notice is still
+    waiting for the next working period (it then goes out with the contact)."""
+    with _db() as c:
+        if not conversations.valid(hid) or not c.execute("SELECT 1 FROM hoi_thoai WHERE id = %s", (hid,)).fetchone():
+            raise HTTPException(404, "no such conversation")
+        lead = c.execute("SELECT id, thong_bao_luc, da_thong_bao FROM lead WHERE hoi_thoai_id = %s ORDER BY id DESC LIMIT 1",
+                         (hid,)).fetchone()
+        opens = None
+        if lead:
+            lead_id, waiting = lead["id"], bool(lead["thong_bao_luc"] and not lead["da_thong_bao"])
+            opens = lead["thong_bao_luc"].astimezone(hours.VN) if waiting else None  # told when, as the chat reply was
+            c.execute("UPDATE lead SET contact = %s WHERE id = %s", (body.contact, lead_id))
+            consented = body.phien_id and c.execute("SELECT 1 FROM phien_truy_cap WHERE id = %s", (body.phien_id,)).fetchone()
+            if body.gui_ho_so and consented:  # "send what I viewed" ticked now: same rule as create_lead
+                c.execute("UPDATE lead SET phien_id = %s, ho_so_hanh_vi = %s WHERE id = %s AND ho_so_hanh_vi IS NULL",
+                          (body.phien_id, Jsonb(leads.behaviour_profile(body.phien_id, c)), lead_id))
+        else:
+            turns = [{"role": "user" if m["vai_tro"] == "khach" else "assistant", "content": m["noi_dung"]}
+                     for m in (conversations.read(c, hid) or {}).get("tin_nhan", [])]
+            lead_id = leads.create_lead("chat", intent="handoff", conversation=turns, contact=body.contact,
+                                        phien_id=body.phien_id, gui_ho_so=body.gui_ho_so, conn=c)
+            conversations.link_lead(c, hid, lead_id, handoff=True)
+            if opens := hours.next_open():
+                c.execute("UPDATE lead SET thong_bao_luc = %s, da_thong_bao = false WHERE id = %s", (opens, lead_id))
+            waiting = bool(opens)
+    if not waiting:
+        tasks.add_task(notify.notify_new_lead, lead_id)
+    return {"lead_id": lead_id, "lien_he_luc": opens.isoformat() if opens else None,
+            "tra_loi": "Đã nhận liên hệ của bạn. Kiến trúc sư D3 Studio sẽ gọi lại sớm."
+                       + (" " + hours.sentence(opens) if opens else "")}
+
+
 
 # ── Conversations for staff (chat-history): how the assistant answers ─────────
 CONVERSATION_ROLES = ("content", "sales", *APPROVERS)

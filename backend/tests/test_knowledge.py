@@ -207,7 +207,9 @@ def test_api_roles_and_errors(as_role):
     assert client.get("/knowledge/gaps", headers=content).status_code == 200
 
 
-def test_chat_uses_only_live_entries(as_role):
+def test_chat_uses_only_live_entries(as_role, monkeypatch):
+    from pipeline import assistant
+    monkeypatch.setattr(assistant.vertex, "available", lambda: False)  # the entry said as it is: no model rewording
     lead = as_role("lead_architect")
     body = {"kind": "faq", "title": "test_kn bảo dưỡng sàn gỗ",
             "cum_tu_khop": "bảo dưỡng sàn gỗ sau khi bàn giao như thế nào, lau sàn gỗ bằng gì",

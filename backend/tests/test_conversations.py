@@ -211,3 +211,32 @@ def test_staff_filters_and_detail(chat, as_role):
     finally:
         with psycopg.connect(DSN) as c:
             c.execute("DELETE FROM hoi_thoai WHERE id = %s", (quiet,))
+
+
+# ── "Để lại liên hệ" sent on its own (act-4) ──────────────────────────────────────────────────────────────────────
+def test_contact_joins_the_conversation_lead(chat):
+    r = chat("bao nhiêu tiền?")  # a price question: a lead without contact
+    assert r["lead_id"]
+    out = client.post(f"/chat/{r['hoi_thoai_id']}/lien-he", json={"contact": "0912345678"})
+    assert out.status_code == 200 and out.json()["lead_id"] == r["lead_id"] and "Đã nhận liên hệ" in out.json()["tra_loi"]
+    assert _q("SELECT contact FROM lead WHERE id = %s", r["lead_id"]) == [("0912345678",)]
+
+
+def test_contact_without_a_lead_starts_a_handoff_lead(chat):
+    r = chat("xin chào")  # small talk: no lead
+    assert r["lead_id"] is None
+    out = client.post(f"/chat/{r['hoi_thoai_id']}/lien-he", json={"contact": "a@b.vn"}).json()
+    rows = _q("SELECT intent, contact, hoi_thoai_id, conversation FROM lead WHERE id = %s", out["lead_id"])
+    assert rows[0][:3] == ("handoff", "a@b.vn", r["hoi_thoai_id"]) and rows[0][3][0]["content"] == "xin chào"
+
+
+def test_contact_for_an_unknown_conversation_is_404():
+    assert client.post("/chat/" + "0" * 32 + "/lien-he", json={"contact": "0912345678"}).status_code == 404
+    assert client.post("/chat/x/lien-he", json={"contact": "0912345678"}).status_code == 404
+
+
+def test_contact_outside_hours_repeats_when_the_team_will_call(chat, monkeypatch):
+    monkeypatch.setenv("D3_GIO_LAM_VIEC", "T2 08:00-08:01")  # closed nearly all week
+    r = chat("bao nhiêu tiền?")
+    out = client.post(f"/chat/{r['hoi_thoai_id']}/lien-he", json={"contact": "0912345678"}).json()
+    assert out["lien_he_luc"] and "Đội tư vấn sẽ liên hệ anh/chị từ 08:00 thứ Hai" in out["tra_loi"]
